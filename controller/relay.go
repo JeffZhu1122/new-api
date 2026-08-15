@@ -359,6 +359,11 @@ func shouldRetry(c *gin.Context, openaiErr *types.NewAPIError, retryTimes int) b
 	if operation_setting.IsAlwaysSkipRetryCode(openaiErr.GetErrorCode()) {
 		return false
 	}
+	if code == http.StatusBadRequest && operation_setting.AutomaticRetryKeywordsEnabled && len(operation_setting.AutomaticRetryKeywords) > 0 {
+		if matched, _ := service.AcSearch(strings.ToLower(openaiErr.Error()), operation_setting.AutomaticRetryKeywords, true); matched {
+			return true
+		}
+	}
 	return operation_setting.ShouldRetryByStatusCode(code)
 }
 

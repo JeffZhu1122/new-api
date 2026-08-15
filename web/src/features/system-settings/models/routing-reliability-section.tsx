@@ -83,6 +83,8 @@ const createRoutingReliabilitySchema = (
       AutomaticDisableKeywords: z.string(),
       AutomaticDisableStatusCodes: z.string(),
       AutomaticRetryStatusCodes: z.string(),
+      AutomaticRetryKeywordsEnabled: z.boolean(),
+      AutomaticRetryKeywords: z.string(),
       monitor_setting: z.object({
         auto_test_channel_enabled: z.boolean(),
         auto_test_channel_minutes: z.coerce
@@ -143,6 +145,8 @@ type RoutingReliabilitySectionProps = {
     AutomaticDisableKeywords: string
     AutomaticDisableStatusCodes: string
     AutomaticRetryStatusCodes: string
+    AutomaticRetryKeywordsEnabled: boolean
+    AutomaticRetryKeywords: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_test_concurrency': number
@@ -162,6 +166,8 @@ type NormalizedRoutingReliabilityValues = {
   AutomaticDisableKeywords: string
   AutomaticDisableStatusCodes: string
   AutomaticRetryStatusCodes: string
+  AutomaticRetryKeywordsEnabled: boolean
+  AutomaticRetryKeywords: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
@@ -187,6 +193,10 @@ const buildFormDefaults = (
   ),
   AutomaticDisableStatusCodes: defaults.AutomaticDisableStatusCodes ?? '',
   AutomaticRetryStatusCodes: defaults.AutomaticRetryStatusCodes ?? '',
+  AutomaticRetryKeywordsEnabled: defaults.AutomaticRetryKeywordsEnabled,
+  AutomaticRetryKeywords: normalizeLineEndings(
+    defaults.AutomaticRetryKeywords ?? ''
+  ),
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
@@ -216,6 +226,10 @@ const normalizeDefaults = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     defaults.AutomaticRetryStatusCodes ?? ''
   ).normalized,
+  AutomaticRetryKeywordsEnabled: defaults.AutomaticRetryKeywordsEnabled,
+  AutomaticRetryKeywords: normalizeLineEndings(
+    defaults.AutomaticRetryKeywords ?? ''
+  ),
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
@@ -243,6 +257,8 @@ const normalizeFormValues = (
   AutomaticRetryStatusCodes: parseHttpStatusCodeRules(
     values.AutomaticRetryStatusCodes
   ).normalized,
+  AutomaticRetryKeywordsEnabled: values.AutomaticRetryKeywordsEnabled,
+  AutomaticRetryKeywords: normalizeLineEndings(values.AutomaticRetryKeywords),
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
@@ -389,6 +405,55 @@ export function RoutingReliabilitySection({
                             {t('Normalized:')} {autoRetryParsed.normalized}
                           </span>
                         )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='AutomaticRetryKeywordsEnabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem className='xl:col-span-2'>
+                    <SettingsSwitchContent>
+                      <FormLabel>
+                        {t('Retry 400 errors by keywords')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Master switch. Keyword-based retry of 400 errors only takes effect when enabled.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='AutomaticRetryKeywords'
+                render={({ field }) => (
+                  <FormItem className='xl:col-span-2'>
+                    <FormLabel>{t('Retry keywords for 400 errors')}</FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={6}
+                        placeholder={t('one keyword per line')}
+                        {...field}
+                        onChange={(event) => field.onChange(event.target.value)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'When upstream returns status code 400 and the error message contains any of these keywords (case insensitive), the request will be retried on another channel.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
