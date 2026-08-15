@@ -360,6 +360,15 @@ func UpdateOption(c *gin.Context) {
 				return
 			}
 		}
+	case "RetryAvoidFailedChannelsStatusCode":
+		statusCode, parseErr := strconv.Atoi(option.Value.(string))
+		if parseErr != nil || statusCode < 100 || statusCode > 599 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "状态码必须是 100-599 之间的整数",
+			})
+			return
+		}
 	case "console_setting.api_info":
 		err = console_setting.ValidateConsoleSettings(option.Value.(string), "ApiInfo")
 		if err != nil {

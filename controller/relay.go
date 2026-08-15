@@ -240,6 +240,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError)
 
+		// 多 key 渠道不排除：重选同一渠道会轮换 key，保留换 key 自愈能力
+		if operation_setting.RetryAvoidFailedChannelsEnabled && !common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
+			retryParam.AddFailedChannel(channel.Id)
+		}
+
 		if !shouldRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry()) {
 			break
 		}
@@ -318,6 +323,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(fmt.Errorf("获取分组 %s 下模型 %s 的可用渠道失败（retry）: %s", selectGroup, info.OriginModelName, err.Error()), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
+		if len(retryParam.ExcludeChannelIds) > 0 {
+			// 避开失败渠道模式下渠道耗尽：状态码与错误信息可在运营设置中配置（默认 429）
+			return nil, types.NewErrorWithStatusCode(
+				errors.New(operation_setting.RetryAvoidFailedChannelsMessage(info.OriginModelName)),
+				types.ErrorCodeGetChannelFailed,
+				operation_setting.RetryAvoidFailedChannelsHTTPStatusCode(),
+				types.ErrOptionWithSkipRetry())
+		}
 		return nil, types.NewError(fmt.Errorf("分组 %s 下模型 %s 的可用渠道不存在（retry）", selectGroup, info.OriginModelName), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
@@ -625,7 +638,7 @@ func executeTaskSubmissionWith(
 			channel, channelErr = getChannel(c, relayInfo, retryParam)
 			if channelErr != nil {
 				logger.LogError(c, channelErr.Error())
-				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", http.StatusInternalServerError)
+				taskErr = service.TaskErrorWrapperLocal(channelErr.Err, "get_channel_failed", channelErr.StatusCode)
 				break
 			}
 		}
@@ -661,6 +674,10 @@ func executeTaskSubmissionWith(
 				*types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey,
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
 				types.NewOpenAIError(taskErr.Error, types.ErrorCodeBadResponseStatusCode, taskErr.StatusCode))
+			// 多 key 渠道不排除：重选同一渠道会轮换 key，保留换 key 自愈能力
+			if operation_setting.RetryAvoidFailedChannelsEnabled && !common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
+				retryParam.AddFailedChannel(channel.Id)
+			}
 		}
 
 		willRetry := shouldRetryTaskRelay(c, channel.Id, taskErr, common.RetryTimes-retryParam.GetRetry())

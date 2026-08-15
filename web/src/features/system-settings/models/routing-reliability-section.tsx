@@ -85,6 +85,9 @@ const createRoutingReliabilitySchema = (
       AutomaticRetryStatusCodes: z.string(),
       AutomaticRetryKeywordsEnabled: z.boolean(),
       AutomaticRetryKeywords: z.string(),
+      RetryAvoidFailedChannelsEnabled: z.boolean(),
+      RetryAvoidFailedChannelsStatusCode: z.coerce.number().int().min(100).max(599),
+      RetryAvoidFailedChannelsErrorMessage: z.string(),
       monitor_setting: z.object({
         auto_test_channel_enabled: z.boolean(),
         auto_test_channel_minutes: z.coerce
@@ -147,6 +150,9 @@ type RoutingReliabilitySectionProps = {
     AutomaticRetryStatusCodes: string
     AutomaticRetryKeywordsEnabled: boolean
     AutomaticRetryKeywords: string
+    RetryAvoidFailedChannelsEnabled: boolean
+    RetryAvoidFailedChannelsStatusCode: number
+    RetryAvoidFailedChannelsErrorMessage: string
     'monitor_setting.auto_test_channel_enabled': boolean
     'monitor_setting.auto_test_channel_minutes': number
     'monitor_setting.channel_test_concurrency': number
@@ -168,6 +174,9 @@ type NormalizedRoutingReliabilityValues = {
   AutomaticRetryStatusCodes: string
   AutomaticRetryKeywordsEnabled: boolean
   AutomaticRetryKeywords: string
+  RetryAvoidFailedChannelsEnabled: boolean
+  RetryAvoidFailedChannelsStatusCode: number
+  RetryAvoidFailedChannelsErrorMessage: string
   'monitor_setting.auto_test_channel_enabled': boolean
   'monitor_setting.auto_test_channel_minutes': number
   'monitor_setting.channel_test_concurrency': number
@@ -197,6 +206,11 @@ const buildFormDefaults = (
   AutomaticRetryKeywords: normalizeLineEndings(
     defaults.AutomaticRetryKeywords ?? ''
   ),
+  RetryAvoidFailedChannelsEnabled: defaults.RetryAvoidFailedChannelsEnabled,
+  RetryAvoidFailedChannelsStatusCode:
+    defaults.RetryAvoidFailedChannelsStatusCode ?? 429,
+  RetryAvoidFailedChannelsErrorMessage:
+    defaults.RetryAvoidFailedChannelsErrorMessage ?? '',
   monitor_setting: {
     auto_test_channel_enabled:
       defaults['monitor_setting.auto_test_channel_enabled'],
@@ -230,6 +244,12 @@ const normalizeDefaults = (
   AutomaticRetryKeywords: normalizeLineEndings(
     defaults.AutomaticRetryKeywords ?? ''
   ),
+  RetryAvoidFailedChannelsEnabled: defaults.RetryAvoidFailedChannelsEnabled,
+  RetryAvoidFailedChannelsStatusCode:
+    defaults.RetryAvoidFailedChannelsStatusCode ?? 429,
+  RetryAvoidFailedChannelsErrorMessage: (
+    defaults.RetryAvoidFailedChannelsErrorMessage ?? ''
+  ).trim(),
   'monitor_setting.auto_test_channel_enabled':
     defaults['monitor_setting.auto_test_channel_enabled'],
   'monitor_setting.auto_test_channel_minutes':
@@ -259,6 +279,10 @@ const normalizeFormValues = (
   ).normalized,
   AutomaticRetryKeywordsEnabled: values.AutomaticRetryKeywordsEnabled,
   AutomaticRetryKeywords: normalizeLineEndings(values.AutomaticRetryKeywords),
+  RetryAvoidFailedChannelsEnabled: values.RetryAvoidFailedChannelsEnabled,
+  RetryAvoidFailedChannelsStatusCode: values.RetryAvoidFailedChannelsStatusCode,
+  RetryAvoidFailedChannelsErrorMessage:
+    values.RetryAvoidFailedChannelsErrorMessage.trim(),
   'monitor_setting.auto_test_channel_enabled':
     values.monitor_setting.auto_test_channel_enabled,
   'monitor_setting.auto_test_channel_minutes':
@@ -405,6 +429,82 @@ export function RoutingReliabilitySection({
                             {t('Normalized:')} {autoRetryParsed.normalized}
                           </span>
                         )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='RetryAvoidFailedChannelsEnabled'
+                render={({ field }) => (
+                  <SettingsSwitchItem className='xl:col-span-2'>
+                    <SettingsSwitchContent>
+                      <FormLabel>
+                        {t('Avoid failed channels on retry')}
+                      </FormLabel>
+                      <FormDescription>
+                        {t(
+                          'When enabled, retries skip channels that already failed in this request. Multi-key channels are not excluded so keys can rotate. When every channel has failed, the configured status code and error message are returned.'
+                        )}
+                      </FormDescription>
+                    </SettingsSwitchContent>
+                    <FormControl>
+                      <Switch
+                        checked={field.value}
+                        onCheckedChange={field.onChange}
+                      />
+                    </FormControl>
+                  </SettingsSwitchItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='RetryAvoidFailedChannelsStatusCode'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Status code when all channels failed')}
+                    </FormLabel>
+                    <FormControl>
+                      <Input
+                        type='number'
+                        min='100'
+                        max='599'
+                        {...safeNumberFieldProps(field)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'HTTP status code returned when every available channel has already failed in this request (100-599).'
+                      )}
+                    </FormDescription>
+                    <FormMessage />
+                  </FormItem>
+                )}
+              />
+
+              <FormField
+                control={form.control}
+                name='RetryAvoidFailedChannelsErrorMessage'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>
+                      {t('Error message when all channels failed')}
+                    </FormLabel>
+                    <FormControl>
+                      <Textarea
+                        rows={2}
+                        {...field}
+                        onChange={(event) => field.onChange(event.target.value)}
+                      />
+                    </FormControl>
+                    <FormDescription>
+                      {t(
+                        'Supports the {model} placeholder for the model name. Leave empty to use the default message.'
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>

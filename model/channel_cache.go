@@ -117,10 +117,11 @@ func GetRandomSatisfiedChannel(
 	model string,
 	retry int,
 	filters []dto.ChannelFilter,
+	excludeChannelIds map[int]bool,
 ) (*Channel, error) {
 	// if memory cache is disabled, get channel directly from database
 	if !common.MemoryCacheEnabled {
-		return GetChannel(group, model, retry, filters)
+		return GetChannel(group, model, retry, filters, excludeChannelIds)
 	}
 
 	channelSyncLock.RLock()
@@ -137,6 +138,22 @@ func GetRandomSatisfiedChannel(
 
 	if len(channels) == 0 {
 		return nil, nil
+	}
+
+	if len(excludeChannelIds) > 0 {
+		remaining := make([]int, 0, len(channels))
+		for _, channelId := range channels {
+			if !excludeChannelIds[channelId] {
+				remaining = append(remaining, channelId)
+			}
+		}
+		// 所有候选渠道均已失败：返回 nil 让上层报告耗尽或推进下一分组
+		if len(remaining) == 0 {
+			return nil, nil
+		}
+		channels = remaining
+		// 排除模式下不再按 retry 序号降优先级，直接取剩余渠道中的最高优先级层
+		retry = 0
 	}
 
 	if len(channels) == 1 {

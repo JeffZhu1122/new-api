@@ -81,6 +81,12 @@ const MODELS_SECTIONS = [
           AutomaticRetryStatusCodes: settings.AutomaticRetryStatusCodes,
           AutomaticRetryKeywordsEnabled: settings.AutomaticRetryKeywordsEnabled,
           AutomaticRetryKeywords: settings.AutomaticRetryKeywords,
+          RetryAvoidFailedChannelsEnabled:
+            settings.RetryAvoidFailedChannelsEnabled,
+          RetryAvoidFailedChannelsStatusCode:
+            settings.RetryAvoidFailedChannelsStatusCode,
+          RetryAvoidFailedChannelsErrorMessage:
+            settings.RetryAvoidFailedChannelsErrorMessage,
           'monitor_setting.auto_test_channel_enabled':
             settings['monitor_setting.auto_test_channel_enabled'],
           'monitor_setting.auto_test_channel_minutes':

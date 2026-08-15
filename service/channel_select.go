@@ -42,6 +42,15 @@ type RetryParam struct {
 	RequestPath  string
 	Retry        *int
 	resetNextTry bool
+	// ExcludeChannelIds 记录本次请求中已失败的渠道，重试选择时排除（nil 表示未启用避开失败渠道）
+	ExcludeChannelIds map[int]bool
+}
+
+func (p *RetryParam) AddFailedChannel(channelId int) {
+	if p.ExcludeChannelIds == nil {
+		p.ExcludeChannelIds = make(map[int]bool)
+	}
+	p.ExcludeChannelIds[channelId] = true
 }
 
 func (p *RetryParam) GetRetry() int {
@@ -146,6 +155,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 				param.ModelName,
 				priorityRetry,
 				filters,
+				param.ExcludeChannelIds,
 			)
 			if channel == nil {
 				// Current group has no available channel for this model, try next group
@@ -189,6 +199,7 @@ func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, 
 			param.ModelName,
 			param.GetRetry(),
 			filters,
+			param.ExcludeChannelIds,
 		)
 		if err != nil {
 			return nil, param.TokenGroup, err
