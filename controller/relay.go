@@ -139,6 +139,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		}
 	}()
 
+	// count_tokens / input_tokens 免费：跳过 token 预估与整条计费链（预扣费/结算），仅保留敏感词检查
+	isClaudeCountTokens := relayInfo.RelayMode == relayconstant.RelayModeClaudeCountTokens
+	isCountTokens := isClaudeCountTokens || relayInfo.RelayMode == relayconstant.RelayModeResponsesInputTokens
+
 	if newAPIError = relay.PrepareRequestBilling(c, relayInfo); newAPIError != nil {
 		return
 	}
@@ -168,9 +172,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 			break
 		}
 		service.AppendUsedChannel(c, channel.Id)
-		if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
-			newAPIError = billingErr
-			break
+		if !isCountTokens {
+			if billingErr := service.PrepareTieredBillingForSelectedGroup(c, relayInfo); billingErr != nil {
+				newAPIError = billingErr
+				break
+			}
 		}
 
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
@@ -189,7 +195,13 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		case types.RelayFormatOpenAIRealtime:
 			newAPIError = relay.WssHelper(c, relayInfo)
 		case types.RelayFormatClaude:
-			newAPIError = relay.ClaudeHelper(c, relayInfo)
+			if isClaudeCountTokens {
+				newAPIError = relay.ClaudeCountTokensHelper(c, relayInfo)
+			} else {
+				newAPIError = relay.ClaudeHelper(c, relayInfo)
+			}
+		case types.RelayFormatOpenAIResponsesInputTokens:
+			newAPIError = relay.OpenAIInputTokensHelper(c, relayInfo)
 		case types.RelayFormatGemini:
 			newAPIError = geminiRelayHandler(c, relayInfo)
 		default:
@@ -208,6 +220,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		decision := service.DecideRelayRetry(c, newAPIError, common.RetryTimes-retryParam.GetRetry())
 		service.RecordPolicyFailure(c, channel.Id, newAPIError, decision)
 		processChannelError(c, *types.NewChannelError(channel.Id, channel.Type, channel.Name, channel.ChannelInfo.IsMultiKey, common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()), newAPIError, relayInfo)
+
+		// 多 key 渠道不排除：重选同一渠道会轮换 key，保留换 key 自愈能力
+		if operation_setting.RetryAvoidFailedChannelsEnabled && !common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
+			retryParam.AddFailedChannel(channel.Id)
+		}
 
 		if decision.Action != "retry" {
 			break
@@ -281,6 +298,14 @@ func getChannel(c *gin.Context, info *relaycommon.RelayInfo, retryParam *service
 		return nil, types.NewError(errors.New(i18n.T(c, i18n.MsgRelayRetryGetChannelFailed, map[string]any{"Group": selectGroup, "Model": info.OriginModelName, "Error": err.Error()})), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 	if channel == nil {
+		if len(retryParam.ExcludeChannelIds) > 0 {
+			// 避开失败渠道模式下渠道耗尽：状态码与错误信息可在运营设置中配置（默认 429）
+			return nil, types.NewErrorWithStatusCode(
+				errors.New(operation_setting.RetryAvoidFailedChannelsMessage(info.OriginModelName)),
+				types.ErrorCodeGetChannelFailed,
+				operation_setting.RetryAvoidFailedChannelsHTTPStatusCode(),
+				types.ErrOptionWithSkipRetry())
+		}
 		return nil, types.NewError(errors.New(i18n.T(c, i18n.MsgRelayRetryNoAvailableChannel, map[string]any{"Group": selectGroup, "Model": info.OriginModelName})), types.ErrorCodeGetChannelFailed, types.ErrOptionWithSkipRetry())
 	}
 
@@ -566,6 +591,10 @@ func executeTaskSubmissionWith(
 					common.GetContextKeyString(c, constant.ContextKeyChannelKey), channel.GetAutoBan()),
 				taskAPIError,
 				relayInfo)
+			// 多 key 渠道不排除：重选同一渠道会轮换 key，保留换 key 自愈能力
+			if operation_setting.RetryAvoidFailedChannelsEnabled && !common.GetContextKeyBool(c, constant.ContextKeyChannelIsMultiKey) {
+				retryParam.AddFailedChannel(channel.Id)
+			}
 		}
 
 		willRetry := decision.Action == "retry"
