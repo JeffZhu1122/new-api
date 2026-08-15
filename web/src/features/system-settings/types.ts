@@ -262,6 +262,7 @@ export type ModelSettings = {
   GroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
+  GroupModelDiscount: string
   AutoGroups: string
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
@@ -302,6 +303,7 @@ export type BillingSettings = {
   GroupRatio: string
   UserUsableGroups: string
   GroupGroupRatio: string
+  GroupModelDiscount: string
   AutoGroups: string
   MaxTokenAutoGroups: number
   DefaultUseAutoGroup: boolean
@@ -395,6 +397,8 @@ export type SecuritySettings = {
   ModelRequestRateLimitSuccessCount: number
   ModelRequestRateLimitDurationMinutes: number
   ModelRequestRateLimitGroup: string
+  ModelRateLimitEnabled: boolean
+  ModelRateLimitRules: string
   CheckSensitiveEnabled: boolean
   CheckSensitiveOnPromptEnabled: boolean
   SensitiveWords: string
