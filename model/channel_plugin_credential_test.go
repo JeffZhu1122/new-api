@@ -175,7 +175,7 @@ func TestProviderChannelSelectionFollowsRelayRoutes(t *testing.T) {
 			{model: "served", path: "/v1/embeddings"},
 			{model: "served"},
 		} {
-			selected, err := GetChannel("default", tc.model, 0, ordinary(tc.path))
+			selected, err := GetChannel("default", tc.model, 0, ordinary(tc.path), nil)
 			require.NoError(t, err)
 			if tc.want == "" {
 				assert.Nil(t, selected, "memory cache %v: %s %s", memoryCache, tc.path, tc.model)
@@ -184,7 +184,7 @@ func TestProviderChannelSelectionFollowsRelayRoutes(t *testing.T) {
 			require.NotNil(t, selected, "memory cache %v: %s %s", memoryCache, tc.path, tc.model)
 			assert.Equal(t, tc.want, selected.Name, "a task-only plugin channel never serves the relay")
 		}
-		selected, err := GetChannel("default", "served", 0, identityFilters("select-task", nil))
+		selected, err := GetChannel("default", "served", 0, identityFilters("select-task", nil), nil)
 		require.NoError(t, err)
 		require.NotNil(t, selected)
 		assert.Equal(t, "task", selected.Name, "task requests keep their own plugin's channels")
@@ -303,7 +303,7 @@ func TestScheduledChannelLockedStatus(t *testing.T) {
 				Models: fmt.Sprintf("scheduled-%v", memoryCache), Group: "default", AutoBan: &autoBan}
 			require.NoError(t, channel.Insert())
 			InitChannelCache()
-			selected, err := GetRandomSatisfiedChannel("default", channel.Models, 0, nil)
+			selected, err := GetRandomSatisfiedChannel("default", channel.Models, 0, nil, nil)
 			require.NoError(t, err)
 			assert.Nil(t, selected)
 
@@ -318,7 +318,7 @@ func TestScheduledChannelLockedStatus(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, "new", cached.Key)
 			assert.Equal(t, common.ChannelStatusEnabled, cached.Status)
-			selected, err = GetRandomSatisfiedChannel("default", channel.Models, 0, nil)
+			selected, err = GetRandomSatisfiedChannel("default", channel.Models, 0, nil, nil)
 			require.NoError(t, err)
 			require.NotNil(t, selected, "re-enabled channels immediately return to selection")
 			assert.Equal(t, channel.Id, selected.Id)
@@ -346,7 +346,7 @@ func TestScheduledChannelLockedStatus(t *testing.T) {
 				return nil
 			})
 			require.NoError(t, err)
-			selected, err = GetRandomSatisfiedChannel("default", channel.Models, 0, nil)
+			selected, err = GetRandomSatisfiedChannel("default", channel.Models, 0, nil, nil)
 			require.NoError(t, err)
 			assert.Nil(t, selected, "disabled channels immediately leave selection")
 			stored, err = GetChannelById(channel.Id, true)
@@ -403,7 +403,7 @@ func TestScheduledChannelLockedMultiKey(t *testing.T) {
 		return nil
 	})
 	require.NoError(t, err)
-	selected, err := GetRandomSatisfiedChannel("default", channel.Models, 0, nil)
+	selected, err := GetRandomSatisfiedChannel("default", channel.Models, 0, nil, nil)
 	require.NoError(t, err)
 	assert.Nil(t, selected)
 	stored, err = UpdateScheduledChannelLocked(context.Background(), channel.Id, func(stored *Channel) error {
@@ -414,7 +414,7 @@ func TestScheduledChannelLockedMultiKey(t *testing.T) {
 	assert.Equal(t, common.ChannelStatusEnabled, stored.Status)
 	assert.Equal(t, common.ChannelStatusManuallyDisabled, stored.ChannelInfo.MultiKeyStatusList[1])
 	assert.Equal(t, common.ChannelStatusAutoDisabled, stored.ChannelInfo.MultiKeyStatusList[2])
-	selected, err = GetRandomSatisfiedChannel("default", channel.Models, 0, nil)
+	selected, err = GetRandomSatisfiedChannel("default", channel.Models, 0, nil, nil)
 	require.NoError(t, err)
 	require.NotNil(t, selected)
 	key, index, keyErr := selected.GetNextEnabledKey()
