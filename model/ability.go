@@ -90,7 +90,13 @@ func getPriority(group string, model string, retry int) (int, error) {
 	return priorityToUse, nil
 }
 
-func getChannelQuery(group string, model string, retry int) (*gorm.DB, error) {
+func getChannelQuery(group string, model string, retry int, excludeChannelIds map[int]bool) (*gorm.DB, error) {
+	if len(excludeChannelIds) > 0 {
+		// 排除模式下不再按 retry 序号降优先级，直接在剩余渠道中取最高优先级
+		excludeIds := lo.Keys(excludeChannelIds)
+		maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id NOT IN (?)", group, model, true, excludeIds)
+		return DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and channel_id NOT IN (?) and priority = (?)", group, model, true, excludeIds, maxPrioritySubQuery), nil
+	}
 	maxPrioritySubQuery := DB.Model(&Ability{}).Select("MAX(priority)").Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true)
 	channelQuery := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ? and priority = (?)", group, model, true, maxPrioritySubQuery)
 	if retry != 0 {
@@ -110,6 +116,7 @@ func GetChannel(
 	model string,
 	retry int,
 	filters []dto.ChannelFilter,
+	excludeChannelIds map[int]bool,
 ) (*Channel, error) {
 	var abilities []Ability
 	err := DB.Where(commonGroupCol+" = ? and model = ? and enabled = ?", group, model, true).Order("priority DESC, weight DESC").Find(&abilities).Error
@@ -117,6 +124,13 @@ func GetChannel(
 		return nil, err
 	}
 	abilities = filterAbilitiesByConstraints(abilities, model, filters)
+	if len(excludeChannelIds) > 0 {
+		abilities = lo.Filter(abilities, func(ability Ability, _ int) bool {
+			return !excludeChannelIds[ability.ChannelId]
+		})
+		// 排除模式下不再按 retry 序号降优先级，直接取剩余渠道中的最高优先级层
+		retry = 0
+	}
 	if len(abilities) > 0 {
 		priorities := make([]int64, 0)
 		seen := make(map[int64]bool)

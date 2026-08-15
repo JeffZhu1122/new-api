@@ -186,6 +186,9 @@ func InitOptionMap() {
 	common.OptionMap["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
 	common.OptionMap["AutomaticRetryKeywordsEnabled"] = strconv.FormatBool(operation_setting.AutomaticRetryKeywordsEnabled)
 	common.OptionMap["AutomaticRetryKeywords"] = operation_setting.AutomaticRetryKeywordsToString()
+	common.OptionMap["RetryAvoidFailedChannelsEnabled"] = strconv.FormatBool(operation_setting.RetryAvoidFailedChannelsEnabled)
+	common.OptionMap["RetryAvoidFailedChannelsStatusCode"] = strconv.Itoa(operation_setting.RetryAvoidFailedChannelsStatusCode)
+	common.OptionMap["RetryAvoidFailedChannelsErrorMessage"] = operation_setting.RetryAvoidFailedChannelsErrorMessage
 	common.OptionMap["ExposeRatioEnabled"] = strconv.FormatBool(ratio_setting.IsExposeRatioEnabled())
 
 	// 自动添加所有注册的模型配置
@@ -441,6 +444,8 @@ func updateOptionMap(key string, value string) (err error) {
 			operation_setting.DemoSiteEnabled = boolValue
 		case "AutomaticRetryKeywordsEnabled":
 			operation_setting.AutomaticRetryKeywordsEnabled = boolValue
+		case "RetryAvoidFailedChannelsEnabled":
+			operation_setting.RetryAvoidFailedChannelsEnabled = boolValue
 		case "SelfUseModeEnabled":
 			operation_setting.SelfUseModeEnabled = boolValue
 		case "CheckSensitiveOnPromptEnabled":
@@ -626,6 +631,10 @@ func updateOptionMap(key string, value string) (err error) {
 		err = setting.UpdateModelRequestRateLimitGroupByJSONString(value)
 	case "RetryTimes":
 		common.RetryTimes, _ = strconv.Atoi(value)
+	case "RetryAvoidFailedChannelsStatusCode":
+		operation_setting.RetryAvoidFailedChannelsStatusCode, _ = strconv.Atoi(value)
+	case "RetryAvoidFailedChannelsErrorMessage":
+		operation_setting.RetryAvoidFailedChannelsErrorMessage = value
 	case "DataExportInterval":
 		common.DataExportInterval, _ = strconv.Atoi(value)
 	case "DataExportDefaultTime":

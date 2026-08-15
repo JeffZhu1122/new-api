@@ -302,6 +302,15 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "GroupModelDiscount":
+		err = ratio_setting.CheckGroupModelDiscount(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 	case "gemini.safety_settings":
 		err = model_setting.ValidateGeminiSafetySettings(option.Value.(string))
 		if err != nil {
@@ -374,6 +383,15 @@ func UpdateOption(c *gin.Context) {
 			})
 			return
 		}
+	case "ModelRateLimitRules":
+		err = setting.CheckModelRateLimitRules(option.Value.(string))
+		if err != nil {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": err.Error(),
+			})
+			return
+		}
 	case "AutomaticDisableStatusCodes":
 		_, err = operation_setting.ParseHTTPStatusCodeRanges(option.Value.(string))
 		if err != nil {
@@ -419,6 +437,15 @@ func UpdateOption(c *gin.Context) {
 				common.ApiErrorMsg(c, fmt.Sprintf("模型 %s 的计费表达式无效: %v", modelName, err))
 				return
 			}
+		}
+	case "RetryAvoidFailedChannelsStatusCode":
+		statusCode, parseErr := strconv.Atoi(option.Value.(string))
+		if parseErr != nil || statusCode < 100 || statusCode > 599 {
+			c.JSON(http.StatusOK, gin.H{
+				"success": false,
+				"message": "状态码必须是 100-599 之间的整数",
+			})
+			return
 		}
 	case billing_setting.PluginBillingExprOption:
 		var expressions map[string]string
