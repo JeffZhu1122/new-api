@@ -40,11 +40,16 @@ func getAwsErrorStatusCode(err error) int {
 	return http.StatusInternalServerError
 }
 
-func newAwsInvokeContext(parent context.Context) (context.Context, context.CancelFunc) {
-	if common.RelayTimeout <= 0 {
+func newAwsInvokeContext(parent context.Context, info *relaycommon.RelayInfo) (context.Context, context.CancelFunc) {
+	// 渠道级超时优先于全局 RELAY_TIMEOUT（完全覆盖，可长可短）
+	timeout := common.RelayTimeout
+	if info != nil && info.ChannelMeta != nil && info.ChannelExtendSetting.RelayTimeout > 0 {
+		timeout = info.ChannelExtendSetting.RelayTimeout
+	}
+	if timeout <= 0 {
 		return context.WithCancel(parent)
 	}
-	return context.WithTimeout(parent, time.Duration(common.RelayTimeout)*time.Second)
+	return context.WithTimeout(parent, time.Duration(timeout)*time.Second)
 }
 
 func newAwsInvokeError(requestContext context.Context, err error, operation string) *types.NewAPIError {
@@ -229,7 +234,7 @@ func getAwsModelID(requestModel string) string {
 func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 
 	requestContext := c.Request.Context()
-	ctx, cancel := newAwsInvokeContext(requestContext)
+	ctx, cancel := newAwsInvokeContext(requestContext, info)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
@@ -259,7 +264,7 @@ func awsHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types
 
 func awsStreamHandler(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 	requestContext := c.Request.Context()
-	ctx, cancel := newAwsInvokeContext(requestContext)
+	ctx, cancel := newAwsInvokeContext(requestContext, info)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModelWithResponseStream(ctx, a.AwsReq.(*bedrockruntime.InvokeModelWithResponseStreamInput))
@@ -317,7 +322,7 @@ streamLoop:
 func handleNovaRequest(c *gin.Context, info *relaycommon.RelayInfo, a *Adaptor) (*types.NewAPIError, *dto.Usage) {
 
 	requestContext := c.Request.Context()
-	ctx, cancel := newAwsInvokeContext(requestContext)
+	ctx, cancel := newAwsInvokeContext(requestContext, info)
 	defer cancel()
 
 	awsResp, err := a.AwsClient.InvokeModel(ctx, a.AwsReq.(*bedrockruntime.InvokeModelInput))
