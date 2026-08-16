@@ -189,23 +189,35 @@ func TestNewAwsInvokeContextInheritsParent(t *testing.T) {
 	})
 
 	tests := []struct {
-		name         string
-		relayTimeout int
-		wantDeadline bool
+		name           string
+		relayTimeout   int
+		channelTimeout int
+		wantDeadline   bool
+		// wantMinDeadline asserts the deadline is strictly beyond this many
+		// seconds from now, proving the channel value overrode a shorter global.
+		wantMinDeadline time.Duration
 	}{
 		{name: "without relay timeout", relayTimeout: 0, wantDeadline: false},
 		{name: "with relay timeout", relayTimeout: 30, wantDeadline: true},
+		{name: "channel timeout without global", channelTimeout: 30, wantDeadline: true},
+		{name: "channel timeout overrides shorter global", relayTimeout: 5, channelTimeout: 600, wantDeadline: true, wantMinDeadline: 5 * time.Second},
 	}
 
 	for _, test := range tests {
 		t.Run(test.name, func(t *testing.T) {
 			common.RelayTimeout = test.relayTimeout
+			info := &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{}}
+			info.ChannelExtendSetting.RelayTimeout = test.channelTimeout
 			parent, cancelParent := context.WithCancel(context.Background())
-			invokeContext, cancelInvoke := newAwsInvokeContext(parent)
+			invokeContext, cancelInvoke := newAwsInvokeContext(parent, info)
 			defer cancelInvoke()
 
-			_, hasDeadline := invokeContext.Deadline()
+			deadline, hasDeadline := invokeContext.Deadline()
 			assert.Equal(t, test.wantDeadline, hasDeadline)
+			if test.wantMinDeadline > 0 {
+				require.True(t, hasDeadline)
+				assert.Greater(t, time.Until(deadline), test.wantMinDeadline)
+			}
 
 			cancelParent()
 			require.ErrorIs(t, invokeContext.Err(), context.Canceled)
