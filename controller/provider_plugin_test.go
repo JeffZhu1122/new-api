@@ -74,7 +74,7 @@ func (s *revokeServer) tokens() []string {
 func setupProviderPluginControllerTest(t *testing.T, pluginKey string) {
 	t.Helper()
 	setupTaskPluginBindChannelTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.AuthFlow{}))
+	require.NoError(t, model.DB.AutoMigrate(&model.AuthFlow{}, &model.ChannelExtend{}))
 	service.InitHttpClient()
 	_, err := jsplugin.DefaultRegistry.Register(strings.ReplaceAll(loginPluginSource, "%KEY%", pluginKey), jsplugin.Options{})
 	require.NoError(t, err)
@@ -583,7 +583,7 @@ func TestProviderChannelManagementDatabaseMatrix(t *testing.T) {
 				t.Skip("set " + dialect.env + " to run this database")
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
-			require.NoError(t, db.AutoMigrate(&model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.Log{}))
+			require.NoError(t, db.AutoMigrate(&model.CasbinRule{}, &model.AuthzRole{}, &model.AuthFlow{}, &model.Log{}, &model.ChannelExtend{}))
 			require.NoError(t, authz.Init(db))
 			service.InitHttpClient()
 			pluginKey := "matrix-" + dialect.kind
