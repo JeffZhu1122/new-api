@@ -408,6 +408,9 @@ func GetChannel(c *gin.Context) {
 	}
 	if channel != nil {
 		clearChannelInfo(channel)
+		if extendSettings, err := model.GetChannelExtend(channel.Id); err == nil && !extendSettings.IsZero() {
+			channel.ExtendConfig = &extendSettings
+		}
 	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
@@ -495,6 +498,11 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		if channel.BaseURL == nil || strings.TrimSpace(*channel.BaseURL) == "" {
 			return fmt.Errorf("base URL is required for task plugin channels")
 		}
+	}
+
+	// 校验 channel extend config（渠道级超时等扩展配置）
+	if err := channel.ExtendConfig.Validate(); err != nil {
+		return fmt.Errorf("渠道扩展设置[channel extend config] 格式错误：%s", err.Error())
 	}
 
 	if channel.Type == constant.ChannelTypeNewAPI && strings.TrimSpace(channel.GetBaseURL()) == "" {
@@ -1122,6 +1130,18 @@ func UpdateChannel(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	// 仅在请求显式携带 extend_config 时写入，避免旧客户端整体 PUT 清掉配置；
+	// 显式 null 视为清除（回退到全局配置）。
+	if _, extendProvided := requestData["extend_config"]; extendProvided {
+		extendSettings := dto.ChannelExtendSettings{}
+		if channel.ExtendConfig != nil {
+			extendSettings = *channel.ExtendConfig
+		}
+		if err := model.UpsertChannelExtend(nil, channel.Id, extendSettings); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
 	model.InitChannelCache()
 	if proxyChanged {
 		service.InvalidateProxyClient(originProxy)
@@ -1467,6 +1487,10 @@ func CopyChannel(c *gin.Context) {
 	// clone channel
 	clone := *origin // shallow copy is sufficient as we will overwrite primitives
 	clone.Id = 0     // let DB auto-generate
+	// 渠道扩展配置存于 channel_extend 表，需单独取出随克隆一并写入
+	if extendSettings, err := model.GetChannelExtend(id); err == nil && !extendSettings.IsZero() {
+		clone.ExtendConfig = &extendSettings
+	}
 	clone.CreatedTime = common.GetTimestamp()
 	clone.Name = origin.Name + suffix
 	clone.TestTime = 0

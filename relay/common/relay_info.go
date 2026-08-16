@@ -69,6 +69,7 @@ type ChannelMeta struct {
 	ParamOverride        map[string]interface{}
 	HeadersOverride      map[string]interface{}
 	ChannelSetting       dto.ChannelSettings
+	ChannelExtendSetting dto.ChannelExtendSettings
 	ChannelOtherSettings dto.ChannelOtherSettings
 	UpstreamModelName    string
 	IsModelMapped        bool
@@ -218,6 +219,11 @@ func (info *RelayInfo) InitChannelMeta(c *gin.Context) {
 	channelSetting, ok := common.GetContextKeyType[dto.ChannelSettings](c, constant.ContextKeyChannelSetting)
 	if ok {
 		channelMeta.ChannelSetting = channelSetting
+	}
+
+	channelExtendSetting, ok := common.GetContextKeyType[dto.ChannelExtendSettings](c, constant.ContextKeyChannelExtendSetting)
+	if ok {
+		channelMeta.ChannelExtendSetting = channelExtendSetting
 	}
 
 	channelOtherSettings, ok := common.GetContextKeyType[dto.ChannelOtherSettings](c, constant.ContextKeyChannelOtherSetting)

@@ -28,7 +28,7 @@ import {
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
-import type { Channel } from '../types'
+import type { Channel, ChannelExtendSettings } from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -77,6 +77,7 @@ function isOptionalProxyURL(value: string | undefined): boolean {
 export const HTTP_PROTOCOL_AUTO = 'auto'
 export const HTTP_PROTOCOL_HTTP1 = 'http1'
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
+export const MAX_CHANNEL_TIMEOUT_SECONDS = 86400
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -263,6 +264,9 @@ export const channelFormSchema = z
       .refine(isOptionalProxyURL, ERROR_MESSAGES.INVALID_PROXY),
     http_protocol: z.enum(['auto', 'http1']).optional(),
     http2_connection_shards: z.number().int().optional(),
+    // Per-channel timeouts (stored in channel_extend table, 0 = global)
+    relay_timeout: z.number().int().optional(),
+    streaming_timeout: z.number().int().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
@@ -403,6 +407,26 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_HTTP1_WITH_SHARDS
       )
     }
+
+    const relayTimeout = data.relay_timeout ?? 0
+    if (relayTimeout < 0 || relayTimeout > MAX_CHANNEL_TIMEOUT_SECONDS) {
+      addRequiredIssue(
+        ctx,
+        'relay_timeout',
+        ERROR_MESSAGES.INVALID_CHANNEL_TIMEOUT
+      )
+    }
+    const streamingTimeout = data.streaming_timeout ?? 0
+    if (
+      streamingTimeout < 0 ||
+      streamingTimeout > MAX_CHANNEL_TIMEOUT_SECONDS
+    ) {
+      addRequiredIssue(
+        ctx,
+        'streaming_timeout',
+        ERROR_MESSAGES.INVALID_CHANNEL_TIMEOUT
+      )
+    }
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -444,6 +468,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   proxy: '',
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
+  relay_timeout: 0,
+  streaming_timeout: 0,
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
@@ -593,6 +619,9 @@ export function transformChannelToFormDefaults(
     key_mode: 'append', // Default to append mode for editing multi-key channels
     // Channel extra settings
     ...extraSettings,
+    // Per-channel timeouts (from channel_extend table)
+    relay_timeout: channel.extend_config?.relay_timeout || 0,
+    streaming_timeout: channel.extend_config?.streaming_timeout || 0,
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
@@ -790,6 +819,17 @@ function normalizeBaseUrl(value: string | undefined): string {
 }
 
 /**
+ * Build the extend_config payload persisted in the channel_extend table.
+ * Always included so an all-zero payload clears existing overrides.
+ */
+function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
+  return {
+    relay_timeout: formData.relay_timeout || 0,
+    streaming_timeout: formData.streaming_timeout || 0,
+  }
+}
+
+/**
  * Transform form data to API payload for creating channel
  */
 export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
@@ -822,6 +862,7 @@ export function transformFormDataToCreatePayload(formData: ChannelFormValues): {
     header_override: formData.header_override || null,
     settings: buildSettingsJSON(formData),
     other: formData.other || '',
+    extend_config: buildExtendConfig(formData),
   }
 
   // Clean up empty strings to null for optional fields
@@ -869,6 +910,7 @@ export function transformFormDataToUpdatePayload(
     header_override: formData.header_override || null,
     settings: buildSettingsJSON(formData),
     other: formData.other || '',
+    extend_config: buildExtendConfig(formData),
   }
 
   // Only include key if it was changed (not empty)

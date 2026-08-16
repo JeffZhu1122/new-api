@@ -71,6 +71,12 @@ export const channelSchema = z.object({
     multi_key_mode: 'random',
   }),
   settings: z.string().default('{}'), // other_settings JSON
+  extend_config: z
+    .object({
+      relay_timeout: z.number().optional(),
+      streaming_timeout: z.number().optional(),
+    })
+    .nullish(), // stored in channel_extend table, not a channels column
 })
 
 export type Channel = z.infer<typeof channelSchema>
@@ -88,6 +94,12 @@ export interface ChannelSettings {
   system_prompt_override?: boolean
   http_protocol?: 'auto' | 'http1' | string
   http2_connection_shards?: number
+}
+
+// Per-channel overrides stored in the channel_extend table; 0 = inherit global
+export interface ChannelExtendSettings {
+  relay_timeout?: number
+  streaming_timeout?: number
 }
 
 export interface ChannelOtherSettings {

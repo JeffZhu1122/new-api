@@ -55,6 +55,9 @@ type Channel struct {
 
 	OtherSettings string `json:"settings" gorm:"column:settings"` // 其他设置，存储azure版本等不需要检索的信息，详见dto.ChannelOtherSettings
 
+	// ExtendConfig 仅作为 API 传输载体，持久化在 channel_extend 表，见 ChannelExtend
+	ExtendConfig *dto.ChannelExtendSettings `json:"extend_config,omitempty" gorm:"-"`
+
 	// cache info
 	Keys []string `json:"-" gorm:"-"`
 }
@@ -466,6 +469,10 @@ func BatchInsertChannels(channels []Channel) error {
 				tx.Rollback()
 				return err
 			}
+			if err := channel_.SaveExtendConfig(tx); err != nil {
+				tx.Rollback()
+				return err
+			}
 		}
 	}
 	return tx.Commit().Error
@@ -489,6 +496,10 @@ func BatchDeleteChannels(ids []int) (int64, error) {
 		}
 		deletedCount += result.RowsAffected
 		if err := tx.Where("channel_id in (?)", chunk).Delete(&Ability{}).Error; err != nil {
+			tx.Rollback()
+			return 0, err
+		}
+		if err := DeleteChannelExtendByIds(tx, chunk); err != nil {
 			tx.Rollback()
 			return 0, err
 		}
@@ -542,6 +553,9 @@ func (channel *Channel) Insert() error {
 	var err error
 	err = DB.Create(channel).Error
 	if err != nil {
+		return err
+	}
+	if err = channel.SaveExtendConfig(nil); err != nil {
 		return err
 	}
 	err = channel.AddAbilities(nil)
@@ -621,6 +635,9 @@ func (channel *Channel) Delete() error {
 	var err error
 	err = DB.Delete(channel).Error
 	if err != nil {
+		return err
+	}
+	if err = DeleteChannelExtendByIds(nil, []int{channel.Id}); err != nil {
 		return err
 	}
 	err = channel.DeleteAbilities()
@@ -894,13 +911,31 @@ func updateChannelUsedQuota(id int, quota int) {
 }
 
 func DeleteChannelByStatus(status int64) (int64, error) {
-	result := DB.Where("status = ?", status).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	return deleteChannelsWhere("status = ?", status)
 }
 
 func DeleteDisabledChannel() (int64, error) {
-	result := DB.Where("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled).Delete(&Channel{})
-	return result.RowsAffected, result.Error
+	return deleteChannelsWhere("status = ? or status = ?", common.ChannelStatusAutoDisabled, common.ChannelStatusManuallyDisabled)
+}
+
+// deleteChannelsWhere resolves matching channel ids before deleting so rows in
+// channel_extend can be removed alongside their channels.
+func deleteChannelsWhere(query string, args ...interface{}) (int64, error) {
+	var ids []int
+	if err := DB.Model(&Channel{}).Where(query, args...).Pluck("id", &ids).Error; err != nil {
+		return 0, err
+	}
+	if len(ids) == 0 {
+		return 0, nil
+	}
+	result := DB.Where("id in (?)", ids).Delete(&Channel{})
+	if result.Error != nil {
+		return result.RowsAffected, result.Error
+	}
+	if err := DeleteChannelExtendByIds(nil, ids); err != nil {
+		return result.RowsAffected, err
+	}
+	return result.RowsAffected, nil
 }
 
 func GetPaginatedTags(offset int, limit int) ([]*string, error) {

@@ -487,6 +487,19 @@ func keepUpstreamRedirectResponse(_ *http.Request, _ []*http.Request) error {
 	return http.ErrUseLastResponse
 }
 
+// cancelOnCloseBody keeps the per-channel timeout context alive until the
+// response body is fully consumed, releasing it on Close.
+type cancelOnCloseBody struct {
+	io.ReadCloser
+	cancel context.CancelFunc
+}
+
+func (b *cancelOnCloseBody) Close() error {
+	err := b.ReadCloser.Close()
+	b.cancel()
+	return err
+}
+
 func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http.Response, error) {
 	client, err := service.GetHttpClientWithProxySettings(info.ChannelSetting.Proxy, info.ChannelSetting)
 	if err != nil {
@@ -498,6 +511,21 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 	// transparent stream retries.
 	relayClient := *client
 	relayClient.CheckRedirect = keepUpstreamRedirectResponse
+
+	// A per-channel timeout replaces the global RELAY_TIMEOUT entirely (it may
+	// be longer or shorter). The global value lives on the cached client's
+	// Timeout, which is shared across channels, so neutralize it on this
+	// shallow copy and enforce the channel value with a request context
+	// deadline. Like client.Timeout, the deadline covers the whole exchange
+	// including body read, hence cancel is bound to resp.Body.Close rather
+	// than deferred here.
+	var cancelTimeout context.CancelFunc
+	if t := info.ChannelExtendSetting.RelayTimeout; t > 0 {
+		relayClient.Timeout = 0
+		var timeoutCtx context.Context
+		timeoutCtx, cancelTimeout = context.WithTimeout(req.Context(), time.Duration(t)*time.Second)
+		req = req.WithContext(timeoutCtx)
+	}
 	if common2.DebugEnabled && req != nil && req.URL != nil {
 		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)
 		logger.LogDebug(c, fmt.Sprintf(
@@ -531,11 +559,20 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 
 	resp, err := relayClient.Do(req)
 	if err != nil {
+		if cancelTimeout != nil {
+			cancelTimeout()
+		}
 		logger.LogError(c, "do request failed: "+err.Error())
 		return nil, types.NewError(err, types.ErrorCodeDoRequestFailed, types.ErrOptionWithHideErrMsg("upstream error: do request failed"))
 	}
 	if resp == nil {
+		if cancelTimeout != nil {
+			cancelTimeout()
+		}
 		return nil, errors.New("resp is nil")
+	}
+	if cancelTimeout != nil {
+		resp.Body = &cancelOnCloseBody{ReadCloser: resp.Body, cancel: cancelTimeout}
 	}
 	if common2.DebugEnabled {
 		policy := service.NormalizeHTTPTransportPolicy(info.ChannelSetting)
