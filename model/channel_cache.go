@@ -22,6 +22,7 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 // channel2advancedCustomConfig caches parsed Advanced Custom (type 58) configs so
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
+var channelExtendIDM map[int]kitdto.ChannelExtendSettings
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
@@ -41,6 +42,12 @@ func InitChannelCache() {
 				newChannel2advancedCustomConfig[channel.Id] = config
 			}
 		}
+	}
+	var extends []*ChannelExtend
+	DB.Find(&extends)
+	newChannelExtendIDM := make(map[int]kitdto.ChannelExtendSettings, len(extends))
+	for _, extend := range extends {
+		newChannelExtendIDM[extend.ChannelId] = extend.ToSettings()
 	}
 	var abilities []*Ability
 	DB.Find(&abilities)
@@ -96,6 +103,7 @@ func InitChannelCache() {
 	}
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
+	channelExtendIDM = newChannelExtendIDM
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -112,6 +120,22 @@ func SyncChannelCache(frequency int) {
 		common.SysLog("syncing channels from database")
 		InitChannelCache()
 	}
+}
+
+// GetChannelExtendSettings returns per-channel overrides, falling back to a
+// database lookup when the memory cache is disabled.
+func GetChannelExtendSettings(channelId int) kitdto.ChannelExtendSettings {
+	if !common.MemoryCacheEnabled {
+		settings, err := GetChannelExtend(channelId)
+		if err != nil {
+			common.SysLog(fmt.Sprintf("failed to get channel extend: channel_id=%d, error=%v", channelId, err))
+			return kitdto.ChannelExtendSettings{}
+		}
+		return settings
+	}
+	channelSyncLock.RLock()
+	defer channelSyncLock.RUnlock()
+	return channelExtendIDM[channelId]
 }
 
 func GetRandomSatisfiedChannel(

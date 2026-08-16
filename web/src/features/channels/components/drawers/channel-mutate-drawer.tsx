@@ -205,7 +205,7 @@ import {
   assessBaseUrlTrust,
   nextTaskPluginBaseUrl,
 } from '../../lib/task-plugin-base-url'
-import type { Channel } from '../../types'
+import type { Channel, ClaudeAuthMode } from '../../types'
 import { ChannelPluginExtensions } from '../channel-plugin-extensions'
 import { ChannelQuickOptions } from '../channel-quick-options'
 import { ChannelTypeLogo } from '../channel-type-badge'
@@ -278,6 +278,13 @@ const MODEL_MAPPING_PREVIEW_FALLBACK: Array<{
 
 const ADVANCED_CUSTOM_ROUTE_TYPE_PREVIEW_LIMIT = 3
 const UPSTREAM_DETECTED_MODEL_PREVIEW_LIMIT = 8
+const CLAUDE_AUTH_MODE_DESCRIPTIONS: Record<ClaudeAuthMode, string> = {
+  api_key:
+    'For sk-ant-api01- / sk-ant-api03- keys: sent as the x-api-key header',
+  oauth:
+    'For sk-ant-oat01- / sk-ant-oat03- tokens: sent as Authorization: Bearer with the oauth anthropic-beta flag',
+  auto: 'Keys starting with sk-ant-oat use Bearer, all others use x-api-key; mixed multi-key channels are supported',
+}
 const SENSITIVE_FORM_FIELDS = [
   'type',
   'base_url',
@@ -293,12 +300,19 @@ const SENSITIVE_FORM_FIELDS = [
   'is_enterprise_account',
   'vertex_key_type',
   'aws_key_type',
+  'claude_auth_mode',
   'azure_responses_version',
   'force_format',
   'thinking_to_content',
   'proxy',
   'http_protocol',
   'http2_connection_shards',
+  'relay_timeout',
+  'streaming_timeout',
+  'min_input_tokens',
+  'max_input_tokens',
+  'rpm_limit',
+  'tpm_limit',
   'pass_through_body_enabled',
   'responses_websocket_enabled',
   'system_prompt',
@@ -310,6 +324,7 @@ const SENSITIVE_FORM_FIELDS = [
   'allow_inference_geo',
   'allow_speed',
   'claude_beta_query',
+  'count_tokens_enabled',
   'ollama_openai_chat',
   'disable_task_polling_sleep',
   'upstream_model_update_check_enabled',
@@ -2159,6 +2174,155 @@ export function ChannelMutateDrawer({
     />
   )
 
+  const channelLimitFields = (
+    <>
+      <FormField
+        control={form.control}
+        name='relay_timeout'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Relay Timeout (seconds)')}</FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Maximum duration of a single upstream request for this channel, including the full response body. 0 means use the global RELAY_TIMEOUT. Setting it too low may trigger auto-ban on slow models.'
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='streaming_timeout'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Streaming Idle Timeout (seconds)')}</FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Maximum idle time between streaming events for this channel. 0 means use the global STREAMING_TIMEOUT.'
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='min_input_tokens'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Minimum Input Tokens')}</FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Route requests to this channel only when the estimated input tokens exceed this value. Estimation is approximate and applies to text requests only. 0 means no minimum. Keep at least one channel per model without a minimum to avoid rejecting small requests.'
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='max_input_tokens'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Maximum Input Tokens')}</FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Route requests to this channel only when the estimated input tokens do not exceed this value. Estimation is approximate and applies to text requests only. 0 means no maximum. Keep at least one channel per model without a maximum to avoid rejecting large requests.'
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='rpm_limit'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Channel RPM Limit')}</FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Maximum requests per minute routed to this channel, across all users and keys. A saturated channel is skipped and traffic fails over to other channels. 0 means no limit.'
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='tpm_limit'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Channel TPM Limit')}</FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Maximum tokens per minute accounted to this channel. Usage is settled after billing, so set it with some margin below the upstream limit. 0 means no limit.'
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+    </>
+  )
+
   const routingFields = (
     <div
       role='group'
@@ -3081,6 +3245,38 @@ export function ChannelMutateDrawer({
               )}
             </>
           )}
+
+          {(currentType === 14 || currentType === 1) && (
+            <FormField
+              control={form.control}
+              name='count_tokens_enabled'
+              render={({ field }) => (
+                <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                  <div className='space-y-0.5'>
+                    <FormLabel className='text-sm'>
+                      {t('Allow count_tokens endpoint')}
+                    </FormLabel>
+                    <FormDescription>
+                      {currentType === 14
+                        ? t(
+                            'Serve /v1/messages/count_tokens requests on this channel (free, not billed)'
+                          )
+                        : t(
+                            'Serve /v1/responses/input_tokens requests on this channel (free, not billed)'
+                          )}
+                    </FormDescription>
+                  </div>
+                  <FormControl>
+                    <Switch
+                      disabled={sensitiveLocked}
+                      checked={field.value}
+                      onCheckedChange={field.onChange}
+                    />
+                  </FormControl>
+                </FormItem>
+              )}
+            />
+          )}
         </div>
       </fieldset>
     </div>
@@ -3681,6 +3877,61 @@ export function ChannelMutateDrawer({
                         onCheckedChange={field.onChange}
                       />
                     </FormControl>
+                  </FormItem>
+                )}
+              />
+            )}
+
+            {/* Anthropic (type 14) */}
+            {currentType === 14 && (
+              <FormField
+                control={form.control}
+                name='claude_auth_mode'
+                render={({ field }) => (
+                  <FormItem>
+                    <FormLabel>{t('Claude Auth Mode')}</FormLabel>
+                    <Select
+                      disabled={sensitiveLocked}
+                      items={[
+                        {
+                          value: 'api_key',
+                          label: t('Standard API Key (x-api-key)'),
+                        },
+                        {
+                          value: 'oauth',
+                          label: t('Organization Access Token (Bearer)'),
+                        },
+                        {
+                          value: 'auto',
+                          label: t('Auto-detect by key prefix'),
+                        },
+                      ]}
+                      onValueChange={field.onChange}
+                      value={field.value ?? 'api_key'}
+                    >
+                      <FormControl>
+                        <SelectTrigger>
+                          <SelectValue placeholder={t('Select auth mode')} />
+                        </SelectTrigger>
+                      </FormControl>
+                      <SelectContent alignItemWithTrigger={false}>
+                        <SelectGroup>
+                          <SelectItem value='api_key'>
+                            {t('Standard API Key (x-api-key)')}
+                          </SelectItem>
+                          <SelectItem value='oauth'>
+                            {t('Organization Access Token (Bearer)')}
+                          </SelectItem>
+                          <SelectItem value='auto'>
+                            {t('Auto-detect by key prefix')}
+                          </SelectItem>
+                        </SelectGroup>
+                      </SelectContent>
+                    </Select>
+                    <FormDescription>
+                      {t(CLAUDE_AUTH_MODE_DESCRIPTIONS[field.value ?? 'api_key'])}
+                    </FormDescription>
+                    <FormMessage />
                   </FormItem>
                 )}
               />
@@ -4690,6 +4941,7 @@ export function ChannelMutateDrawer({
                 {proxyFields}
                 {httpProtocolFields}
                 {httpShardsFields}
+                {channelLimitFields}
               </fieldset>
             </div>
             {upstreamModelDetectionFields}
