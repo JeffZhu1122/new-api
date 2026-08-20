@@ -50,6 +50,18 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		// 渠道输入范围过滤：仅当有渠道配置了 min/max_input_tokens 时才估算，
+		// 估算值随 constraints 复用于本请求的所有重试
+		inputTokensEstimate := -1
+		if model.HasAnyInputTokensLimit() {
+			if estimate, ok := service.EstimateInputTokens(c, modelRequest.Model); ok {
+				inputTokensEstimate = estimate
+				constraints.AddFilter(taskdto.ChannelFilter{
+					Kind:        taskdto.FilterInputTokens,
+					InputTokens: estimate,
+				})
+			}
+		}
 		_, pinned, _ := constraints.ResolvedPin()
 		if !pinned {
 			// Select a channel for the user
@@ -111,6 +123,12 @@ func Distribute() func(c *gin.Context) {
 				if selectErr.FilterKind == taskdto.FilterTaskPluginIdentity {
 					logTaskPluginChannelDecision(c, selectErr.Channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
 				}
+				// 对外保持笼统的"无可用渠道"，input_tokens 归因只进服务端日志
+				if selectErr.FilterKind == taskdto.FilterInputTokens && selectErr.Channel != nil {
+					logger.LogWarn(c, fmt.Sprintf("channel %d rejected by input_tokens filter: estimated_input_tokens=%d", selectErr.Channel.Id, inputTokensEstimate))
+				} else if selectErr.NoAvailableChannel && inputTokensEstimate >= 0 {
+					logger.LogWarn(c, fmt.Sprintf("no available channel with input_tokens filter active: model=%s, group=%s, estimated_input_tokens=%d", modelRequest.Model, usingGroup, inputTokensEstimate))
+				}
 				message := selectErr.Message
 				if selectErr.NoAvailableChannel {
 					message = noAvailableChannelMessage(c, usingGroup, modelRequest.Model)
@@ -124,7 +142,9 @@ func Distribute() func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
 		c.Next()
-		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
+		// count_tokens / input_tokens 免费且不产生 prompt 缓存，不参与渠道亲和，避免影响正式流量的渠道粘性
+		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest &&
+			!constant.IsCountTokensPath(c.Request.URL.Path) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}
