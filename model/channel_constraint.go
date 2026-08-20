@@ -10,6 +10,7 @@ import (
 var filterEvalOrder = []dto.ChannelFilterKind{
 	dto.FilterRequestPath,
 	dto.FilterTaskPluginIdentity,
+	dto.FilterInputTokens,
 	dto.FilterResponsesWebSocket,
 }
 
@@ -87,11 +88,33 @@ func candidatePassesKindFilters(ch *Channel, exists bool, modelName string, kind
 	return true
 }
 
+// ChannelSupportsCountTokensPath reports whether ch may serve the free token
+// counting endpoint at path: /v1/messages/count_tokens needs an Anthropic
+// channel, /v1/responses/input_tokens needs an OpenAI channel, and both need
+// count_tokens_enabled in the channel settings. Any other path returns false.
+func ChannelSupportsCountTokensPath(ch *Channel, path string) bool {
+	if ch == nil || !ch.GetOtherSettings().CountTokensEnabled {
+		return false
+	}
+	switch {
+	case constant.IsClaudeCountTokensPath(path):
+		return ch.Type == constant.ChannelTypeAnthropic
+	case constant.IsOpenAIInputTokensPath(path):
+		return ch.Type == constant.ChannelTypeOpenAI
+	default:
+		return false
+	}
+}
+
 func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilter) bool {
 	switch filter.Kind {
 	case dto.FilterRequestPath:
 		if filter.RequestPath == "" {
 			return true
+		}
+		// 免费的 token 计数端点仅允许「对应厂商类型 + 开启 count_tokens 开关」的渠道
+		if constant.IsCountTokensPath(filter.RequestPath) {
+			return ChannelSupportsCountTokensPath(ch, filter.RequestPath)
 		}
 		if !constant.IsAdvancedCustomChannel(ch.Type) {
 			return true
@@ -124,6 +147,22 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 		default:
 			return false
 		}
+	case dto.FilterInputTokens:
+		// 只读 ch.ExtendConfig，禁止在此调用 GetChannelExtendSettings：
+		// 内存缓存路径在持有 channelSyncLock.RLock 时执行本函数，再次 RLock
+		// 会与周期性 InitChannelCache 的写锁排队形成死锁。ExtendConfig 由
+		// InitChannelCache / filterAbilitiesByConstraints 预先填充。
+		// min 为排他下界（须严格大于）、max 为包含上界（须小于等于）。
+		if ch.ExtendConfig == nil {
+			return true
+		}
+		if min := ch.ExtendConfig.MinInputTokens; min > 0 && filter.InputTokens <= min {
+			return false
+		}
+		if max := ch.ExtendConfig.MaxInputTokens; max > 0 && filter.InputTokens > max {
+			return false
+		}
+		return true
 	default:
 		return true
 	}
