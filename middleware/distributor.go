@@ -69,6 +69,11 @@ func Distribute() func(c *gin.Context) {
 				}
 				return
 			}
+			if constant.IsClaudeCountTokensPath(c.Request.URL.Path) &&
+				!(channel.Type == constant.ChannelTypeAnthropic && channel.GetOtherSettings().CountTokensEnabled) {
+				abortWithOpenAiMessage(c, http.StatusForbidden, "count_tokens is only available on Anthropic channels with count_tokens enabled")
+				return
+			}
 			if ok, kind := model.ChannelSatisfiesFilters(channel, modelRequest.Model, constraints.Filters); !ok {
 				if kind == taskdto.FilterTaskPluginIdentity {
 					logTaskPluginChannelDecision(c, channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
@@ -198,7 +203,9 @@ func Distribute() func(c *gin.Context) {
 		common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now())
 		SetupContextForSelectedChannel(c, channel, modelRequest.Model)
 		c.Next()
-		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest {
+		// count_tokens 免费且不产生 prompt 缓存，不参与渠道亲和，避免影响正式流量的渠道粘性
+		if channel != nil && c.Writer != nil && c.Writer.Status() < http.StatusBadRequest &&
+			!constant.IsClaudeCountTokensPath(c.Request.URL.Path) {
 			service.RecordChannelAffinity(c, channel.Id)
 		}
 	}

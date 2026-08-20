@@ -9,6 +9,7 @@ import (
 
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	relayconstant "github.com/QuantumNous/new-api/relay/constant"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/relayconvert"
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -44,6 +45,9 @@ func (a *Adaptor) Init(info *relaycommon.RelayInfo) {
 
 func (a *Adaptor) GetRequestURL(info *relaycommon.RelayInfo) (string, error) {
 	requestURL := fmt.Sprintf("%s/v1/messages", info.ChannelBaseUrl)
+	if info.RelayMode == relayconstant.RelayModeClaudeCountTokens {
+		requestURL = fmt.Sprintf("%s/v1/messages/count_tokens", info.ChannelBaseUrl)
+	}
 	if !shouldAppendClaudeBetaQuery(info) {
 		return requestURL, nil
 	}

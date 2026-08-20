@@ -124,6 +124,10 @@ func SyncChannelCache(frequency int) {
 // database lookup when the memory cache is disabled.
 func GetChannelExtendSettings(channelId int) kitdto.ChannelExtendSettings {
 	if !common.MemoryCacheEnabled {
+		// DB 在部分单测环境中未初始化；扩展设置是可选覆盖，缺省即继承全局配置
+		if DB == nil {
+			return kitdto.ChannelExtendSettings{}
+		}
 		settings, err := GetChannelExtend(channelId)
 		if err != nil {
 			common.SysLog(fmt.Sprintf("failed to get channel extend: channel_id=%d, error=%v", channelId, err))

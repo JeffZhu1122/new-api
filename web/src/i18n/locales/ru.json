@@ -5549,6 +5549,8 @@
     "Zero retention": "Без хранения данных",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Allow count_tokens endpoint": "Разрешить эндпоинт count_tokens",
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Обрабатывать запросы /v1/messages/count_tokens на этом канале (бесплатно, не тарифицируется)"
   }
 }

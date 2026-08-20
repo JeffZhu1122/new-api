@@ -304,6 +304,7 @@ const SENSITIVE_FORM_FIELDS = [
   'allow_inference_geo',
   'allow_speed',
   'claude_beta_query',
+  'count_tokens_enabled',
   'disable_task_polling_sleep',
   'upstream_model_update_check_enabled',
   'upstream_model_update_auto_sync_enabled',
@@ -355,6 +356,7 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     (values.relay_timeout != null && values.relay_timeout > 0) ||
     (values.streaming_timeout != null && values.streaming_timeout > 0) ||
     values.claude_beta_query ||
+    values.count_tokens_enabled ||
     values.upstream_model_update_check_enabled ||
     values.upstream_model_update_auto_sync_enabled ||
     values.upstream_model_update_ignored_models?.trim()
@@ -776,6 +778,7 @@ export function ChannelMutateDrawer({
   const currentAllowInferenceGeo = form.watch('allow_inference_geo')
   const currentAllowSpeed = form.watch('allow_speed')
   const currentClaudeBetaQuery = form.watch('claude_beta_query')
+  const currentCountTokensEnabled = form.watch('count_tokens_enabled')
   const currentUpstreamModelUpdateAutoSyncEnabled = form.watch(
     'upstream_model_update_auto_sync_enabled'
   )
@@ -1064,7 +1067,8 @@ export function ChannelMutateDrawer({
         currentAllowServiceTier ||
         currentAllowInferenceGeo ||
         currentAllowSpeed ||
-        (currentType === 14 && currentClaudeBetaQuery)
+        (currentType === 14 &&
+          (currentClaudeBetaQuery || currentCountTokensEnabled))
       )
   }
   const upstreamModelDetectionConfigured = Boolean(
@@ -4759,6 +4763,35 @@ export function ChannelMutateDrawer({
                                               <FormDescription>
                                                 {t(
                                                   'Pass through the anthropic-beta header for beta features'
+                                                )}
+                                              </FormDescription>
+                                            </div>
+                                            <FormControl>
+                                              <Switch
+                                                checked={field.value}
+                                                onCheckedChange={field.onChange}
+                                              />
+                                            </FormControl>
+                                          </FormItem>
+                                        )}
+                                      />
+                                    )}
+
+                                    {currentType === 14 && (
+                                      <FormField
+                                        control={form.control}
+                                        name='count_tokens_enabled'
+                                        render={({ field }) => (
+                                          <FormItem className='flex items-center justify-between gap-3 px-4 py-3'>
+                                            <div className='space-y-0.5'>
+                                              <FormLabel className='text-sm'>
+                                                {t(
+                                                  'Allow count_tokens endpoint'
+                                                )}
+                                              </FormLabel>
+                                              <FormDescription>
+                                                {t(
+                                                  'Serve /v1/messages/count_tokens requests on this channel (free, not billed)'
                                                 )}
                                               </FormDescription>
                                             </div>

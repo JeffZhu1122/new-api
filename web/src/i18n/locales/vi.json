@@ -5549,6 +5549,8 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Allow count_tokens endpoint": "Cho phép endpoint count_tokens",
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Xử lý yêu cầu /v1/messages/count_tokens trên kênh này (miễn phí, không tính phí)"
   }
 }

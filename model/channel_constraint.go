@@ -92,6 +92,10 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 		if filter.RequestPath == "" {
 			return true
 		}
+		// Anthropic count_tokens 仅允许启用了 count_tokens 开关的 Anthropic 渠道
+		if constant.IsClaudeCountTokensPath(filter.RequestPath) {
+			return ch.Type == constant.ChannelTypeAnthropic && ch.GetOtherSettings().CountTokensEnabled
+		}
 		if ch.Type != constant.ChannelTypeAdvancedCustom {
 			return true
 		}

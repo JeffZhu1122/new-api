@@ -5549,6 +5549,8 @@
     "Zero retention": "零数据保留",
     "Zhipu": "智谱",
     "Zhipu V4": "智谱 V4",
-    "Zoom": "缩放"
+    "Zoom": "缩放",
+    "Allow count_tokens endpoint": "允许 count_tokens 端点",
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "此渠道可处理 /v1/messages/count_tokens 请求（免费，不计费）"
   }
 }

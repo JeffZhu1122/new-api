@@ -5549,6 +5549,8 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Allow count_tokens endpoint": "count_tokens エンドポイントを許可",
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "このチャネルで /v1/messages/count_tokens リクエストを処理（無料・課金なし）"
   }
 }

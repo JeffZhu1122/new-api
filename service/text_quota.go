@@ -541,3 +541,21 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		perfmetrics.RecordRelaySample(relayInfo, true, int64(summary.CompletionTokens))
 	})
 }
+
+// PostClaudeCountTokensLog 为 /v1/messages/count_tokens 写入一条零额消费日志。
+// 该端点免费，不触碰任何配额流转，仅保留调用审计（渠道、模型、上游返回的 input_tokens）。
+func PostClaudeCountTokensLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, inputTokens int) {
+	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
+		ChannelId:      relayInfo.ChannelId,
+		PromptTokens:   inputTokens,
+		ModelName:      relayInfo.OriginModelName,
+		TokenName:      ctx.GetString("token_name"),
+		Quota:          0,
+		Content:        "count_tokens 调用，不计费",
+		TokenId:        relayInfo.TokenId,
+		UseTimeSeconds: int(time.Now().Unix() - relayInfo.StartTime.Unix()),
+		IsStream:       false,
+		Group:          relayInfo.UsingGroup,
+		Other:          map[string]interface{}{"endpoint": "count_tokens"},
+	})
+}
