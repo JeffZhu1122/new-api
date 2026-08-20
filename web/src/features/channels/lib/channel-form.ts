@@ -31,7 +31,7 @@ import {
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
-import type { Channel, ChannelExtendSettings } from '../types'
+import type { Channel, ChannelExtendSettings, ClaudeAuthMode } from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -83,6 +83,8 @@ export const HTTP_PROTOCOL_AUTO = 'auto'
 export const HTTP_PROTOCOL_HTTP1 = 'http1'
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 86400
+export const MAX_CHANNEL_INPUT_TOKENS_BOUND = 10000000
+export const MAX_CHANNEL_RATE_LIMIT_VALUE = 2147483647
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -273,6 +275,12 @@ export const channelFormSchema = z
     // Per-channel timeouts (stored in channel_extend table, 0 = global)
     relay_timeout: z.number().int().optional(),
     streaming_timeout: z.number().int().optional(),
+    // Estimated input token routing bounds (channel_extend, 0 = off)
+    min_input_tokens: z.number().int().optional(),
+    max_input_tokens: z.number().int().optional(),
+    // Channel-wide rate limits (channel_extend, 0 = no limit)
+    rpm_limit: z.number().int().optional(),
+    tpm_limit: z.number().int().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -281,6 +289,7 @@ export const channelFormSchema = z
     is_enterprise_account: z.boolean().optional(), // OpenRouter specific
     vertex_key_type: z.enum(['json', 'api_key']).optional(), // Vertex AI specific
     aws_key_type: z.enum(['ak_sk', 'api_key']).optional(), // AWS specific
+    claude_auth_mode: z.enum(['api_key', 'oauth', 'auto']).optional(), // Anthropic specific (channel_extend)
     azure_responses_version: z.string().optional(), // Azure specific
     // Field passthrough controls (stored in settings JSON)
     allow_service_tier: z.boolean().optional(), // OpenAI/Anthropic
@@ -290,6 +299,7 @@ export const channelFormSchema = z
     allow_inference_geo: z.boolean().optional(), // OpenAI/Anthropic: inference geography
     allow_speed: z.boolean().optional(), // Anthropic: speed mode control
     claude_beta_query: z.boolean().optional(), // Anthropic: beta query passthrough
+    count_tokens_enabled: z.boolean().optional(), // Anthropic: serve /v1/messages/count_tokens; OpenAI: serve /v1/responses/input_tokens
     ollama_openai_chat: z.boolean().optional(), // Ollama: OpenAI-compatible /v1/chat/completions instead of native /api/chat
     disable_task_polling_sleep: z.boolean().optional(),
     // Upstream model update settings (stored in settings JSON)
@@ -442,6 +452,50 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_CHANNEL_TIMEOUT
       )
     }
+    const minInputTokens = data.min_input_tokens ?? 0
+    if (minInputTokens < 0 || minInputTokens > MAX_CHANNEL_INPUT_TOKENS_BOUND) {
+      addRequiredIssue(
+        ctx,
+        'min_input_tokens',
+        ERROR_MESSAGES.INVALID_CHANNEL_MIN_INPUT_TOKENS
+      )
+    }
+    const maxInputTokens = data.max_input_tokens ?? 0
+    if (maxInputTokens < 0 || maxInputTokens > MAX_CHANNEL_INPUT_TOKENS_BOUND) {
+      addRequiredIssue(
+        ctx,
+        'max_input_tokens',
+        ERROR_MESSAGES.INVALID_CHANNEL_MAX_INPUT_TOKENS
+      )
+    }
+    // min 为排他下界、max 为包含上界，max <= min 时可接受区间为空
+    if (
+      minInputTokens > 0 &&
+      maxInputTokens > 0 &&
+      maxInputTokens <= minInputTokens
+    ) {
+      addRequiredIssue(
+        ctx,
+        'max_input_tokens',
+        ERROR_MESSAGES.INVALID_CHANNEL_INPUT_TOKENS_RANGE
+      )
+    }
+    const rpmLimit = data.rpm_limit ?? 0
+    if (rpmLimit < 0 || rpmLimit > MAX_CHANNEL_RATE_LIMIT_VALUE) {
+      addRequiredIssue(
+        ctx,
+        'rpm_limit',
+        ERROR_MESSAGES.INVALID_CHANNEL_RPM_LIMIT
+      )
+    }
+    const tpmLimit = data.tpm_limit ?? 0
+    if (tpmLimit < 0 || tpmLimit > MAX_CHANNEL_RATE_LIMIT_VALUE) {
+      addRequiredIssue(
+        ctx,
+        'tpm_limit',
+        ERROR_MESSAGES.INVALID_CHANNEL_TPM_LIMIT
+      )
+    }
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -486,6 +540,10 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   http2_connection_shards: 1,
   relay_timeout: 0,
   streaming_timeout: 0,
+  min_input_tokens: 0,
+  max_input_tokens: 0,
+  rpm_limit: 0,
+  tpm_limit: 0,
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -494,6 +552,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   is_enterprise_account: false,
   vertex_key_type: 'json',
   aws_key_type: 'ak_sk',
+  claude_auth_mode: 'api_key',
   azure_responses_version: '',
   // Field passthrough controls
   allow_service_tier: false,
@@ -503,6 +562,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   allow_inference_geo: false,
   allow_speed: false,
   claude_beta_query: false,
+  count_tokens_enabled: false,
   ollama_openai_chat: false,
   disable_task_polling_sleep: false,
   upstream_model_update_check_enabled: false,
@@ -575,6 +635,7 @@ export function transformChannelToFormDefaults(
   let allowInferenceGeo = false
   let allowSpeed = false
   let claudeBetaQuery = false
+  let countTokensEnabled = false
   let ollamaOpenAIChat = false
   let disableTaskPollingSleep = false
   let upstreamModelUpdateCheckEnabled = false
@@ -596,6 +657,7 @@ export function transformChannelToFormDefaults(
       allowInferenceGeo = parsed.allow_inference_geo === true
       allowSpeed = parsed.allow_speed === true
       claudeBetaQuery = parsed.claude_beta_query === true
+      countTokensEnabled = parsed.count_tokens_enabled === true
       ollamaOpenAIChat = parsed.ollama_openai_chat === true
       disableTaskPollingSleep = parsed.disable_task_polling_sleep === true
       upstreamModelUpdateCheckEnabled =
@@ -647,6 +709,13 @@ export function transformChannelToFormDefaults(
     // Per-channel timeouts (from channel_extend table)
     relay_timeout: channel.extend_config?.relay_timeout || 0,
     streaming_timeout: channel.extend_config?.streaming_timeout || 0,
+    min_input_tokens: channel.extend_config?.min_input_tokens || 0,
+    max_input_tokens: channel.extend_config?.max_input_tokens || 0,
+    rpm_limit: channel.extend_config?.rpm_limit || 0,
+    tpm_limit: channel.extend_config?.tpm_limit || 0,
+    claude_auth_mode: parseClaudeAuthMode(
+      channel.extend_config?.claude_auth_mode
+    ),
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
@@ -658,6 +727,7 @@ export function transformChannelToFormDefaults(
     allow_inference_geo: allowInferenceGeo,
     allow_speed: allowSpeed,
     claude_beta_query: claudeBetaQuery,
+    count_tokens_enabled: countTokensEnabled,
     ollama_openai_chat: ollamaOpenAIChat,
     disable_task_polling_sleep: disableTaskPollingSleep,
     allow_safety_identifier: allowSafetyIdentifier,
@@ -805,6 +875,14 @@ function buildSettingsJSON(formData: ChannelFormValues): string {
     delete settingsObj.claude_beta_query
   }
 
+  // Free token counting endpoints: Anthropic channels serve
+  // /v1/messages/count_tokens, OpenAI channels serve /v1/responses/input_tokens.
+  if (formData.type === 14 || formData.type === 1) {
+    settingsObj.count_tokens_enabled = formData.count_tokens_enabled === true
+  } else if ('count_tokens_enabled' in settingsObj) {
+    delete settingsObj.count_tokens_enabled
+  }
+
   // Only the Ollama adaptor can switch chat completions to the OpenAI-compatible endpoint.
   if (formData.type === CHANNEL_TYPE_OLLAMA) {
     settingsObj.ollama_openai_chat = formData.ollama_openai_chat === true
@@ -869,7 +947,20 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
   return {
     relay_timeout: formData.relay_timeout || 0,
     streaming_timeout: formData.streaming_timeout || 0,
+    min_input_tokens: formData.min_input_tokens || 0,
+    max_input_tokens: formData.max_input_tokens || 0,
+    rpm_limit: formData.rpm_limit || 0,
+    tpm_limit: formData.tpm_limit || 0,
+    // Only Anthropic channels carry an auth mode; other types clear it.
+    claude_auth_mode:
+      formData.type === 14 && formData.claude_auth_mode !== 'api_key'
+        ? formData.claude_auth_mode
+        : undefined,
   }
+}
+
+function parseClaudeAuthMode(value: string | undefined): ClaudeAuthMode {
+  return value === 'oauth' || value === 'auto' ? value : 'api_key'
 }
 
 /**

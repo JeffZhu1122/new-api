@@ -75,6 +75,11 @@ export const channelSchema = z.object({
     .object({
       relay_timeout: z.number().optional(),
       streaming_timeout: z.number().optional(),
+      min_input_tokens: z.number().optional(),
+      max_input_tokens: z.number().optional(),
+      rpm_limit: z.number().optional(),
+      tpm_limit: z.number().optional(),
+      claude_auth_mode: z.string().optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -103,7 +108,16 @@ export interface ChannelSettings {
 export interface ChannelExtendSettings {
   relay_timeout?: number
   streaming_timeout?: number
+  min_input_tokens?: number
+  max_input_tokens?: number
+  rpm_limit?: number
+  tpm_limit?: number
+  // Anthropic only: credential scheme; '' / 'api_key' = x-api-key
+  claude_auth_mode?: ClaudeAuthMode
 }
+
+export type ClaudeAuthMode = 'api_key' | 'oauth' | 'auto'
+
 
 export interface ChannelOtherSettings {
   azure_responses_version?: string
@@ -117,6 +131,7 @@ export interface ChannelOtherSettings {
   allow_inference_geo?: boolean
   allow_speed?: boolean
   claude_beta_query?: boolean
+  count_tokens_enabled?: boolean
   ollama_openai_chat?: boolean
   disable_task_polling_sleep?: boolean
   upstream_model_update_check_enabled?: boolean
