@@ -32,6 +32,20 @@ export type UserStatus = z.infer<typeof userStatusSchema>
 export const userRoleSchema = z.number()
 export type UserRole = z.infer<typeof userRoleSchema>
 
+/** Per-dimension RPM/TPM limits; missing field = inherit, 0 = unlimited */
+export const rateLimitValuesSchema = z.object({
+  rpm: z.number().optional(),
+  tpm: z.number().optional(),
+})
+export type RateLimitValues = z.infer<typeof rateLimitValuesSchema>
+
+/** Per-user rate limit override, persisted in the user_extend table */
+export const rateLimitOverrideSchema = z.object({
+  default: rateLimitValuesSchema.optional(),
+  models: z.record(z.string(), rateLimitValuesSchema).optional(),
+})
+export type RateLimitOverride = z.infer<typeof rateLimitOverrideSchema>
+
 export const userSchema = z.object({
   id: z.number(),
   username: z.string(),
@@ -62,6 +76,7 @@ export const userSchema = z.object({
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
+  rate_limit: rateLimitOverrideSchema.nullable().optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -126,6 +141,7 @@ export interface UserFormData {
   group?: string // Only used when updating user
   remark?: string // Only used when updating user
   admin_permissions?: AdminPermissionMatrix
+  rate_limit?: RateLimitOverride // Only used when updating user; {} clears the override
 }
 
 export type ManageUserAction =
