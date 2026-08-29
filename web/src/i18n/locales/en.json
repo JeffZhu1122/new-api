@@ -5551,6 +5551,22 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
     "Allow count_tokens endpoint": "Allow count_tokens endpoint",
-    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Serve /v1/messages/count_tokens requests on this channel (free, not billed)"
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Serve /v1/messages/count_tokens requests on this channel (free, not billed)",
+    "Model RPM/TPM Limits": "Model RPM/TPM Limits",
+    "Enable RPM/TPM rate limiting": "Enable RPM/TPM rate limiting",
+    "Per-user RPM (requests/min) and TPM (tokens/min) limits by group and model. TPM is checked before the request and recorded after billing, so the last request in a window may overshoot.": "Per-user RPM (requests/min) and TPM (tokens/min) limits by group and model. TPM is checked before the request and recorded after billing, so the last request in a window may overshoot.",
+    "RPM/TPM rules": "RPM/TPM rules",
+    "Priority: user override > group model > group default > global model > global default; RPM and TPM fall back independently": "Priority: user override > group model > group default > global model > global default; RPM and TPM fall back independently",
+    "Each limit counts per user; omit a field to inherit, 0 = unlimited": "Each limit counts per user; omit a field to inherit, 0 = unlimited",
+    "Model names are the client-requested names (before channel model mapping); for \"auto\" group tokens use the literal \"auto\" key": "Model names are the client-requested names (before channel model mapping); for \"auto\" group tokens use the literal \"auto\" key",
+    "Per-user overrides are edited on the user management page": "Per-user overrides are edited on the user management page",
+    "Save RPM/TPM limits": "Save RPM/TPM limits",
+    "Rate Limit Override": "Rate Limit Override",
+    "Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.": "Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.",
+    "Default RPM": "Default RPM",
+    "Default TPM": "Default TPM",
+    "Inherit": "Inherit",
+    "Per-model overrides": "Per-model overrides",
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit"
   }
 }

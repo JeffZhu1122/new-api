@@ -5551,6 +5551,22 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
     "Allow count_tokens endpoint": "Autoriser le point de terminaison count_tokens",
-    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Traiter les requêtes /v1/messages/count_tokens sur ce canal (gratuit, non facturé)"
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Traiter les requêtes /v1/messages/count_tokens sur ce canal (gratuit, non facturé)",
+    "Model RPM/TPM Limits": "Limites RPM/TPM des modèles",
+    "Enable RPM/TPM rate limiting": "Activer la limitation RPM/TPM",
+    "Per-user RPM (requests/min) and TPM (tokens/min) limits by group and model. TPM is checked before the request and recorded after billing, so the last request in a window may overshoot.": "Limites RPM (requêtes/min) et TPM (tokens/min) par utilisateur, selon le groupe et le modèle. Le TPM est vérifié avant la requête et comptabilisé après la facturation ; la dernière requête d'une fenêtre peut donc dépasser la limite.",
+    "RPM/TPM rules": "Règles RPM/TPM",
+    "Priority: user override > group model > group default > global model > global default; RPM and TPM fall back independently": "Priorité : remplacement utilisateur > modèle du groupe > défaut du groupe > modèle global > défaut global ; RPM et TPM se replient indépendamment",
+    "Each limit counts per user; omit a field to inherit, 0 = unlimited": "Chaque limite est comptée par utilisateur ; omettez un champ pour hériter, 0 = illimité",
+    "Model names are the client-requested names (before channel model mapping); for \"auto\" group tokens use the literal \"auto\" key": "Les noms de modèles sont ceux demandés par le client (avant le mappage de modèles du canal) ; pour les jetons du groupe « auto », utilisez la clé littérale \"auto\"",
+    "Per-user overrides are edited on the user management page": "Les remplacements par utilisateur se modifient sur la page de gestion des utilisateurs",
+    "Save RPM/TPM limits": "Enregistrer les limites RPM/TPM",
+    "Rate Limit Override": "Remplacement de limite de débit",
+    "Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.": "Remplace les limites RPM et TPM de groupe/globales pour cet utilisateur. Vide = hériter, 0 = illimité.",
+    "Default RPM": "RPM par défaut",
+    "Default TPM": "TPM par défaut",
+    "Inherit": "Hériter",
+    "Per-model overrides": "Remplacements par modèle",
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "Objet JSON : {\"nomDuModèle\": {\"rpm\": n, \"tpm\": n}} ; omettez un champ pour hériter"
   }
 }

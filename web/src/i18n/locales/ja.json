@@ -5551,6 +5551,22 @@
     "Zhipu V4": "Zhipu V 4",
     "Zoom": "ズーム",
     "Allow count_tokens endpoint": "count_tokens エンドポイントを許可",
-    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "このチャネルで /v1/messages/count_tokens リクエストを処理（無料・課金なし）"
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "このチャネルで /v1/messages/count_tokens リクエストを処理（無料・課金なし）",
+    "Model RPM/TPM Limits": "モデル RPM/TPM 制限",
+    "Enable RPM/TPM rate limiting": "RPM/TPM レート制限を有効にする",
+    "Per-user RPM (requests/min) and TPM (tokens/min) limits by group and model. TPM is checked before the request and recorded after billing, so the last request in a window may overshoot.": "グループとモデルごとに、ユーザー単位で RPM（リクエスト/分）と TPM（トークン/分）を制限します。TPM はリクエスト前にチェックし、課金精算後に記録するため、ウィンドウ内の最後のリクエストは制限を超える場合があります。",
+    "RPM/TPM rules": "RPM/TPM ルール",
+    "Priority: user override > group model > group default > global model > global default; RPM and TPM fall back independently": "優先順位：ユーザー上書き > グループ×モデル > グループ既定 > グローバルモデル > グローバル既定。RPM と TPM は独立してフォールバックします",
+    "Each limit counts per user; omit a field to inherit, 0 = unlimited": "各制限はユーザーごとにカウントされます。フィールドを省略すると継承、0 は無制限です",
+    "Model names are the client-requested names (before channel model mapping); for \"auto\" group tokens use the literal \"auto\" key": "モデル名はクライアントが要求した名前（チャネルのモデルマッピング前）です。「auto」グループのトークンにはリテラルの \"auto\" キーを使用してください",
+    "Per-user overrides are edited on the user management page": "ユーザー単位の上書きはユーザー管理ページで編集します",
+    "Save RPM/TPM limits": "RPM/TPM 制限を保存",
+    "Rate Limit Override": "レート制限の上書き",
+    "Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.": "このユーザーのグループ/グローバル RPM・TPM 制限を上書きします。空欄 = 継承、0 = 無制限。",
+    "Default RPM": "既定 RPM",
+    "Default TPM": "既定 TPM",
+    "Inherit": "継承",
+    "Per-model overrides": "モデル別の上書き",
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON オブジェクト：{\"モデル名\": {\"rpm\": n, \"tpm\": n}}。フィールドを省略すると継承されます"
   }
 }

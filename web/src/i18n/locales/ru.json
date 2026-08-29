@@ -5551,6 +5551,22 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
     "Allow count_tokens endpoint": "Разрешить эндпоинт count_tokens",
-    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Обрабатывать запросы /v1/messages/count_tokens на этом канале (бесплатно, не тарифицируется)"
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Обрабатывать запросы /v1/messages/count_tokens на этом канале (бесплатно, не тарифицируется)",
+    "Model RPM/TPM Limits": "Лимиты RPM/TPM моделей",
+    "Enable RPM/TPM rate limiting": "Включить ограничение RPM/TPM",
+    "Per-user RPM (requests/min) and TPM (tokens/min) limits by group and model. TPM is checked before the request and recorded after billing, so the last request in a window may overshoot.": "Лимиты RPM (запросов/мин) и TPM (токенов/мин) на пользователя по группам и моделям. TPM проверяется перед запросом и учитывается после расчёта, поэтому последний запрос в окне может превысить лимит.",
+    "RPM/TPM rules": "Правила RPM/TPM",
+    "Priority: user override > group model > group default > global model > global default; RPM and TPM fall back independently": "Приоритет: переопределение пользователя > модель группы > значение группы по умолчанию > глобальная модель > глобальное значение по умолчанию; RPM и TPM откатываются независимо",
+    "Each limit counts per user; omit a field to inherit, 0 = unlimited": "Каждый лимит считается на пользователя; пропустите поле для наследования, 0 = без ограничений",
+    "Model names are the client-requested names (before channel model mapping); for \"auto\" group tokens use the literal \"auto\" key": "Имена моделей — это имена, запрошенные клиентом (до маппинга моделей канала); для токенов группы «auto» используйте буквальный ключ \"auto\"",
+    "Per-user overrides are edited on the user management page": "Пользовательские переопределения редактируются на странице управления пользователями",
+    "Save RPM/TPM limits": "Сохранить лимиты RPM/TPM",
+    "Rate Limit Override": "Переопределение лимитов",
+    "Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.": "Переопределяет групповые/глобальные лимиты RPM и TPM для этого пользователя. Пусто = наследовать, 0 = без ограничений.",
+    "Default RPM": "RPM по умолчанию",
+    "Default TPM": "TPM по умолчанию",
+    "Inherit": "Наследовать",
+    "Per-model overrides": "Переопределения по моделям",
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON-объект: {\"имяМодели\": {\"rpm\": n, \"tpm\": n}}; пропустите поле для наследования"
   }
 }

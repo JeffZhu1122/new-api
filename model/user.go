@@ -110,6 +110,8 @@ type User struct {
 	LastLoginAt      int64                      `json:"last_login_at" gorm:"default:0;column:last_login_at"`
 	AuthVersion      int64                      `json:"-" gorm:"type:bigint;not null;default:1;column:auth_version"`
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
+	// RateLimit 仅作为 API 传输载体，持久化在 user_extend 表，见 UserExtend
+	RateLimit *dto.RateLimitOverride `json:"rate_limit,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {

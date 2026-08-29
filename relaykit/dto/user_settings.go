@@ -18,6 +18,19 @@ type UserSetting struct {
 	Language                         string  `json:"language,omitempty"`                             // Language 用户语言偏好 (zh, en)
 }
 
+// RateLimitValues 单个匹配维度上的 RPM/TPM 限额。
+// nil 表示该维度未设置（继续向更低优先级回退），0 表示明确不限。
+type RateLimitValues struct {
+	Rpm *int `json:"rpm,omitempty"`
+	Tpm *int `json:"tpm,omitempty"`
+}
+
+// RateLimitOverride 用户级限流覆盖，优先级高于分组/全局规则。
+type RateLimitOverride struct {
+	Default *RateLimitValues           `json:"default,omitempty"`
+	Models  map[string]RateLimitValues `json:"models,omitempty"`
+}
+
 var (
 	NotifyTypeEmail   = "email"   // Email 邮件
 	NotifyTypeWebhook = "webhook" // Webhook

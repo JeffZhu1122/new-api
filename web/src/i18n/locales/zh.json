@@ -5551,6 +5551,22 @@
     "Zhipu V4": "智谱 V4",
     "Zoom": "缩放",
     "Allow count_tokens endpoint": "允许 count_tokens 端点",
-    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "此渠道可处理 /v1/messages/count_tokens 请求（免费，不计费）"
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "此渠道可处理 /v1/messages/count_tokens 请求（免费，不计费）",
+    "Model RPM/TPM Limits": "模型 RPM/TPM 限流",
+    "Enable RPM/TPM rate limiting": "启用 RPM/TPM 限流",
+    "Per-user RPM (requests/min) and TPM (tokens/min) limits by group and model. TPM is checked before the request and recorded after billing, so the last request in a window may overshoot.": "按分组与模型对每个用户分别限制 RPM（每分钟请求数）和 TPM（每分钟 token 数）。TPM 在请求前检查、计费结算后记账，窗口内最后一个请求可能超出限额。",
+    "RPM/TPM rules": "RPM/TPM 规则",
+    "Priority: user override > group model > group default > global model > global default; RPM and TPM fall back independently": "优先级：用户覆盖 > 分组×模型 > 分组默认 > 全局模型 > 全局默认；RPM 与 TPM 各自独立回退",
+    "Each limit counts per user; omit a field to inherit, 0 = unlimited": "所有限额均按用户各自计数；省略字段表示继承，0 表示不限",
+    "Model names are the client-requested names (before channel model mapping); for \"auto\" group tokens use the literal \"auto\" key": "模型名为客户端请求的原始名称（渠道模型映射前）；auto 分组令牌请配置在字面 \"auto\" 键上",
+    "Per-user overrides are edited on the user management page": "用户级覆盖请在用户管理页编辑",
+    "Save RPM/TPM limits": "保存 RPM/TPM 限流",
+    "Rate Limit Override": "限流覆盖",
+    "Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.": "覆盖该用户的分组/全局 RPM 与 TPM 限额。留空表示继承，0 表示不限。",
+    "Default RPM": "默认 RPM",
+    "Default TPM": "默认 TPM",
+    "Inherit": "继承",
+    "Per-model overrides": "按模型覆盖",
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON 对象：{\"模型名\": {\"rpm\": n, \"tpm\": n}}，省略字段表示继承"
   }
 }

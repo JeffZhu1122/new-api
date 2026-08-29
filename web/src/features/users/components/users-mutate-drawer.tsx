@@ -450,6 +450,87 @@ export function UsersMutateDrawer({
                 </SideDrawerSection>
               )}
 
+              {/* Rate Limit Override (Update only) */}
+              {isUpdate && (
+                <SideDrawerSection>
+                  <h3 className='text-sm font-medium'>
+                    {t('Rate Limit Override')}
+                  </h3>
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.'
+                    )}
+                  </p>
+
+                  <div className='grid gap-4 md:grid-cols-2'>
+                    <FormField
+                      control={form.control}
+                      name='rate_limit_default_rpm'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Default RPM')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              inputMode='numeric'
+                              placeholder={t('Inherit')}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t('Requests per minute')}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='rate_limit_default_tpm'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Default TPM')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              inputMode='numeric'
+                              placeholder={t('Inherit')}
+                            />
+                          </FormControl>
+                          <FormDescription>
+                            {t('Tokens per minute')}
+                          </FormDescription>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+
+                  <FormField
+                    control={form.control}
+                    name='rate_limit_models'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Per-model overrides')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder={`{\n  "gpt-4o": {"rpm": 10, "tpm": 100000}\n}`}
+                            rows={4}
+                            className='font-mono text-xs'
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'JSON object: {"modelName": {"rpm": n, "tpm": n}}, omit a field to inherit'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </SideDrawerSection>
+              )}
+
               {canEditAdminPermissions &&
                 targetIsAdmin &&
                 permissionCatalog.resources.length > 0 && (

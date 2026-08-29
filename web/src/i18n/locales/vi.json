@@ -5551,6 +5551,22 @@
     "Zhipu V4": "Zhipu V4",
     "Zoom": "Zoom",
     "Allow count_tokens endpoint": "Cho phép endpoint count_tokens",
-    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Xử lý yêu cầu /v1/messages/count_tokens trên kênh này (miễn phí, không tính phí)"
+    "Serve /v1/messages/count_tokens requests on this channel (free, not billed)": "Xử lý yêu cầu /v1/messages/count_tokens trên kênh này (miễn phí, không tính phí)",
+    "Model RPM/TPM Limits": "Giới hạn RPM/TPM theo mô hình",
+    "Enable RPM/TPM rate limiting": "Bật giới hạn tốc độ RPM/TPM",
+    "Per-user RPM (requests/min) and TPM (tokens/min) limits by group and model. TPM is checked before the request and recorded after billing, so the last request in a window may overshoot.": "Giới hạn RPM (yêu cầu/phút) và TPM (token/phút) cho từng người dùng theo nhóm và mô hình. TPM được kiểm tra trước yêu cầu và ghi nhận sau khi tính phí, nên yêu cầu cuối cùng trong cửa sổ có thể vượt giới hạn.",
+    "RPM/TPM rules": "Quy tắc RPM/TPM",
+    "Priority: user override > group model > group default > global model > global default; RPM and TPM fall back independently": "Thứ tự ưu tiên: ghi đè người dùng > mô hình của nhóm > mặc định của nhóm > mô hình toàn cục > mặc định toàn cục; RPM và TPM dự phòng độc lập",
+    "Each limit counts per user; omit a field to inherit, 0 = unlimited": "Mỗi giới hạn được tính riêng cho từng người dùng; bỏ trống trường để kế thừa, 0 = không giới hạn",
+    "Model names are the client-requested names (before channel model mapping); for \"auto\" group tokens use the literal \"auto\" key": "Tên mô hình là tên do phía client yêu cầu (trước khi ánh xạ mô hình của kênh); với token thuộc nhóm \"auto\", hãy dùng đúng khóa \"auto\"",
+    "Per-user overrides are edited on the user management page": "Ghi đè theo người dùng được chỉnh sửa trên trang quản lý người dùng",
+    "Save RPM/TPM limits": "Lưu giới hạn RPM/TPM",
+    "Rate Limit Override": "Ghi đè giới hạn tốc độ",
+    "Overrides group/global RPM & TPM limits for this user. Empty = inherit, 0 = unlimited.": "Ghi đè giới hạn RPM & TPM của nhóm/toàn cục cho người dùng này. Để trống = kế thừa, 0 = không giới hạn.",
+    "Default RPM": "RPM mặc định",
+    "Default TPM": "TPM mặc định",
+    "Inherit": "Kế thừa",
+    "Per-model overrides": "Ghi đè theo mô hình",
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "Đối tượng JSON: {\"tênMôHình\": {\"rpm\": n, \"tpm\": n}}, bỏ trống trường để kế thừa"
   }
 }
