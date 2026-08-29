@@ -27,11 +27,73 @@ import { quotaUnitsToDollars } from '@/lib/format'
 import { ROLE } from '@/lib/roles'
 
 import { DEFAULT_GROUP } from '../constants'
-import { type UserFormData, type User } from '../types'
+import type {
+  RateLimitOverride,
+  RateLimitValues,
+  UserFormData,
+  User,
+} from '../types'
 
 // ============================================================================
 // Form Schema
 // ============================================================================
+
+const RATE_LIMIT_MAX = 2147483647
+
+const isEmptyOrLimitNumber = (value?: string) => {
+  if (!value || value.trim() === '') {
+    return true
+  }
+  const trimmed = value.trim()
+  if (!/^\d+$/.test(trimmed)) {
+    return false
+  }
+  return Number(trimmed) <= RATE_LIMIT_MAX
+}
+
+const isLimitNumber = (value: unknown): value is number =>
+  typeof value === 'number' &&
+  Number.isInteger(value) &&
+  value >= 0 &&
+  value <= RATE_LIMIT_MAX
+
+const isValidRateLimitModelsJSON = (value?: string) => {
+  if (!value || value.trim() === '') {
+    return true
+  }
+  try {
+    const parsed = JSON.parse(value)
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return false
+    }
+    for (const entry of Object.values(parsed)) {
+      if (
+        typeof entry !== 'object' ||
+        entry === null ||
+        Array.isArray(entry)
+      ) {
+        return false
+      }
+      const { rpm, tpm, ...rest } = entry as Record<string, unknown>
+      if (Object.keys(rest).length > 0) {
+        return false
+      }
+      if (rpm !== undefined && !isLimitNumber(rpm)) {
+        return false
+      }
+      if (tpm !== undefined && !isLimitNumber(tpm)) {
+        return false
+      }
+    }
+    return true
+  } catch {
+    return false
+  }
+}
 
 export const userFormSchema = z.object({
   username: z.string().min(1, 'Username is required'),
@@ -44,6 +106,21 @@ export const userFormSchema = z.object({
   admin_permissions: z
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
+  rate_limit_default_rpm: z
+    .string()
+    .optional()
+    .refine(isEmptyOrLimitNumber, 'Must be an integer within [0, 2147483647]'),
+  rate_limit_default_tpm: z
+    .string()
+    .optional()
+    .refine(isEmptyOrLimitNumber, 'Must be an integer within [0, 2147483647]'),
+  rate_limit_models: z
+    .string()
+    .optional()
+    .refine(
+      isValidRateLimitModelsJSON,
+      'Invalid JSON format or values out of allowed range'
+    ),
 })
 
 export type UserFormValues = z.infer<typeof userFormSchema>
@@ -62,6 +139,41 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   remark: '',
   // Filled against the backend catalog at render time; see UsersMutateDrawer.
   admin_permissions: {},
+  rate_limit_default_rpm: '',
+  rate_limit_default_tpm: '',
+  rate_limit_models: '',
+}
+
+// ============================================================================
+// Rate Limit Override Transformation
+// ============================================================================
+
+function buildRateLimitOverride(data: UserFormValues): RateLimitOverride {
+  const override: RateLimitOverride = {}
+  const defaults: RateLimitValues = {}
+  if (data.rate_limit_default_rpm?.trim()) {
+    defaults.rpm = Number(data.rate_limit_default_rpm.trim())
+  }
+  if (data.rate_limit_default_tpm?.trim()) {
+    defaults.tpm = Number(data.rate_limit_default_tpm.trim())
+  }
+  if (defaults.rpm !== undefined || defaults.tpm !== undefined) {
+    override.default = defaults
+  }
+  if (data.rate_limit_models?.trim()) {
+    try {
+      const models = JSON.parse(data.rate_limit_models) as Record<
+        string,
+        RateLimitValues
+      >
+      if (Object.keys(models).length > 0) {
+        override.models = models
+      }
+    } catch {
+      // schema validation already rejects invalid JSON; ignore here
+    }
+  }
+  return override
 }
 
 // ============================================================================
@@ -102,6 +214,10 @@ export function transformFormDataToPayload(
     payload.group = data.group
     payload.remark = data.remark || undefined
     payload.id = userId
+    // Always sent on update: the backend treats {} as "clear the override" and
+    // a missing field as "leave untouched"; the form round-trips the current
+    // override from GetUser, so sending it back is lossless.
+    payload.rate_limit = buildRateLimitOverride(data)
   }
 
   return payload
@@ -113,6 +229,7 @@ export function transformFormDataToPayload(
  * the catalog at render time in UsersMutateDrawer.
  */
 export function transformUserToFormDefaults(user: User): UserFormValues {
+  const rateLimit = user.rate_limit
   return {
     username: user.username,
     display_name: user.display_name,
@@ -122,5 +239,17 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     group: user.group || DEFAULT_GROUP,
     remark: user.remark || '',
     admin_permissions: user.admin_permissions ?? {},
+    rate_limit_default_rpm:
+      rateLimit?.default?.rpm !== undefined
+        ? String(rateLimit.default.rpm)
+        : '',
+    rate_limit_default_tpm:
+      rateLimit?.default?.tpm !== undefined
+        ? String(rateLimit.default.tpm)
+        : '',
+    rate_limit_models:
+      rateLimit?.models && Object.keys(rateLimit.models).length > 0
+        ? JSON.stringify(rateLimit.models, null, 2)
+        : '',
   }
 }

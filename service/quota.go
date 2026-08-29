@@ -156,6 +156,12 @@ func PreWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, usag
 func PostWssConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, modelName string,
 	usage *dto.RealtimeUsage, extraContent string) {
 
+	tpmTokens := usage.TotalTokens
+	if tpmTokens <= 0 {
+		tpmTokens = usage.InputTokens + usage.OutputTokens
+	}
+	RecordModelTokensUsed(ctx, relayInfo, tpmTokens)
+
 	var tieredResult *billingexpr.TieredResult
 	tieredOk, tieredQuota, tieredRes := TryTieredSettle(relayInfo, billingexpr.TokenParams{
 		P:   float64(usage.InputTokens),
@@ -286,6 +292,12 @@ func PostAudioConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, u
 	if usage == nil {
 		usage = &dto.Usage{PromptTokens: relayInfo.GetEstimatePromptTokens(), TotalTokens: relayInfo.GetEstimatePromptTokens()}
 	}
+
+	tpmTokens := usage.TotalTokens
+	if tpmTokens <= 0 {
+		tpmTokens = usage.PromptTokens + usage.CompletionTokens
+	}
+	RecordModelTokensUsed(ctx, relayInfo, tpmTokens)
 
 	var tieredUsedVars map[string]bool
 	if snap := relayInfo.TieredBillingSnapshot; snap != nil {

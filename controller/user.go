@@ -19,6 +19,7 @@ import (
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/QuantumNous/new-api/constant"
 
@@ -400,6 +401,16 @@ func GetUser(c *gin.Context) {
 		return
 	}
 	user.AdminPermissions = authz.Capabilities(user.Id, user.Role)
+	if override, err := model.GetUserRateLimitOverride(user.Id); err == nil {
+		user.RateLimit = override
+	} else {
+		common.SysError(fmt.Sprintf("failed to load rate limit override for user %d: %s", user.Id, err.Error()))
+	}
+	if discounts, err := model.GetUserModelDiscount(user.Id); err == nil {
+		user.ModelDiscount = discounts
+	} else {
+		common.SysError(fmt.Sprintf("failed to load model discount for user %d: %s", user.Id, err.Error()))
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -662,6 +673,14 @@ func UpdateUser(c *gin.Context) {
 		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
 		return
 	}
+	if err := setting.CheckRateLimitOverride(updatedUser.RateLimit); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
+		return
+	}
+	if err := ratio_setting.CheckUserModelDiscountMap(updatedUser.ModelDiscount); err != nil {
+		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
+		return
+	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)
 	if err != nil {
 		common.ApiError(c, err)
@@ -705,6 +724,21 @@ func UpdateUser(c *gin.Context) {
 	if err := model.PublishUserAuthCache(updatedUser.Id); err != nil {
 		common.ApiError(c, err)
 		return
+	}
+	// rate_limit 持久化在 user_extend 表(EditWithTx 的列白名单不含它):
+	// 字段缺省(nil)表示不改动,携带空内容表示清除覆盖。
+	if updatedUser.RateLimit != nil {
+		if err := model.UpdateUserRateLimitOverride(updatedUser.Id, updatedUser.RateLimit); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	// model_discount 同 rate_limit：持久化在 user_extend 表，nil 不改动，空 map 清除。
+	if updatedUser.ModelDiscount != nil {
+		if err := model.UpdateUserModelDiscount(updatedUser.Id, updatedUser.ModelDiscount); err != nil {
+			common.ApiError(c, err)
+			return
+		}
 	}
 	recordManageAuditFor(c, updatedUser.Id, "user.update", map[string]any{
 		"username": originUser.Username,
