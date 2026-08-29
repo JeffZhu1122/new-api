@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { ModelRateLimitSection } from '../request-limits/model-rate-limit-section'
 import { RateLimitSection } from '../request-limits/rate-limit-section'
 import { SSRFSection } from '../request-limits/ssrf-section'
 import { TokenLimitSection } from '../request-limits/token-limit-section'
@@ -40,7 +41,18 @@ const SECURITY_SECTIONS = [
       />
     ),
   },
-
+  {
+    id: 'model-rate-limit',
+    titleKey: 'Model RPM/TPM Limits',
+    build: (settings: SecuritySettings) => (
+      <ModelRateLimitSection
+        defaultValues={{
+          ModelRateLimitEnabled: settings.ModelRateLimitEnabled,
+          ModelRateLimitRules: settings.ModelRateLimitRules,
+        }}
+      />
+    ),
+  },
   {
     id: 'ssrf',
     titleKey: 'SSRF Protection',
