@@ -48,6 +48,7 @@ func TestMain(m *testing.M) {
 	if err := i18n.Init(); err != nil {
 		panic("failed to load locales: " + err.Error())
 	}
+	model.InitCommonColumnNames()
 
 	if err := db.AutoMigrate(
 		&model.Task{},
