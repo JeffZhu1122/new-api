@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	kitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -80,6 +81,39 @@ func TestChannelHasSensitiveChanges(t *testing.T) {
 		updated.Status = common.ChannelStatusManuallyDisabled
 
 		assert.False(t, channelHasSensitiveChanges(&updated, origin, map[string]any{"status": updated.Status}))
+	})
+
+	t.Run("extend_config change is sensitive", func(t *testing.T) {
+		originWithExtend := *origin
+		originWithExtend.ExtendConfig = &kitdto.ChannelExtendSettings{MinInputTokens: 1000}
+		updated := PatchChannel{Channel: *origin}
+		updated.ExtendConfig = &kitdto.ChannelExtendSettings{MinInputTokens: 1000, MaxInputTokens: 5000}
+
+		assert.True(t, channelHasSensitiveChanges(&updated, &originWithExtend, map[string]any{
+			"extend_config": map[string]any{"min_input_tokens": 1000, "max_input_tokens": 5000},
+		}))
+	})
+
+	t.Run("unchanged extend_config roundtrip is not sensitive", func(t *testing.T) {
+		originWithExtend := *origin
+		originWithExtend.ExtendConfig = &kitdto.ChannelExtendSettings{RelayTimeout: 30}
+		updated := PatchChannel{Channel: *origin}
+		updated.ExtendConfig = &kitdto.ChannelExtendSettings{RelayTimeout: 30}
+
+		assert.False(t, channelHasSensitiveChanges(&updated, &originWithExtend, map[string]any{
+			"extend_config": map[string]any{"relay_timeout": 30},
+		}))
+	})
+
+	t.Run("null extend_config clearing existing overrides is sensitive", func(t *testing.T) {
+		originWithExtend := *origin
+		originWithExtend.ExtendConfig = &kitdto.ChannelExtendSettings{MaxInputTokens: 500}
+		updated := PatchChannel{Channel: *origin}
+		updated.ExtendConfig = nil
+
+		assert.True(t, channelHasSensitiveChanges(&updated, &originWithExtend, map[string]any{
+			"extend_config": nil,
+		}))
 	})
 
 	t.Run("read-only fields are ignored by sensitivity check", func(t *testing.T) {
