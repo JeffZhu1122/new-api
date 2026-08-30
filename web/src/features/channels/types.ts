@@ -75,6 +75,7 @@ export const channelSchema = z.object({
     .object({
       relay_timeout: z.number().optional(),
       streaming_timeout: z.number().optional(),
+      min_input_tokens: z.number().optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -100,6 +101,7 @@ export interface ChannelSettings {
 export interface ChannelExtendSettings {
   relay_timeout?: number
   streaming_timeout?: number
+  min_input_tokens?: number
 }
 
 export interface ChannelOtherSettings {
