@@ -82,6 +82,7 @@ type GroupRatioVisualEditorProps = {
   topupGroupRatio: string
   userUsableGroups: string
   groupGroupRatio: string
+  groupModelDiscount: string
   autoGroups: string
   maxTokenAutoGroupsField: ReactNode
   groupSpecialUsableGroup: string
@@ -264,6 +265,7 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
   topupGroupRatio,
   userUsableGroups,
   groupGroupRatio,
+  groupModelDiscount,
   autoGroups,
   maxTokenAutoGroupsField,
   groupSpecialUsableGroup,
@@ -345,6 +347,12 @@ export const GroupRatioVisualEditor = memo(function GroupRatioVisualEditor({
       <GroupOverrideRules
         registry={registry}
         groupGroupRatio={groupGroupRatio}
+        onChange={onChange}
+      />
+
+      <GroupModelDiscountRules
+        registry={registry}
+        groupModelDiscount={groupModelDiscount}
         onChange={onChange}
       />
 
@@ -1117,6 +1125,382 @@ function GroupOverrideDialog({
                     targetGroup: targetGroup || t('this token group'),
                   }
                 )}
+          </p>
+        </div>
+      </div>
+    </Dialog>
+  )
+}
+
+type ModelDiscountEntry = {
+  model: string
+  discount: number
+}
+
+type GroupModelDiscountRulesProps = {
+  registry: RegistryEntry[]
+  groupModelDiscount: string
+  onChange: (field: string, value: string) => void
+}
+
+function GroupModelDiscountRules({
+  registry,
+  groupModelDiscount,
+  onChange,
+}: GroupModelDiscountRulesProps) {
+  const { t } = useTranslation()
+  const [groupDialogOpen, setGroupDialogOpen] = useState(false)
+  const [groupInput, setGroupInput] = useState<string | null>(null)
+  const [discountDialogOpen, setDiscountDialogOpen] = useState(false)
+  const [discountGroup, setDiscountGroup] = useState<string | null>(null)
+  const [discountEditData, setDiscountEditData] =
+    useState<ModelDiscountEntry | null>(null)
+
+  const registryNames = useMemo(
+    () => registry.map((entry) => entry.name),
+    [registry]
+  )
+
+  const discountList = useMemo(() => {
+    const map = parseNestedRatioMap(groupModelDiscount)
+    return Object.entries(map).map(([group, discounts]) => ({
+      group,
+      discounts: Object.entries(discounts).map(([model, discount]) => ({
+        model,
+        discount,
+      })),
+    }))
+  }, [groupModelDiscount])
+
+  const emitMap = useCallback(
+    (map: Record<string, Record<string, number>>) => {
+      onChange('GroupModelDiscount', JSON.stringify(map, null, 2))
+    },
+    [onChange]
+  )
+
+  const handleGroupSave = useCallback(() => {
+    if (!groupInput) return
+    const map = parseNestedRatioMap(groupModelDiscount)
+    if (!map[groupInput]) {
+      map[groupInput] = {}
+    }
+    emitMap(map)
+    setGroupDialogOpen(false)
+    setGroupInput(null)
+  }, [groupInput, groupModelDiscount, emitMap])
+
+  const handleGroupDelete = useCallback(
+    (group: string) => {
+      const map = parseNestedRatioMap(groupModelDiscount)
+      delete map[group]
+      emitMap(map)
+    },
+    [groupModelDiscount, emitMap]
+  )
+
+  const handleDiscountAdd = useCallback((group: string) => {
+    setDiscountGroup(group)
+    setDiscountEditData(null)
+    setDiscountDialogOpen(true)
+  }, [])
+
+  const handleDiscountEdit = useCallback(
+    (group: string, entry: ModelDiscountEntry) => {
+      setDiscountGroup(group)
+      setDiscountEditData(entry)
+      setDiscountDialogOpen(true)
+    },
+    []
+  )
+
+  const handleDiscountSave = useCallback(
+    (model: string, discount: number, oldModel?: string) => {
+      if (!discountGroup) return
+      const map = parseNestedRatioMap(groupModelDiscount)
+      if (!map[discountGroup]) {
+        map[discountGroup] = {}
+      }
+      if (oldModel && oldModel !== model) {
+        delete map[discountGroup][oldModel]
+      }
+      map[discountGroup][model] = discount
+      emitMap(map)
+      setDiscountDialogOpen(false)
+    },
+    [discountGroup, groupModelDiscount, emitMap]
+  )
+
+  const handleDiscountDelete = useCallback(
+    (group: string, model: string) => {
+      const map = parseNestedRatioMap(groupModelDiscount)
+      if (map[group]) {
+        delete map[group][model]
+        if (Object.keys(map[group]).length === 0) {
+          delete map[group]
+        }
+      }
+      emitMap(map)
+    },
+    [groupModelDiscount, emitMap]
+  )
+
+  return (
+    <Card className={sectionCardClassName}>
+      <CardHeader className={sectionHeaderClassName}>
+        <CardTitle>{t('Group model discounts')}</CardTitle>
+        <CardDescription>
+          {t(
+            'Per-model discounts multiplied with the group ratio. "*" is the fallback for all models in the group; values must be in (0, 10].'
+          )}
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <div className='space-y-4'>
+          <Button
+            onClick={() => {
+              setGroupInput(null)
+              setGroupDialogOpen(true)
+            }}
+            size='sm'
+          >
+            <Plus className='mr-2 h-4 w-4' />
+            {t('Add group')}
+          </Button>
+          {discountList.length > 0 && (
+            <div className='space-y-3'>
+              {discountList.map((groupData) => (
+                <Collapsible key={groupData.group}>
+                  <div className='rounded-lg border'>
+                    <div className='flex items-center justify-between p-4'>
+                      <div className='flex items-center gap-2'>
+                        <CollapsibleTrigger
+                          render={<Button variant='ghost' size='sm' />}
+                        >
+                          <ChevronDown className='h-4 w-4' />
+                        </CollapsibleTrigger>
+                        <span className='font-semibold'>{groupData.group}</span>
+                        {!registryNames.includes(groupData.group) && (
+                          <AlertTriangle
+                            className='text-destructive h-4 w-4'
+                            aria-label={t('Not in pricing table')}
+                          />
+                        )}
+                        <span className='text-muted-foreground text-sm'>
+                          {t('{{count}} discount', {
+                            count: groupData.discounts.length,
+                          })}
+                        </span>
+                      </div>
+                      <div className='flex gap-2'>
+                        <Button
+                          variant='ghost'
+                          size='sm'
+                          onClick={() => handleDiscountAdd(groupData.group)}
+                        >
+                          <Plus className='h-4 w-4' />
+                        </Button>
+                        <Button
+                          variant='ghost'
+                          size='sm'
+                          onClick={() => handleGroupDelete(groupData.group)}
+                        >
+                          <Trash2 className='h-4 w-4' />
+                        </Button>
+                      </div>
+                    </div>
+                    <CollapsibleContent>
+                      {groupData.discounts.length > 0 && (
+                        <div className='border-t'>
+                          <StaticDataTable
+                            className='rounded-none border-0'
+                            data={groupData.discounts}
+                            getRowKey={(entry) => entry.model}
+                            columns={[
+                              {
+                                id: 'model',
+                                header: t('Model'),
+                                cellClassName: 'font-medium',
+                                cell: (entry) => entry.model,
+                              },
+                              {
+                                id: 'discount',
+                                header: t('Discount'),
+                                cell: (entry) => `${entry.discount}x`,
+                              },
+                              {
+                                id: 'actions',
+                                header: t('Actions'),
+                                className: 'text-right',
+                                cellClassName: 'text-right',
+                                cell: (entry) => (
+                                  <StaticRowActions
+                                    editLabel={t('Edit')}
+                                    deleteLabel={t('Delete')}
+                                    menuLabel={t('Open menu')}
+                                    onEdit={() =>
+                                      handleDiscountEdit(groupData.group, entry)
+                                    }
+                                    onDelete={() =>
+                                      handleDiscountDelete(
+                                        groupData.group,
+                                        entry.model
+                                      )
+                                    }
+                                  />
+                                ),
+                              },
+                            ]}
+                          />
+                        </div>
+                      )}
+                    </CollapsibleContent>
+                  </div>
+                </Collapsible>
+              ))}
+            </div>
+          )}
+        </div>
+      </CardContent>
+
+      {/* Add group dialog */}
+      <Dialog
+        open={groupDialogOpen}
+        onOpenChange={setGroupDialogOpen}
+        title={t('Add group')}
+        description={t('Pick the group whose models get discounts.')}
+        contentHeight='auto'
+        bodyClassName='space-y-4'
+        footer={
+          <>
+            <Button variant='outline' onClick={() => setGroupDialogOpen(false)}>
+              {t('Cancel')}
+            </Button>
+            <Button onClick={handleGroupSave} disabled={!groupInput}>
+              {t('Add')}
+            </Button>
+          </>
+        }
+      >
+        <div className='space-y-4 py-4'>
+          <div className='space-y-2'>
+            <Label>{t('Group')}</Label>
+            <GroupNameSelect
+              className='w-full'
+              options={registryNames}
+              value={groupInput}
+              placeholder={t('Select a group')}
+              onValueChange={setGroupInput}
+            />
+          </div>
+        </div>
+      </Dialog>
+
+      <ModelDiscountDialog
+        open={discountDialogOpen}
+        onOpenChange={setDiscountDialogOpen}
+        onSave={handleDiscountSave}
+        editData={discountEditData}
+        group={discountGroup}
+      />
+    </Card>
+  )
+}
+
+type ModelDiscountDialogProps = {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  onSave: (model: string, discount: number, oldModel?: string) => void
+  editData: ModelDiscountEntry | null
+  group: string | null
+}
+
+function ModelDiscountDialog({
+  open,
+  onOpenChange,
+  onSave,
+  editData,
+  group,
+}: ModelDiscountDialogProps) {
+  const { t } = useTranslation()
+  const [model, setModel] = useState('')
+  const [discount, setDiscount] = useState('')
+
+  useEffect(() => {
+    if (!open) {
+      setModel('')
+      setDiscount('')
+      return
+    }
+    setModel(editData?.model ?? '')
+    setDiscount(editData ? String(editData.discount) : '')
+  }, [editData, open])
+
+  const parsedDiscount = Number.parseFloat(discount)
+  const discountValid =
+    Number.isFinite(parsedDiscount) && parsedDiscount > 0 && parsedDiscount <= 10
+
+  const handleSave = () => {
+    if (!model.trim() || !discountValid) return
+    onSave(model.trim(), parsedDiscount, editData?.model)
+    setModel('')
+    setDiscount('')
+  }
+
+  return (
+    <Dialog
+      open={open}
+      onOpenChange={onOpenChange}
+      title={editData ? t('Edit model discount') : t('Add model discount')}
+      description={
+        group
+          ? t('Configure a per-model discount for the "{{group}}" group.', {
+              group,
+            })
+          : t('Configure a per-model discount.')
+      }
+      contentHeight='auto'
+      bodyClassName='space-y-4'
+      footer={
+        <>
+          <Button variant='outline' onClick={() => onOpenChange(false)}>
+            {t('Cancel')}
+          </Button>
+          <Button
+            onClick={handleSave}
+            disabled={!model.trim() || !discountValid}
+          >
+            {editData ? t('Update') : t('Add')}
+          </Button>
+        </>
+      }
+    >
+      <div className='space-y-4 py-4'>
+        <div className='space-y-2'>
+          <Label>{t('Model name')}</Label>
+          <Input
+            value={model}
+            onChange={(e) => setModel(e.target.value)}
+            placeholder='gpt-4o'
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t('Use "*" to match all models in this group')}
+          </p>
+        </div>
+        <div className='space-y-2'>
+          <Label>{t('Discount')}</Label>
+          <Input
+            value={discount}
+            onChange={(e) => {
+              const val = e.target.value
+              if (val === '' || !Number.isNaN(Number.parseFloat(val))) {
+                setDiscount(val)
+              }
+            }}
+            placeholder='0.9'
+          />
+          <p className='text-muted-foreground text-xs'>
+            {t('0.9 = 10% off. Values must be in (0, 10].')}
           </p>
         </div>
       </div>
