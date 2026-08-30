@@ -5567,6 +5567,21 @@
     "Default TPM": "TPM по умолчанию",
     "Inherit": "Наследовать",
     "Per-model overrides": "Переопределения по моделям",
-    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON-объект: {\"имяМодели\": {\"rpm\": n, \"tpm\": n}}; пропустите поле для наследования"
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON-объект: {\"имяМодели\": {\"rpm\": n, \"tpm\": n}}; пропустите поле для наследования",
+    "Add rule": "Добавить правило",
+    "Search groups or models...": "Поиск групп или моделей…",
+    "No rules match your search": "Нет правил, соответствующих поиску",
+    "No RPM/TPM rules configured. Click \"Add rule\" to get started.": "Правила RPM/TPM не настроены. Нажмите «Добавить правило», чтобы начать.",
+    "Global (all groups)": "Глобально (все группы)",
+    "All models (default)": "Все модели (по умолчанию)",
+    "Edit RPM/TPM rule": "Изменить правило RPM/TPM",
+    "Add RPM/TPM rule": "Добавить правило RPM/TPM",
+    "One row per scope: leave group empty for a global rule, leave model empty for the scope default.": "Одна строка на область: оставьте группу пустой для глобального правила, оставьте модель пустой для значения области по умолчанию.",
+    "Leave empty to apply to all groups; use \"auto\" for auto-group tokens.": "Оставьте пустым, чтобы применить ко всем группам; для токенов группы auto используйте \"auto\".",
+    "Leave empty for the scope default (applies to all models).": "Оставьте пустым для значения области по умолчанию (применяется ко всем моделям).",
+    "Scope cannot be changed when editing.": "Область нельзя изменить при редактировании.",
+    "Empty = inherit, 0 = unlimited.": "Пусто = наследовать, 0 = без ограничений.",
+    "RPM (requests/min)": "RPM (запросов/мин)",
+    "TPM (tokens/min)": "TPM (токенов/мин)"
   }
 }

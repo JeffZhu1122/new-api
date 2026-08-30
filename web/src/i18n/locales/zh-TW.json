@@ -5567,6 +5567,21 @@
     "Default TPM": "預設 TPM",
     "Inherit": "繼承",
     "Per-model overrides": "按模型覆蓋",
-    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON 物件：{\"模型名\": {\"rpm\": n, \"tpm\": n}}，省略欄位表示繼承"
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON 物件：{\"模型名\": {\"rpm\": n, \"tpm\": n}}，省略欄位表示繼承",
+    "Add rule": "新增規則",
+    "Search groups or models...": "搜尋分組或模型…",
+    "No rules match your search": "沒有符合的規則",
+    "No RPM/TPM rules configured. Click \"Add rule\" to get started.": "尚未設定 RPM/TPM 規則,點擊「新增規則」開始。",
+    "Global (all groups)": "全域(所有分組)",
+    "All models (default)": "所有模型(預設)",
+    "Edit RPM/TPM rule": "編輯 RPM/TPM 規則",
+    "Add RPM/TPM rule": "新增 RPM/TPM 規則",
+    "One row per scope: leave group empty for a global rule, leave model empty for the scope default.": "每行對應一個作用域:分組留空表示全域規則,模型留空表示該作用域的預設規則。",
+    "Leave empty to apply to all groups; use \"auto\" for auto-group tokens.": "留空表示對所有分組生效;auto 分組令牌請填寫 \"auto\"。",
+    "Leave empty for the scope default (applies to all models).": "留空表示該作用域的預設規則(對所有模型生效)。",
+    "Scope cannot be changed when editing.": "編輯時不能修改作用域。",
+    "Empty = inherit, 0 = unlimited.": "留空 = 繼承,0 = 不限。",
+    "RPM (requests/min)": "RPM(每分鐘請求數)",
+    "TPM (tokens/min)": "TPM(每分鐘 token 數)"
   }
 }

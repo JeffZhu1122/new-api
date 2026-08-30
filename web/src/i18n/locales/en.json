@@ -5567,6 +5567,21 @@
     "Default TPM": "Default TPM",
     "Inherit": "Inherit",
     "Per-model overrides": "Per-model overrides",
-    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit"
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit",
+    "Add rule": "Add rule",
+    "Search groups or models...": "Search groups or models...",
+    "No rules match your search": "No rules match your search",
+    "No RPM/TPM rules configured. Click \"Add rule\" to get started.": "No RPM/TPM rules configured. Click \"Add rule\" to get started.",
+    "Global (all groups)": "Global (all groups)",
+    "All models (default)": "All models (default)",
+    "Edit RPM/TPM rule": "Edit RPM/TPM rule",
+    "Add RPM/TPM rule": "Add RPM/TPM rule",
+    "One row per scope: leave group empty for a global rule, leave model empty for the scope default.": "One row per scope: leave group empty for a global rule, leave model empty for the scope default.",
+    "Leave empty to apply to all groups; use \"auto\" for auto-group tokens.": "Leave empty to apply to all groups; use \"auto\" for auto-group tokens.",
+    "Leave empty for the scope default (applies to all models).": "Leave empty for the scope default (applies to all models).",
+    "Scope cannot be changed when editing.": "Scope cannot be changed when editing.",
+    "Empty = inherit, 0 = unlimited.": "Empty = inherit, 0 = unlimited.",
+    "RPM (requests/min)": "RPM (requests/min)",
+    "TPM (tokens/min)": "TPM (tokens/min)"
   }
 }

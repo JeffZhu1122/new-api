@@ -5567,6 +5567,21 @@
     "Default TPM": "TPM mặc định",
     "Inherit": "Kế thừa",
     "Per-model overrides": "Ghi đè theo mô hình",
-    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "Đối tượng JSON: {\"tênMôHình\": {\"rpm\": n, \"tpm\": n}}, bỏ trống trường để kế thừa"
+    "JSON object: {\"modelName\": {\"rpm\": n, \"tpm\": n}}, omit a field to inherit": "Đối tượng JSON: {\"tênMôHình\": {\"rpm\": n, \"tpm\": n}}, bỏ trống trường để kế thừa",
+    "Add rule": "Thêm quy tắc",
+    "Search groups or models...": "Tìm kiếm nhóm hoặc mô hình…",
+    "No rules match your search": "Không có quy tắc nào khớp với tìm kiếm",
+    "No RPM/TPM rules configured. Click \"Add rule\" to get started.": "Chưa cấu hình quy tắc RPM/TPM. Nhấp \"Thêm quy tắc\" để bắt đầu.",
+    "Global (all groups)": "Toàn cục (tất cả các nhóm)",
+    "All models (default)": "Tất cả mô hình (mặc định)",
+    "Edit RPM/TPM rule": "Sửa quy tắc RPM/TPM",
+    "Add RPM/TPM rule": "Thêm quy tắc RPM/TPM",
+    "One row per scope: leave group empty for a global rule, leave model empty for the scope default.": "Mỗi hàng ứng với một phạm vi: để trống nhóm cho quy tắc toàn cục, để trống mô hình cho mặc định của phạm vi.",
+    "Leave empty to apply to all groups; use \"auto\" for auto-group tokens.": "Để trống để áp dụng cho tất cả các nhóm; với token thuộc nhóm auto, hãy nhập \"auto\".",
+    "Leave empty for the scope default (applies to all models).": "Để trống cho mặc định của phạm vi (áp dụng cho tất cả mô hình).",
+    "Scope cannot be changed when editing.": "Không thể thay đổi phạm vi khi chỉnh sửa.",
+    "Empty = inherit, 0 = unlimited.": "Để trống = kế thừa, 0 = không giới hạn.",
+    "RPM (requests/min)": "RPM (yêu cầu/phút)",
+    "TPM (tokens/min)": "TPM (token/phút)"
   }
 }
