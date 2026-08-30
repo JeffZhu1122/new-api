@@ -45,14 +45,14 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
-		// 渠道最小输入过滤：仅当有渠道配置了 min_input_tokens 时才估算，
+		// 渠道输入范围过滤：仅当有渠道配置了 min/max_input_tokens 时才估算，
 		// 估算值随 constraints 复用于本请求的所有重试
-		minInputEstimate := -1
-		if model.HasAnyMinInputTokens() {
-			if estimate, ok := service.EstimateMinInputTokens(c, modelRequest.Model); ok {
-				minInputEstimate = estimate
+		inputTokensEstimate := -1
+		if model.HasAnyInputTokensLimit() {
+			if estimate, ok := service.EstimateInputTokens(c, modelRequest.Model); ok {
+				inputTokensEstimate = estimate
 				constraints.AddFilter(taskdto.ChannelFilter{
-					Kind:        taskdto.FilterMinInputTokens,
+					Kind:        taskdto.FilterInputTokens,
 					InputTokens: estimate,
 				})
 			}
@@ -86,15 +86,15 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusForbidden, "count_tokens is only available on Anthropic channels with count_tokens enabled")
 				return
 			}
-			fillExtendConfigForMinInput(channel, minInputEstimate)
+			fillExtendConfigForInputFilter(channel, inputTokensEstimate)
 			if ok, kind := model.ChannelSatisfiesFilters(channel, modelRequest.Model, constraints.Filters); !ok {
 				if kind == taskdto.FilterTaskPluginIdentity {
 					logTaskPluginChannelDecision(c, channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
 				}
-				// min_input 规则属于运营方私有配置，对外只回通用错误码，归因进日志
+				// 输入范围规则属于运营方私有配置，对外只回通用错误码，归因进日志
 				errCode := types.ErrorCode(kind)
-				if kind == taskdto.FilterMinInputTokens {
-					logger.LogWarn(c, fmt.Sprintf("pinned channel %d rejected by min_input filter: estimated_input_tokens=%d", channel.Id, minInputEstimate))
+				if kind == taskdto.FilterInputTokens {
+					logger.LogWarn(c, fmt.Sprintf("pinned channel %d rejected by input_tokens filter: estimated_input_tokens=%d", channel.Id, inputTokensEstimate))
 					errCode = types.ErrorCodeModelNotFound
 				}
 				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), errCode)
@@ -153,7 +153,7 @@ func Distribute() func(c *gin.Context) {
 					preferred, err := model.CacheGetChannel(preferredChannelID)
 					affinitySatisfied := false
 					if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
-						fillExtendConfigForMinInput(preferred, minInputEstimate)
+						fillExtendConfigForInputFilter(preferred, inputTokensEstimate)
 						affinitySatisfied, _ = model.ChannelSatisfiesFilters(preferred, modelRequest.Model, constraints.Filters)
 					}
 					if affinitySatisfied {
@@ -205,9 +205,9 @@ func Distribute() func(c *gin.Context) {
 						return
 					}
 					if channel == nil {
-						// 对外保持笼统的"无可用渠道"，min_input 归因只进服务端日志
-						if minInputEstimate >= 0 {
-							logger.LogWarn(c, fmt.Sprintf("no available channel with min_input filter active: model=%s, group=%s, estimated_input_tokens=%d", modelRequest.Model, usingGroup, minInputEstimate))
+						// 对外保持笼统的"无可用渠道"，input_tokens 归因只进服务端日志
+						if inputTokensEstimate >= 0 {
+							logger.LogWarn(c, fmt.Sprintf("no available channel with input_tokens filter active: model=%s, group=%s, estimated_input_tokens=%d", modelRequest.Model, usingGroup, inputTokensEstimate))
 						}
 						abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": usingGroup, "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 						return
@@ -220,8 +220,8 @@ func Distribute() func(c *gin.Context) {
 				if kind == taskdto.FilterTaskPluginIdentity {
 					logTaskPluginChannelDecision(c, channel, modelRequest.Model, "channel_rejected", "identity_mismatch")
 				}
-				if kind == taskdto.FilterMinInputTokens {
-					logger.LogWarn(c, fmt.Sprintf("channel %d rejected by min_input filter: estimated_input_tokens=%d", channel.Id, minInputEstimate))
+				if kind == taskdto.FilterInputTokens {
+					logger.LogWarn(c, fmt.Sprintf("channel %d rejected by input_tokens filter: estimated_input_tokens=%d", channel.Id, inputTokensEstimate))
 				}
 				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
 				return
@@ -238,13 +238,13 @@ func Distribute() func(c *gin.Context) {
 	}
 }
 
-// fillExtendConfigForMinInput backfills extend settings on channels loaded
+// fillExtendConfigForInputFilter backfills extend settings on channels loaded
 // straight from the DB (memory cache disabled), where ExtendConfig is nil, so
-// the min_input_tokens filter can evaluate pinned/affinity channels. Cached
+// the input_tokens filter can evaluate pinned/affinity channels. Cached
 // channels are never mutated here: InitChannelCache populates them before
 // publishing, and writing to a shared cached object would race.
-func fillExtendConfigForMinInput(channel *model.Channel, minInputEstimate int) {
-	if minInputEstimate < 0 || channel == nil || channel.ExtendConfig != nil || common.MemoryCacheEnabled {
+func fillExtendConfigForInputFilter(channel *model.Channel, inputTokensEstimate int) {
+	if inputTokensEstimate < 0 || channel == nil || channel.ExtendConfig != nil || common.MemoryCacheEnabled {
 		return
 	}
 	settings := model.GetChannelExtendSettings(channel.Id)

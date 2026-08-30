@@ -10,7 +10,7 @@ import (
 var filterEvalOrder = []dto.ChannelFilterKind{
 	dto.FilterRequestPath,
 	dto.FilterTaskPluginIdentity,
-	dto.FilterMinInputTokens,
+	dto.FilterInputTokens,
 }
 
 // ChannelSatisfiesFilters reports whether ch passes every filter.
@@ -107,15 +107,22 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 			return filter.TaskPluginKey != "" && ch.GetSetting().TaskPluginKey == filter.TaskPluginKey
 		}
 		return filter.TaskPluginKey == "" || slices.Contains(filter.TaskPluginChannelTypes, ch.Type)
-	case dto.FilterMinInputTokens:
+	case dto.FilterInputTokens:
 		// 只读 ch.ExtendConfig，禁止在此调用 GetChannelExtendSettings：
 		// 内存缓存路径在持有 channelSyncLock.RLock 时执行本函数，再次 RLock
 		// 会与周期性 InitChannelCache 的写锁排队形成死锁。ExtendConfig 由
 		// InitChannelCache / filterAbilitiesByConstraints 预先填充。
-		if ch.ExtendConfig == nil || ch.ExtendConfig.MinInputTokens <= 0 {
+		// min 为排他下界（须严格大于）、max 为包含上界（须小于等于）。
+		if ch.ExtendConfig == nil {
 			return true
 		}
-		return filter.InputTokens > ch.ExtendConfig.MinInputTokens
+		if min := ch.ExtendConfig.MinInputTokens; min > 0 && filter.InputTokens <= min {
+			return false
+		}
+		if max := ch.ExtendConfig.MaxInputTokens; max > 0 && filter.InputTokens > max {
+			return false
+		}
+		return true
 	default:
 		return true
 	}

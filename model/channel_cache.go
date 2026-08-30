@@ -23,15 +23,15 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 // path-aware selection avoids re-parsing JSON per request. Refreshed on full sync.
 var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
 var channelExtendIDM map[int]kitdto.ChannelExtendSettings
-var anyMinInputTokens bool // true when at least one channel configures min_input_tokens
+var anyInputTokensLimit bool // true when at least one channel configures min_input_tokens or max_input_tokens
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
-	// 管理端改动渠道后会调用本函数；DB 模式下也要让 min_input_tokens 的
-	// TTL 缓存立即失效，否则新保存的最小输入配置最长一分钟内不生效
-	minInputTokensDBCheck.Lock()
-	minInputTokensDBCheck.expiresAt = time.Time{}
-	minInputTokensDBCheck.Unlock()
+	// 管理端改动渠道后会调用本函数；DB 模式下也要让 min/max_input_tokens 的
+	// TTL 缓存立即失效，否则新保存的输入范围配置最长一分钟内不生效
+	inputTokensLimitDBCheck.Lock()
+	inputTokensLimitDBCheck.expiresAt = time.Time{}
+	inputTokensLimitDBCheck.Unlock()
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
 		return
@@ -51,14 +51,14 @@ func InitChannelCache() {
 	var extends []*ChannelExtend
 	DB.Find(&extends)
 	newChannelExtendIDM := make(map[int]kitdto.ChannelExtendSettings, len(extends))
-	newAnyMinInputTokens := false
+	newAnyInputTokensLimit := false
 	for _, extend := range extends {
 		settings := extend.ToSettings()
 		newChannelExtendIDM[extend.ChannelId] = settings
-		if settings.MinInputTokens > 0 {
-			newAnyMinInputTokens = true
+		if settings.MinInputTokens > 0 || settings.MaxInputTokens > 0 {
+			newAnyInputTokensLimit = true
 		}
-		// 预填 ExtendConfig，使 min_input_tokens 过滤在持锁的选择路径中
+		// 预填 ExtendConfig，使 min/max_input_tokens 过滤在持锁的选择路径中
 		// 无需再查扩展配置（见 channelMatchesFilter 的死锁说明）
 		if ch, ok := newChannelId2channel[extend.ChannelId]; ok {
 			ch.ExtendConfig = &settings
@@ -119,7 +119,7 @@ func InitChannelCache() {
 	channelsIDM = newChannelId2channel
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channelExtendIDM = newChannelExtendIDM
-	anyMinInputTokens = newAnyMinInputTokens
+	anyInputTokensLimit = newAnyInputTokensLimit
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -157,39 +157,40 @@ func GetChannelExtendSettings(channelId int) kitdto.ChannelExtendSettings {
 	return channelExtendIDM[channelId]
 }
 
-var minInputTokensDBCheck struct {
+var inputTokensLimitDBCheck struct {
 	sync.Mutex
 	expiresAt time.Time
 	value     bool
 }
 
-// HasAnyMinInputTokens reports whether any channel configures min_input_tokens,
-// so the distributor can skip input estimation entirely when the feature is
-// unused. Memory-cache mode reads a flag maintained by InitChannelCache; DB
-// mode uses a short-TTL cached count (failing open to true on query errors).
-func HasAnyMinInputTokens() bool {
+// HasAnyInputTokensLimit reports whether any channel configures
+// min_input_tokens or max_input_tokens, so the distributor can skip input
+// estimation entirely when the feature is unused. Memory-cache mode reads a
+// flag maintained by InitChannelCache; DB mode uses a short-TTL cached count
+// (failing open to true on query errors).
+func HasAnyInputTokensLimit() bool {
 	if common.MemoryCacheEnabled {
 		channelSyncLock.RLock()
 		defer channelSyncLock.RUnlock()
-		return anyMinInputTokens
+		return anyInputTokensLimit
 	}
 	if DB == nil {
 		return false
 	}
-	minInputTokensDBCheck.Lock()
-	defer minInputTokensDBCheck.Unlock()
-	if time.Now().Before(minInputTokensDBCheck.expiresAt) {
-		return minInputTokensDBCheck.value
+	inputTokensLimitDBCheck.Lock()
+	defer inputTokensLimitDBCheck.Unlock()
+	if time.Now().Before(inputTokensLimitDBCheck.expiresAt) {
+		return inputTokensLimitDBCheck.value
 	}
 	var count int64
-	err := DB.Model(&ChannelExtend{}).Where("min_input_tokens > 0").Count(&count).Error
+	err := DB.Model(&ChannelExtend{}).Where("min_input_tokens > 0 OR max_input_tokens > 0").Count(&count).Error
 	if err != nil {
-		common.SysError(fmt.Sprintf("failed to count min_input_tokens channels: %v", err))
+		common.SysError(fmt.Sprintf("failed to count input tokens limit channels: %v", err))
 		return true
 	}
-	minInputTokensDBCheck.value = count > 0
-	minInputTokensDBCheck.expiresAt = time.Now().Add(time.Minute)
-	return minInputTokensDBCheck.value
+	inputTokensLimitDBCheck.value = count > 0
+	inputTokensLimitDBCheck.expiresAt = time.Now().Add(time.Minute)
+	return inputTokensLimitDBCheck.value
 }
 
 func GetRandomSatisfiedChannel(

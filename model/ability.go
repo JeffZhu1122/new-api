@@ -208,15 +208,15 @@ func filterAbilitiesByConstraints(abilities []Ability, modelName string, filters
 		channelsByID[channel.Id] = channel
 	}
 
-	hasMinInputFilter := false
+	hasInputTokensFilter := false
 	for _, filter := range filters {
-		if filter.Kind == dto.FilterMinInputTokens {
-			hasMinInputFilter = true
+		if filter.Kind == dto.FilterInputTokens {
+			hasInputTokensFilter = true
 			break
 		}
 	}
-	if hasMinInputFilter {
-		// min_input_tokens 存于 channel_extend 表，DB 直查路径的 Channel 对象
+	if hasInputTokensFilter {
+		// min/max_input_tokens 存于 channel_extend 表，DB 直查路径的 Channel 对象
 		// 不带扩展配置，这里批量取回填充；查询失败按无限制处理（fail-open）
 		var extends []*ChannelExtend
 		if err := DB.Where("channel_id IN ?", channelIds).Find(&extends).Error; err == nil {

@@ -268,6 +268,10 @@ export const ERROR_MESSAGES = {
     'Channel timeout must be between 0 and 86400 seconds',
   INVALID_CHANNEL_MIN_INPUT_TOKENS:
     'Minimum input tokens must be between 0 and 10000000',
+  INVALID_CHANNEL_MAX_INPUT_TOKENS:
+    'Maximum input tokens must be between 0 and 10000000',
+  INVALID_CHANNEL_INPUT_TOKENS_RANGE:
+    'Maximum input tokens must be greater than minimum input tokens',
   CREATE_FAILED: 'Failed to create channel',
   UPDATE_FAILED: 'Failed to update channel',
   DELETE_FAILED: 'Failed to delete channel',

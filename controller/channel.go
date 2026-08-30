@@ -1034,6 +1034,17 @@ func UpdateChannel(c *gin.Context) {
 	// Always copy the original ChannelInfo so that fields like IsMultiKey and MultiKeySize are retained.
 	channel.ChannelInfo = originChannel.ChannelInfo
 
+	// extend_config 的敏感判定需要 channel_extend 表中的原值做新旧比较；
+	// 读取失败按敏感处理（fail closed），避免越权修改被放过
+	if _, extendProvided := requestData["extend_config"]; extendProvided {
+		originExtend, err := model.GetChannelExtend(channel.Id)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+		originChannel.ExtendConfig = &originExtend
+	}
+
 	if channelHasSensitiveChanges(&channel, originChannel, requestData) &&
 		!authz.Can(c.GetInt("id"), c.GetInt("role"), authz.ChannelSensitiveWrite) {
 		common.ApiErrorI18n(c, i18n.MsgAuthInsufficientPrivilege)

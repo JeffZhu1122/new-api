@@ -78,7 +78,7 @@ export const HTTP_PROTOCOL_AUTO = 'auto'
 export const HTTP_PROTOCOL_HTTP1 = 'http1'
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 86400
-export const MAX_CHANNEL_MIN_INPUT_TOKENS = 10000000
+export const MAX_CHANNEL_INPUT_TOKENS_BOUND = 10000000
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -268,8 +268,9 @@ export const channelFormSchema = z
     // Per-channel timeouts (stored in channel_extend table, 0 = global)
     relay_timeout: z.number().int().optional(),
     streaming_timeout: z.number().int().optional(),
-    // Minimum estimated input tokens to route here (channel_extend, 0 = off)
+    // Estimated input token routing bounds (channel_extend, 0 = off)
     min_input_tokens: z.number().int().optional(),
+    max_input_tokens: z.number().int().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
@@ -432,11 +433,27 @@ export const channelFormSchema = z
       )
     }
     const minInputTokens = data.min_input_tokens ?? 0
-    if (minInputTokens < 0 || minInputTokens > MAX_CHANNEL_MIN_INPUT_TOKENS) {
+    if (minInputTokens < 0 || minInputTokens > MAX_CHANNEL_INPUT_TOKENS_BOUND) {
       addRequiredIssue(
         ctx,
         'min_input_tokens',
         ERROR_MESSAGES.INVALID_CHANNEL_MIN_INPUT_TOKENS
+      )
+    }
+    const maxInputTokens = data.max_input_tokens ?? 0
+    if (maxInputTokens < 0 || maxInputTokens > MAX_CHANNEL_INPUT_TOKENS_BOUND) {
+      addRequiredIssue(
+        ctx,
+        'max_input_tokens',
+        ERROR_MESSAGES.INVALID_CHANNEL_MAX_INPUT_TOKENS
+      )
+    }
+    // min 为排他下界、max 为包含上界，max <= min 时可接受区间为空
+    if (minInputTokens > 0 && maxInputTokens > 0 && maxInputTokens <= minInputTokens) {
+      addRequiredIssue(
+        ctx,
+        'max_input_tokens',
+        ERROR_MESSAGES.INVALID_CHANNEL_INPUT_TOKENS_RANGE
       )
     }
   })
@@ -483,6 +500,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   relay_timeout: 0,
   streaming_timeout: 0,
   min_input_tokens: 0,
+  max_input_tokens: 0,
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
@@ -639,6 +657,7 @@ export function transformChannelToFormDefaults(
     relay_timeout: channel.extend_config?.relay_timeout || 0,
     streaming_timeout: channel.extend_config?.streaming_timeout || 0,
     min_input_tokens: channel.extend_config?.min_input_tokens || 0,
+    max_input_tokens: channel.extend_config?.max_input_tokens || 0,
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
@@ -852,6 +871,7 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
     relay_timeout: formData.relay_timeout || 0,
     streaming_timeout: formData.streaming_timeout || 0,
     min_input_tokens: formData.min_input_tokens || 0,
+    max_input_tokens: formData.max_input_tokens || 0,
   }
 }
 
