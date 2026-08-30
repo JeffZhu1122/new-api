@@ -17,12 +17,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
-import { useEffect } from 'react'
+import { Code2, Palette } from 'lucide-react'
+import { useEffect, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import * as z from 'zod'
 
 import { JsonCodeEditor } from '@/components/json-code-editor'
+import { Button } from '@/components/ui/button'
 import {
   Form,
   FormControl,
@@ -42,6 +44,7 @@ import {
 import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
+import { ModelRateLimitVisualEditor } from './model-rate-limit-visual-editor'
 
 const RATE_LIMIT_MAX = 2147483647
 
@@ -153,6 +156,7 @@ export function ModelRateLimitSection({
 }: ModelRateLimitSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const [useVisualEditor, setUseVisualEditor] = useState(true)
 
   const schema = createModelRateLimitSchema(t)
 
@@ -214,24 +218,53 @@ export function ModelRateLimitSection({
             name='ModelRateLimitRules'
             render={({ field }) => (
               <FormItem>
-                <FormLabel>{t('RPM/TPM rules')}</FormLabel>
-                <FormControl>
-                  <JsonCodeEditor
-                    value={field.value || ''}
-                    onChange={field.onChange}
-                    name={field.name}
-                    onBlur={field.onBlur}
-                    textareaRef={field.ref}
-                    placeholder={RULES_PLACEHOLDER}
-                    aria-invalid={Boolean(
-                      form.formState.errors.ModelRateLimitRules
+                <div className='flex items-center justify-between'>
+                  <FormLabel>{t('RPM/TPM rules')}</FormLabel>
+                  <Button
+                    type='button'
+                    variant='outline'
+                    size='sm'
+                    onClick={() => setUseVisualEditor(!useVisualEditor)}
+                  >
+                    {useVisualEditor ? (
+                      <>
+                        <Code2 className='mr-2 h-4 w-4' />
+                        {t('JSON Mode')}
+                      </>
+                    ) : (
+                      <>
+                        <Palette className='mr-2 h-4 w-4' />
+                        {t('Visual Mode')}
+                      </>
                     )}
-                  />
+                  </Button>
+                </div>
+                <FormControl>
+                  {useVisualEditor ? (
+                    <ModelRateLimitVisualEditor
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                    />
+                  ) : (
+                    <JsonCodeEditor
+                      value={field.value || ''}
+                      onChange={field.onChange}
+                      name={field.name}
+                      onBlur={field.onBlur}
+                      textareaRef={field.ref}
+                      placeholder={RULES_PLACEHOLDER}
+                      aria-invalid={Boolean(
+                        form.formState.errors.ModelRateLimitRules
+                      )}
+                    />
+                  )}
                 </FormControl>
                 {/* Block-level help content stays outside FormDescription,
                     which renders a <p> and only allows phrasing content. */}
                 <div className='text-muted-foreground space-y-1 text-xs'>
-                  <p className='font-semibold'>{t('Format:')}</p>
+                  {!useVisualEditor && (
+                    <p className='font-semibold'>{t('Format:')}</p>
+                  )}
                   <ul className='list-inside list-disc space-y-0.5 pl-2'>
                     <li>
                       {t(
