@@ -244,7 +244,7 @@ export function RateLimitSection({ defaultValues }: RateLimitSectionProps) {
             control={form.control}
             name='ModelRequestRateLimitGroup'
             render={({ field }) => (
-              <FormItem>
+              <FormItem data-settings-form-span='full'>
                 <div className='flex items-center justify-between'>
                   <FormLabel>{t('Group-based rate limits')}</FormLabel>
                   <Button
