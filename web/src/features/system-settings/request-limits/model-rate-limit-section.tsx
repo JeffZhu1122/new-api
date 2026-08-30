@@ -217,7 +217,7 @@ export function ModelRateLimitSection({
             control={form.control}
             name='ModelRateLimitRules'
             render={({ field }) => (
-              <FormItem>
+              <FormItem data-settings-form-span='full'>
                 <div className='flex items-center justify-between'>
                   <FormLabel>{t('RPM/TPM rules')}</FormLabel>
                   <Button
