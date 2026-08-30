@@ -39,6 +39,7 @@ const (
 	FilterRequestPath        ChannelFilterKind = "request_path"
 	FilterTaskPluginEndpoint ChannelFilterKind = "task_plugin_endpoint"
 	FilterTaskPluginIdentity ChannelFilterKind = "task_plugin_identity"
+	FilterInputTokens        ChannelFilterKind = "input_tokens"
 	FilterResponsesWebSocket ChannelFilterKind = "responses_websocket"
 )
 
@@ -51,6 +52,9 @@ type ChannelFilter struct {
 	// TaskPluginRelayOnly excludes endpoint candidates after an ordinary relay
 	// channel wins selection, so retries keep using the same protocol handler.
 	TaskPluginRelayOnly bool
+	// InputTokens carries the request's estimated input token count for
+	// FilterInputTokens; the filter is only attached when an estimate exists.
+	InputTokens int
 }
 
 type ChannelConstraints struct {
