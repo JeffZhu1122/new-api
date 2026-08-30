@@ -8,7 +8,7 @@ import (
 )
 
 // 断言各中转格式的正文文本被完整提取：估算值必须等于对期望文本串的估算，
-// 提取遗漏会导致请求被 min_input 渠道误拒。
+// 提取遗漏会导致请求被配置了输入范围的渠道误拒。
 func TestEstimateInputTokensFromJSONExtraction(t *testing.T) {
 	const model = "gpt-4o"
 	tests := []struct {
@@ -37,6 +37,11 @@ func TestEstimateInputTokensFromJSONExtraction(t *testing.T) {
 			wantText: "follow rules\ndo it\n",
 		},
 		{
+			name:     "responses compaction body",
+			body:     `{"model":"gpt-5.3-codex","instructions":"compact context","input":[{"role":"user","content":[{"type":"input_text","text":"long history"}]}],"previous_response_id":"resp_1"}`,
+			wantText: "compact context\nlong history\n",
+		},
+		{
 			name:     "no text fields",
 			body:     `{"model":"gpt-4o"}`,
 			wantText: "",
@@ -59,12 +64,13 @@ func TestEstimateInputTokensFromJSONUnavailable(t *testing.T) {
 	assert.False(t, ok)
 }
 
-func TestMinInputEstimateSupportedPath(t *testing.T) {
+func TestInputTokensEstimateSupportedPath(t *testing.T) {
 	supported := []string{
 		"/v1/chat/completions",
 		"/pg/chat/completions",
 		"/v1/messages",
 		"/v1/responses",
+		"/v1/responses/compact",
 		"/v1beta/models/gemini-2.0-flash:generateContent",
 		"/v1beta/models/gemini-2.0-flash:streamGenerateContent",
 	}
@@ -76,9 +82,9 @@ func TestMinInputEstimateSupportedPath(t *testing.T) {
 		"/mj/submit/imagine",
 	}
 	for _, path := range supported {
-		assert.True(t, minInputEstimateSupportedPath(path), path)
+		assert.True(t, inputTokensEstimateSupportedPath(path), path)
 	}
 	for _, path := range unsupported {
-		assert.False(t, minInputEstimateSupportedPath(path), path)
+		assert.False(t, inputTokensEstimateSupportedPath(path), path)
 	}
 }
