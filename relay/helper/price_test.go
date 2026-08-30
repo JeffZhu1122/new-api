@@ -181,6 +181,80 @@ func TestModelPriceHelperTieredRejectsPreConsumeOverflow(t *testing.T) {
 	require.Equal(t, common.QuotaClampOverflow, clamp.Kind)
 }
 
+func TestHandleGroupRatioAppliesModelDiscounts(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+
+	savedGroupRatio := ratio_setting.GroupRatio2JSONString()
+	savedGroupGroupRatio := ratio_setting.GroupGroupRatio2JSONString()
+	savedDiscount := ratio_setting.GroupModelDiscount2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(savedGroupRatio))
+		require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(savedGroupGroupRatio))
+		require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(savedDiscount))
+	})
+
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":2,"vip":2}`))
+	require.NoError(t, ratio_setting.UpdateGroupGroupRatioByJSONString(`{"vip":{"default":0.5}}`))
+	require.NoError(t, ratio_setting.UpdateGroupModelDiscountByJSONString(
+		`{"default":{"disc-model":0.5,"*":0.25}}`))
+
+	// UserId 为 0 时跳过用户×模型折扣的 DB 读取，测试无需数据库
+	newCtx := func() *gin.Context {
+		ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+		return ctx
+	}
+
+	t.Run("exact model discount multiplies group ratio", func(t *testing.T) {
+		info := &relaycommon.RelayInfo{OriginModelName: "disc-model", UserGroup: "default", UsingGroup: "default"}
+		got := HandleGroupRatio(newCtx(), info)
+		require.Equal(t, 1.0, got.GroupRatio)
+		require.Equal(t, 2.0, got.BaseGroupRatio)
+		require.Equal(t, 0.5, got.GroupModelDiscount)
+		require.Equal(t, 1.0, got.UserModelDiscount)
+		require.False(t, got.HasSpecialRatio)
+		require.Equal(t, -1.0, got.GroupSpecialRatio, "sentinel must stay untouched without special ratio")
+	})
+
+	t.Run("wildcard discount catches unlisted models", func(t *testing.T) {
+		info := &relaycommon.RelayInfo{OriginModelName: "other-model", UserGroup: "default", UsingGroup: "default"}
+		got := HandleGroupRatio(newCtx(), info)
+		require.Equal(t, 0.5, got.GroupRatio)
+		require.Equal(t, 0.25, got.GroupModelDiscount)
+	})
+
+	t.Run("unconfigured group keeps neutral discount", func(t *testing.T) {
+		info := &relaycommon.RelayInfo{OriginModelName: "disc-model", UserGroup: "vip", UsingGroup: "vip"}
+		got := HandleGroupRatio(newCtx(), info)
+		require.Equal(t, 2.0, got.GroupRatio)
+		require.Equal(t, 1.0, got.GroupModelDiscount)
+	})
+
+	t.Run("special group ratio is discounted too", func(t *testing.T) {
+		info := &relaycommon.RelayInfo{OriginModelName: "disc-model", UserGroup: "vip", UsingGroup: "default"}
+		got := HandleGroupRatio(newCtx(), info)
+		require.True(t, got.HasSpecialRatio)
+		require.Equal(t, 0.25, got.GroupRatio)
+		require.Equal(t, 0.25, got.GroupSpecialRatio)
+		require.Equal(t, 0.5, got.BaseGroupRatio)
+	})
+
+	t.Run("pre-consume quota scales with the discount", func(t *testing.T) {
+		savedModelRatios := ratio_setting.ModelRatio2JSONString()
+		t.Cleanup(func() {
+			require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(savedModelRatios))
+		})
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"disc-model":15}`))
+
+		ctx := newCtx()
+		ctx.Set("group", "default")
+		info := &relaycommon.RelayInfo{OriginModelName: "disc-model", UserGroup: "default", UsingGroup: "default"}
+		priceData, err := ModelPriceHelper(ctx, info, 1000, &types.TokenCountMeta{})
+		require.NoError(t, err)
+		// 1000 tokens * 模型倍率 15 * (分组倍率 2 × 折扣 0.5) = 15000
+		require.Equal(t, 15000, priceData.QuotaToPreConsume)
+	})
+}
+
 func TestModelPriceHelperRequestBillingRatiosOnlyApplyToFixedPrice(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	savedModelPrices := ratio_setting.ModelPrice2JSONString()

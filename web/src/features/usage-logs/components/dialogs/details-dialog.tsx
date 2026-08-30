@@ -293,6 +293,30 @@ function BillingBreakdown(props: {
     })
   }
 
+  // 折扣明细：group_ratio 已是折后生效值，这两行展示其构成
+  const groupModelDiscount = other.group_model_discount
+  if (
+    groupModelDiscount != null &&
+    Number.isFinite(groupModelDiscount) &&
+    groupModelDiscount !== 1
+  ) {
+    rows.push({
+      label: t('Group Model Discount'),
+      value: `${formatRatio(groupModelDiscount)}x`,
+    })
+  }
+  const userModelDiscount = other.user_model_discount
+  if (
+    userModelDiscount != null &&
+    Number.isFinite(userModelDiscount) &&
+    userModelDiscount !== 1
+  ) {
+    rows.push({
+      label: t('User Model Discount'),
+      value: `${formatRatio(userModelDiscount)}x`,
+    })
+  }
+
   if (!isTieredExpr && isClaude && hasAnyCacheTokens(other)) {
     if (other.cache_ratio != null && other.cache_ratio !== 1) {
       rows.push({

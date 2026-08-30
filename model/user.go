@@ -112,6 +112,9 @@ type User struct {
 	AdminPermissions map[string]map[string]bool `json:"admin_permissions,omitempty" gorm:"-:all"`
 	// RateLimit 仅作为 API 传输载体，持久化在 user_extend 表，见 UserExtend
 	RateLimit *dto.RateLimitOverride `json:"rate_limit,omitempty" gorm:"-:all"`
+	// ModelDiscount 仅作为 API 传输载体，持久化在 user_extend 表，见 UserExtend；
+	// nil = 不修改，空 map = 清除
+	ModelDiscount map[string]float64 `json:"model_discount,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {

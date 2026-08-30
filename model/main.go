@@ -27,6 +27,13 @@ var commonFalseVal string
 var logKeyCol string
 var logGroupCol string
 
+// InitCommonColumnNames initializes the dialect-specific quoted column names
+// (e.g. `key`, `group`). InitDB does this automatically; test harnesses that
+// assign DB directly must call it after common.SetDatabaseTypes.
+func InitCommonColumnNames() {
+	initCol()
+}
+
 func initCol() {
 	// init common column names
 	if common.UsingMainDatabase(common.DatabaseTypePostgreSQL) {

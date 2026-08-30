@@ -43,6 +43,7 @@ func TestMain(m *testing.M) {
 	common.RedisEnabled = false
 	common.BatchUpdateEnabled = false
 	common.LogConsumeEnabled = true
+	model.InitCommonColumnNames()
 
 	if err := db.AutoMigrate(
 		&model.Task{},

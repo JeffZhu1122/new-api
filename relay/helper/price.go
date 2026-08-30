@@ -67,6 +67,25 @@ func HandleGroupRatio(ctx *gin.Context, relayInfo *relaycommon.RelayInfo) hostty
 		groupRatioInfo.GroupRatio = ratio_setting.GetGroupRatio(relayInfo.UsingGroup)
 	}
 
+	// 分组×模型折扣与用户×模型折扣，乘进最终倍率，所有结算路径经由 GroupRatio 自动生效
+	groupRatioInfo.BaseGroupRatio = groupRatioInfo.GroupRatio
+	groupRatioInfo.GroupModelDiscount = ratio_setting.GetGroupModelDiscount(relayInfo.UsingGroup, relayInfo.OriginModelName)
+	groupRatioInfo.UserModelDiscount = 1
+	if relayInfo.UserId > 0 {
+		discounts, err := model.GetUserModelDiscount(relayInfo.UserId)
+		if err != nil {
+			// 读失败按无折扣处理：宁多收不少收
+			common.SysError(fmt.Sprintf("failed to load model discount for user %d: %s", relayInfo.UserId, err.Error()))
+		} else if discount, matched := ratio_setting.MatchModelDiscount(discounts, ratio_setting.FormatMatchingModelName(relayInfo.OriginModelName)); matched {
+			groupRatioInfo.UserModelDiscount = discount
+		}
+	}
+	discountMultiplier := groupRatioInfo.GroupModelDiscount * groupRatioInfo.UserModelDiscount
+	groupRatioInfo.GroupRatio *= discountMultiplier
+	if groupRatioInfo.HasSpecialRatio {
+		groupRatioInfo.GroupSpecialRatio *= discountMultiplier
+	}
+
 	return groupRatioInfo
 }
 

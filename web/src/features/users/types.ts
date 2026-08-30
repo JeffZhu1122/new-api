@@ -77,6 +77,7 @@ export const userSchema = z.object({
     .record(z.string(), z.record(z.string(), z.boolean()))
     .optional(),
   rate_limit: rateLimitOverrideSchema.nullable().optional(),
+  model_discount: z.record(z.string(), z.number()).nullable().optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -142,6 +143,7 @@ export interface UserFormData {
   remark?: string // Only used when updating user
   admin_permissions?: AdminPermissionMatrix
   rate_limit?: RateLimitOverride // Only used when updating user; {} clears the override
+  model_discount?: Record<string, number> // Only used when updating user; {} clears the discounts
 }
 
 export type ManageUserAction =
