@@ -1,6 +1,9 @@
 package controller
 
-import "github.com/QuantumNous/new-api/model"
+import (
+	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/relaykit/dto"
+)
 
 func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, requestData map[string]any) bool {
 	if _, ok := requestData["type"]; ok && channel.Type != origin.Type {
@@ -32,6 +35,22 @@ func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, re
 	}
 	if _, ok := requestData["key_mode"]; ok && channel.KeyMode != nil {
 		return true
+	}
+	// extend_config（超时、输入范围）在 UI 中受敏感锁保护，服务端同样按敏感
+	// 处理；调用方需把 channel_extend 表中的原值填到 origin.ExtendConfig。
+	// 显式 null 表示清除配置，与新值一样参与比较（nil 视为全零）。
+	if _, ok := requestData["extend_config"]; ok {
+		newExtend := dto.ChannelExtendSettings{}
+		if channel.ExtendConfig != nil {
+			newExtend = *channel.ExtendConfig
+		}
+		originExtend := dto.ChannelExtendSettings{}
+		if origin.ExtendConfig != nil {
+			originExtend = *origin.ExtendConfig
+		}
+		if newExtend != originExtend {
+			return true
+		}
 	}
 	// Fail closed: any field present in the request that is neither a known
 	// sensitive field (gated above) nor an explicitly classified non-sensitive
@@ -71,6 +90,7 @@ var channelSensitiveFields = map[string]struct{}{
 	"other":               {},
 	"settings":            {},
 	"key_mode":            {},
+	"extend_config":       {},
 }
 
 // channelOperationalFields lists fields managed by operation endpoints instead
@@ -133,5 +153,4 @@ var channelNonSensitiveFields = map[string]struct{}{
 	"remark":              {},
 	"channel_info":        {},
 	"multi_key_mode":      {},
-	"extend_config":       {},
 }
