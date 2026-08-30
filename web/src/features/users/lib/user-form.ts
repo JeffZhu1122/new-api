@@ -57,6 +57,31 @@ const isLimitNumber = (value: unknown): value is number =>
   value >= 0 &&
   value <= RATE_LIMIT_MAX
 
+const isValidModelDiscountJSON = (value?: string) => {
+  if (!value || value.trim() === '') {
+    return true
+  }
+  try {
+    const parsed = JSON.parse(value)
+    if (
+      typeof parsed !== 'object' ||
+      parsed === null ||
+      Array.isArray(parsed)
+    ) {
+      return false
+    }
+    return Object.values(parsed).every(
+      (discount) =>
+        typeof discount === 'number' &&
+        Number.isFinite(discount) &&
+        discount > 0 &&
+        discount <= 10
+    )
+  } catch {
+    return false
+  }
+}
+
 const isValidRateLimitModelsJSON = (value?: string) => {
   if (!value || value.trim() === '') {
     return true
@@ -121,6 +146,13 @@ export const userFormSchema = z.object({
       isValidRateLimitModelsJSON,
       'Invalid JSON format or values out of allowed range'
     ),
+  model_discount: z
+    .string()
+    .optional()
+    .refine(
+      isValidModelDiscountJSON,
+      'Invalid JSON format or discount values out of (0, 10]'
+    ),
 })
 
 export type UserFormValues = z.infer<typeof userFormSchema>
@@ -142,6 +174,7 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   rate_limit_default_rpm: '',
   rate_limit_default_tpm: '',
   rate_limit_models: '',
+  model_discount: '',
 }
 
 // ============================================================================
@@ -174,6 +207,18 @@ function buildRateLimitOverride(data: UserFormValues): RateLimitOverride {
     }
   }
   return override
+}
+
+function buildModelDiscount(data: UserFormValues): Record<string, number> {
+  if (!data.model_discount?.trim()) {
+    return {}
+  }
+  try {
+    return JSON.parse(data.model_discount) as Record<string, number>
+  } catch {
+    // schema validation already rejects invalid JSON; treat as clear
+    return {}
+  }
 }
 
 // ============================================================================
@@ -218,6 +263,7 @@ export function transformFormDataToPayload(
     // a missing field as "leave untouched"; the form round-trips the current
     // override from GetUser, so sending it back is lossless.
     payload.rate_limit = buildRateLimitOverride(data)
+    payload.model_discount = buildModelDiscount(data)
   }
 
   return payload
@@ -250,6 +296,10 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     rate_limit_models:
       rateLimit?.models && Object.keys(rateLimit.models).length > 0
         ? JSON.stringify(rateLimit.models, null, 2)
+        : '',
+    model_discount:
+      user.model_discount && Object.keys(user.model_discount).length > 0
+        ? JSON.stringify(user.model_discount, null, 2)
         : '',
   }
 }
