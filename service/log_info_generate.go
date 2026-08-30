@@ -108,6 +108,7 @@ func GenerateTextOtherInfo(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, m
 	other.SetPublic("cache_ratio", cacheRatio)
 	other.SetPublic("model_price", modelPrice)
 	other.SetPublic("user_group_ratio", userGroupRatio)
+	appendModelDiscountInfo(relayInfo.PriceData.GroupRatioInfo, other)
 	other.SetPublic("frt", float64(relayInfo.FirstResponseTime.UnixMilli()-relayInfo.StartTime.UnixMilli()))
 	if relayInfo.ReasoningEffort != "" {
 		other.SetPublic("reasoning_effort", relayInfo.ReasoningEffort)
@@ -325,8 +326,21 @@ func GenerateMjOtherInfo(relayInfo *relaycommon.RelayInfo, priceData hosttypes.P
 	if priceData.GroupRatioInfo.HasSpecialRatio {
 		other.SetPublic("user_group_ratio", priceData.GroupRatioInfo.GroupSpecialRatio)
 	}
+	appendModelDiscountInfo(priceData.GroupRatioInfo, other)
 	appendRequestPath(nil, relayInfo, other)
 	return other
+}
+
+// appendModelDiscountInfo 把非中性的分组×模型/用户×模型折扣写进日志明细。
+// group_ratio 记录的是折后生效值，这两个字段用于拆解展示；
+// 零值表示 PriceData 未经 HandleGroupRatio 装配（无折扣信息），同样不写。
+func appendModelDiscountInfo(info hosttypes.GroupRatioInfo, other *model.LogOther) {
+	if info.GroupModelDiscount != 1 && info.GroupModelDiscount != 0 {
+		other.SetPublic("group_model_discount", info.GroupModelDiscount)
+	}
+	if info.UserModelDiscount != 1 && info.UserModelDiscount != 0 {
+		other.SetPublic("user_model_discount", info.UserModelDiscount)
+	}
 }
 
 // InjectTieredBillingInfo overlays tiered billing fields onto an existing

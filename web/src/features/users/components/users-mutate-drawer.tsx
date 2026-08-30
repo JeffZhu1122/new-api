@@ -525,6 +525,44 @@ export function UsersMutateDrawer({
                 </SideDrawerSection>
               )}
 
+              {/* Model Discount Override (Update only) */}
+              {isUpdate && (
+                <SideDrawerSection>
+                  <h3 className='text-sm font-medium'>
+                    {t('Model Discount Override')}
+                  </h3>
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      'Per-user billing discounts, multiplied with group ratios. Empty = no discount.'
+                    )}
+                  </p>
+
+                  <FormField
+                    control={form.control}
+                    name='model_discount'
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>{t('Per-model discounts')}</FormLabel>
+                        <FormControl>
+                          <Textarea
+                            {...field}
+                            placeholder={`{\n  "gpt-4o": 0.8,\n  "*": 0.9\n}`}
+                            rows={4}
+                            className='font-mono text-xs'
+                          />
+                        </FormControl>
+                        <FormDescription>
+                          {t(
+                            'JSON object: {"modelName": discount} with values in (0, 10]; "*" applies to all other models'
+                          )}
+                        </FormDescription>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                </SideDrawerSection>
+              )}
+
               {canEditAdminPermissions &&
                 targetIsAdmin &&
                 permissionCatalog.resources.length > 0 && (
