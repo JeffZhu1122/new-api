@@ -172,6 +172,7 @@ export const GroupRatioForm = memo(function GroupRatioForm({
             topupGroupRatio={values.TopupGroupRatio ?? ''}
             userUsableGroups={values.UserUsableGroups ?? ''}
             groupGroupRatio={values.GroupGroupRatio ?? ''}
+            groupModelDiscount={values.GroupModelDiscount ?? ''}
             autoGroups={values.AutoGroups ?? ''}
             maxTokenAutoGroupsField={
               <FormField
