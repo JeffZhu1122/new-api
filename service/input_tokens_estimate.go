@@ -8,10 +8,10 @@ import (
 	"github.com/tidwall/gjson"
 )
 
-// minInputTextFields are the request fields whose text participates in the
-// min_input_tokens estimate, covering OpenAI chat/responses, Claude messages
+// inputEstimateTextFields are the request fields whose text participates in the
+// input-range routing estimate, covering OpenAI chat/responses, Claude messages
 // and Gemini generateContent bodies. Unknown fields are simply absent.
-var minInputTextFields = []string{
+var inputEstimateTextFields = []string{
 	"messages",
 	"system",
 	"instructions",
@@ -21,11 +21,11 @@ var minInputTextFields = []string{
 	"system_instruction",
 }
 
-// minInputEstimateSupportedPath limits min_input_tokens routing to text
+// inputTokensEstimateSupportedPath limits input-range routing to text
 // relay formats where the input can be estimated from the JSON body. Other
 // paths (multipart audio, images, tasks, count_tokens probes) fail open and
-// ignore channel minimums.
-func minInputEstimateSupportedPath(path string) bool {
+// ignore channel input limits.
+func inputTokensEstimateSupportedPath(path string) bool {
 	if strings.HasSuffix(path, "/chat/completions") {
 		return true
 	}
@@ -35,18 +35,22 @@ func minInputEstimateSupportedPath(path string) bool {
 	if strings.HasSuffix(path, "/v1/responses") {
 		return true
 	}
+	// Codex compaction 请求同样携带 input/instructions 正文，必须参与输入范围路由
+	if strings.HasSuffix(path, "/v1/responses/compact") {
+		return true
+	}
 	return strings.Contains(path, ":generateContent") || strings.Contains(path, ":streamGenerateContent")
 }
 
-// EstimateMinInputTokens returns the estimated input token count used by the
-// min_input_tokens channel filter, and whether an estimate is available for
+// EstimateInputTokens returns the estimated input token count used by the
+// input_tokens channel filter (min/max), and whether an estimate is available for
 // this request. It runs once per request in the distributor, before channel
 // selection; the result is reused across retries via the channel constraints.
-func EstimateMinInputTokens(c *gin.Context, modelName string) (int, bool) {
+func EstimateInputTokens(c *gin.Context, modelName string) (int, bool) {
 	if c == nil || c.Request == nil || modelName == "" {
 		return 0, false
 	}
-	if !minInputEstimateSupportedPath(c.Request.URL.Path) {
+	if !inputTokensEstimateSupportedPath(c.Request.URL.Path) {
 		return 0, false
 	}
 	if !strings.HasPrefix(c.Request.Header.Get("Content-Type"), "application/json") {
@@ -72,7 +76,7 @@ func estimateInputTokensFromJSON(body []byte, modelName string) (int, bool) {
 	if !root.IsObject() {
 		return 0, false
 	}
-	for _, field := range minInputTextFields {
+	for _, field := range inputEstimateTextFields {
 		if value := root.Get(field); value.Exists() {
 			collectRelayText(value, &sb, 0)
 		}
