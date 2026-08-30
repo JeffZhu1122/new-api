@@ -38,6 +38,7 @@ type ChannelFilterKind string
 const (
 	FilterRequestPath        ChannelFilterKind = "request_path"
 	FilterTaskPluginIdentity ChannelFilterKind = "task_plugin_identity"
+	FilterInputTokens        ChannelFilterKind = "input_tokens"
 	FilterResponsesWebSocket ChannelFilterKind = "responses_websocket"
 )
 
@@ -47,6 +48,9 @@ type ChannelFilter struct {
 	TaskPluginKey          string
 	TaskPluginKeys         []string
 	TaskPluginChannelTypes []int
+	// InputTokens carries the request's estimated input token count for
+	// FilterInputTokens; the filter is only attached when an estimate exists.
+	InputTokens int
 }
 
 type ChannelConstraints struct {
