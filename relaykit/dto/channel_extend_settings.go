@@ -1,9 +1,15 @@
 package dto
 
-import "fmt"
+import (
+	"fmt"
+	"math"
+)
 
 // MaxChannelTimeoutSeconds bounds per-channel timeout overrides (24h).
 const MaxChannelTimeoutSeconds = 86400
+
+// MaxChannelRateLimitValue bounds the per-channel rpm/tpm limits.
+const MaxChannelRateLimitValue = math.MaxInt32
 
 // MaxChannelInputTokensBound bounds the per-channel min/max input thresholds.
 const MaxChannelInputTokensBound = 10_000_000
@@ -34,6 +40,15 @@ type ChannelExtendSettings struct {
 	// 0 = no maximum. The exclusive minimum and inclusive maximum let two
 	// channels partition traffic without gap or overlap.
 	MaxInputTokens int `json:"max_input_tokens,omitempty"`
+	// RpmLimit caps how many requests per minute may be routed to this
+	// channel (channel-wide, across all users and keys). A saturated channel
+	// is skipped during selection so traffic fails over to other channels.
+	// 0 = no limit.
+	RpmLimit int `json:"rpm_limit,omitempty"`
+	// TpmLimit caps the tokens per minute accounted to this channel. Like the
+	// user-level TPM limit it is settled after billing, so the first requests
+	// of a fresh minute may overshoot. 0 = no limit.
+	TpmLimit int `json:"tpm_limit,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -56,10 +71,18 @@ func (s *ChannelExtendSettings) Validate() error {
 	if s.MinInputTokens > 0 && s.MaxInputTokens > 0 && s.MaxInputTokens <= s.MinInputTokens {
 		return fmt.Errorf("invalid max_input_tokens: %d, must be greater than min_input_tokens %d", s.MaxInputTokens, s.MinInputTokens)
 	}
+	if s.RpmLimit < 0 || s.RpmLimit > MaxChannelRateLimitValue {
+		return fmt.Errorf("invalid rpm_limit: %d, must be within [0, %d]", s.RpmLimit, MaxChannelRateLimitValue)
+	}
+	if s.TpmLimit < 0 || s.TpmLimit > MaxChannelRateLimitValue {
+		return fmt.Errorf("invalid tpm_limit: %d, must be within [0, %d]", s.TpmLimit, MaxChannelRateLimitValue)
+	}
 	return nil
 }
 
 // IsZero reports whether every override inherits the global configuration.
 func (s *ChannelExtendSettings) IsZero() bool {
-	return s == nil || (s.RelayTimeout == 0 && s.StreamingTimeout == 0 && s.MinInputTokens == 0 && s.MaxInputTokens == 0)
+	return s == nil || (s.RelayTimeout == 0 && s.StreamingTimeout == 0 &&
+		s.MinInputTokens == 0 && s.MaxInputTokens == 0 &&
+		s.RpmLimit == 0 && s.TpmLimit == 0)
 }

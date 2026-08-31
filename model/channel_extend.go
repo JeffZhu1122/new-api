@@ -18,6 +18,8 @@ type ChannelExtend struct {
 	StreamingTimeout int `json:"streaming_timeout" gorm:"default:0"` // seconds, 0 = global STREAMING_TIMEOUT
 	MinInputTokens   int `json:"min_input_tokens" gorm:"default:0"`  // estimated input tokens must exceed this to route here, 0 = no minimum
 	MaxInputTokens   int `json:"max_input_tokens" gorm:"default:0"`  // estimated input tokens must not exceed this to route here, 0 = no maximum
+	RpmLimit         int `json:"rpm_limit" gorm:"default:0"`         // channel-wide requests per minute, 0 = no limit
+	TpmLimit         int `json:"tpm_limit" gorm:"default:0"`         // channel-wide tokens per minute, 0 = no limit
 }
 
 func (ChannelExtend) TableName() string {
@@ -33,6 +35,8 @@ func (ce *ChannelExtend) ToSettings() dto.ChannelExtendSettings {
 		StreamingTimeout: ce.StreamingTimeout,
 		MinInputTokens:   ce.MinInputTokens,
 		MaxInputTokens:   ce.MaxInputTokens,
+		RpmLimit:         ce.RpmLimit,
+		TpmLimit:         ce.TpmLimit,
 	}
 }
 
@@ -54,10 +58,12 @@ func UpsertChannelExtend(tx *gorm.DB, channelId int, settings dto.ChannelExtendS
 		StreamingTimeout: settings.StreamingTimeout,
 		MinInputTokens:   settings.MinInputTokens,
 		MaxInputTokens:   settings.MaxInputTokens,
+		RpmLimit:         settings.RpmLimit,
+		TpmLimit:         settings.TpmLimit,
 	}
 	return tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "channel_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens"}),
+		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit"}),
 	}).Create(&extend).Error
 }
 

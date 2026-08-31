@@ -56,6 +56,21 @@ func TestUpsertChannelExtendLifecycle(t *testing.T) {
 	assert.True(t, settings.IsZero())
 }
 
+func TestUpsertChannelExtendPersistsRateLimits(t *testing.T) {
+	useChannelExtendDB(t)
+
+	// 只配置 rpm/tpm 的行必须完整往返，且不得被 IsZero 误判为全零而删除
+	require.NoError(t, UpsertChannelExtend(nil, 7, dto.ChannelExtendSettings{RpmLimit: 5, TpmLimit: 100}))
+	settings, err := GetChannelExtend(7)
+	require.NoError(t, err)
+	assert.Equal(t, dto.ChannelExtendSettings{RpmLimit: 5, TpmLimit: 100}, settings)
+	assert.False(t, settings.IsZero())
+
+	var count int64
+	require.NoError(t, DB.Model(&ChannelExtend{}).Where("channel_id = ?", 7).Count(&count).Error)
+	assert.Equal(t, int64(1), count)
+}
+
 func TestGetChannelExtendSettingsFallsBackToDBWithoutMemoryCache(t *testing.T) {
 	useChannelExtendDB(t)
 	previousMemoryCache := common.MemoryCacheEnabled
