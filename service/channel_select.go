@@ -85,7 +85,35 @@ func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
 }
 
-// CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
+// CacheGetRandomSatisfiedChannel selects a channel and enforces per-channel
+// RPM/TPM limits: a saturated channel is excluded for the rest of this request
+// and selection runs again, so traffic fails over to remaining channels no
+// matter how many saturated candidates sit ahead of a healthy one. Every
+// rejected channel joins ExcludeChannelIds, so the candidate set strictly
+// shrinks and the loop terminates once the selector returns nil (exclusions
+// exhausted), which upstream reports as the generic "no available channel";
+// the real reason is only logged.
+func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	selectGroup := param.TokenGroup
+	for {
+		channel, group, err := cacheGetRandomSatisfiedChannelOnce(param)
+		if err != nil || channel == nil {
+			return channel, group, err
+		}
+		selectGroup = group
+		if TakeChannelRateLimit(param.Ctx, channel) {
+			return channel, group, nil
+		}
+		// 防御性断路：选择器绝不应返回已排除的渠道，若违反则报无可用渠道而非死循环
+		if param.ExcludeChannelIds[channel.Id] {
+			logger.LogError(param.Ctx, fmt.Sprintf("channel selection returned excluded channel %d, aborting reselect", channel.Id))
+			return nil, selectGroup, nil
+		}
+		param.AddFailedChannel(channel.Id)
+	}
+}
+
+// cacheGetRandomSatisfiedChannelOnce tries to get a random channel that satisfies the requirements.
 // 尝试获取一个满足要求的随机渠道。
 //
 // For "auto" tokenGroup with cross-group Retry enabled:
@@ -120,7 +148,7 @@ func (p *RetryParam) ResetRetryNextTry() {
 //
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
-func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+func cacheGetRandomSatisfiedChannelOnce(param *RetryParam) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
@@ -307,11 +335,29 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 		if channel.Status != common.ChannelStatusEnabled {
 			return nil, "", pinnedChannelUnavailable(pin, http.StatusForbidden, i18n.MsgDistributorChannelDisabled)
 		}
+		if constant.IsCountTokensPath(retry.RequestPath) && !model.ChannelSupportsCountTokensPath(channel, retry.RequestPath) {
+			return nil, "", &ChannelSelectError{StatusCode: http.StatusForbidden, Message: "token counting is only available on channels with count_tokens enabled (Anthropic for /v1/messages/count_tokens, OpenAI for /v1/responses/input_tokens)"}
+		}
+		inputTokensEstimate := InputTokensEstimate(c)
+		fillExtendConfigForInputFilter(channel, inputTokensEstimate)
 		if ok, kind := model.ChannelSatisfiesFilters(channel, modelName, constraints.Filters); !ok {
+			// 输入范围规则属于运营方私有配置，对外只回通用错误码，归因进日志
+			errCode := types.ErrorCode(kind)
+			if kind == dto.FilterInputTokens {
+				logger.LogWarn(c, fmt.Sprintf("pinned channel %d rejected by input_tokens filter: estimated_input_tokens=%d", channel.Id, inputTokensEstimate))
+				errCode = types.ErrorCodeModelNotFound
+			}
 			return nil, "", &ChannelSelectError{
-				StatusCode: http.StatusBadRequest, Code: types.ErrorCode(kind), MessageID: i18n.MsgDistributorNoAvailableChannel,
+				StatusCode: http.StatusBadRequest, Code: errCode, MessageID: i18n.MsgDistributorNoAvailableChannel,
 				Params:     map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelName},
 				FilterKind: kind, Channel: channel,
+			}
+		}
+		// 指定渠道无处转移：饱和即拒绝。限流归因只进日志，对外保持通用错误
+		if !TakeChannelRateLimit(c, channel) {
+			return nil, "", &ChannelSelectError{
+				StatusCode: http.StatusServiceUnavailable, Code: types.ErrorCodeModelNotFound, MessageID: i18n.MsgDistributorNoAvailableChannel,
+				Params: map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelName},
 			}
 		}
 		return channel, "", nil
@@ -326,26 +372,32 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 			preferred, err := model.CacheGetChannel(preferredChannelID)
 			affinitySatisfied := false
 			if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
+				fillExtendConfigForInputFilter(preferred, InputTokensEstimate(c))
 				affinitySatisfied, _ = model.ChannelSatisfiesFilters(preferred, modelName, constraints.Filters)
 			}
 			if affinitySatisfied {
+				affinityGroup := ""
 				if usingGroup == "auto" {
 					userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 					for _, g := range GetRequestAutoGroups(c, userGroup) {
 						if model.IsChannelEnabledForGroupModel(g, modelName, preferred.Id) {
-							selectGroup = g
-							common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-							channel = preferred
-							affinityUsable = true
-							MarkChannelAffinityUsed(c, g, preferred.Id)
+							affinityGroup = g
 							break
 						}
 					}
 				} else if model.IsChannelEnabledForGroupModel(usingGroup, modelName, preferred.Id) {
+					affinityGroup = usingGroup
+				}
+				// 渠道限流最后扣减：确认本请求有资格使用该渠道后才消耗配额，
+				// 避免无资格请求空耗渠道 RPM 槽位；饱和时放弃亲和走常规选择转移
+				if affinityGroup != "" && TakeChannelRateLimit(c, preferred) {
+					if usingGroup == "auto" {
+						common.SetContextKey(c, constant.ContextKeyAutoGroup, affinityGroup)
+					}
 					channel = preferred
-					selectGroup = usingGroup
+					selectGroup = affinityGroup
 					affinityUsable = true
-					MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+					MarkChannelAffinityUsed(c, affinityGroup, preferred.Id)
 				}
 			}
 			if !affinityUsable && !ShouldKeepChannelAffinityOnChannelDisabled() {
@@ -394,6 +446,36 @@ func pinnedChannelUnavailable(pin dto.ChannelPin, statusCode int, messageID stri
 		return &ChannelSelectError{StatusCode: http.StatusBadRequest, Code: "origin_task_channel_disabled", Message: "origin_task_channel_disabled"}
 	}
 	return &ChannelSelectError{StatusCode: statusCode, MessageID: messageID}
+}
+
+// InputTokensEstimate returns the estimated input tokens recorded by the
+// input_tokens channel filter for this request, or -1 when the filter is not
+// active (no channel configures min/max_input_tokens).
+func InputTokensEstimate(c *gin.Context) int {
+	if c == nil {
+		return -1
+	}
+	for _, filter := range GetChannelConstraints(c).Filters {
+		if filter.Kind == dto.FilterInputTokens {
+			return filter.InputTokens
+		}
+	}
+	return -1
+}
+
+// fillExtendConfigForInputFilter backfills extend settings on channels loaded
+// straight from the DB (memory cache disabled), where ExtendConfig is nil, so
+// the input_tokens filter can evaluate pinned/affinity channels. Cached
+// channels are never mutated here: InitChannelCache populates them before
+// publishing, and writing to a shared cached object would race.
+func fillExtendConfigForInputFilter(channel *model.Channel, inputTokensEstimate int) {
+	if inputTokensEstimate < 0 || channel == nil || channel.ExtendConfig != nil || common.MemoryCacheEnabled {
+		return
+	}
+	settings := model.GetChannelExtendSettings(channel.Id)
+	if !settings.IsZero() {
+		channel.ExtendConfig = &settings
+	}
 }
 
 // AppendUsedChannel records an attempted channel in the request's channel
