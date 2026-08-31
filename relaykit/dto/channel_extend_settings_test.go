@@ -28,6 +28,11 @@ func TestChannelExtendSettingsValidate(t *testing.T) {
 		{name: "max below min rejected", settings: &ChannelExtendSettings{MinInputTokens: 1000, MaxInputTokens: 500}, wantErr: "must be greater than min_input_tokens"},
 		{name: "max above min valid", settings: &ChannelExtendSettings{MinInputTokens: 1000, MaxInputTokens: 1001}},
 		{name: "max alone valid", settings: &ChannelExtendSettings{MaxInputTokens: 500}},
+		{name: "rate limits at max boundary valid", settings: &ChannelExtendSettings{RpmLimit: MaxChannelRateLimitValue, TpmLimit: MaxChannelRateLimitValue}},
+		{name: "negative rpm limit rejected", settings: &ChannelExtendSettings{RpmLimit: -1}, wantErr: "rpm_limit"},
+		{name: "oversized rpm limit rejected", settings: &ChannelExtendSettings{RpmLimit: MaxChannelRateLimitValue + 1}, wantErr: "rpm_limit"},
+		{name: "negative tpm limit rejected", settings: &ChannelExtendSettings{TpmLimit: -1}, wantErr: "tpm_limit"},
+		{name: "oversized tpm limit rejected", settings: &ChannelExtendSettings{TpmLimit: MaxChannelRateLimitValue + 1}, wantErr: "tpm_limit"},
 	}
 
 	for _, tt := range tests {
@@ -52,4 +57,7 @@ func TestChannelExtendSettingsIsZero(t *testing.T) {
 	// min/max_input_tokens 单独配置时不得被当作全零删除
 	assert.False(t, (&ChannelExtendSettings{MinInputTokens: 1}).IsZero())
 	assert.False(t, (&ChannelExtendSettings{MaxInputTokens: 1}).IsZero())
+	// rpm/tpm_limit 单独配置时同样不得被当作全零删除
+	assert.False(t, (&ChannelExtendSettings{RpmLimit: 1}).IsZero())
+	assert.False(t, (&ChannelExtendSettings{TpmLimit: 1}).IsZero())
 }
