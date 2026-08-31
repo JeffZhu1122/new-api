@@ -79,6 +79,7 @@ export const HTTP_PROTOCOL_HTTP1 = 'http1'
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 86400
 export const MAX_CHANNEL_INPUT_TOKENS_BOUND = 10000000
+export const MAX_CHANNEL_RATE_LIMIT_VALUE = 2147483647
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -271,6 +272,9 @@ export const channelFormSchema = z
     // Estimated input token routing bounds (channel_extend, 0 = off)
     min_input_tokens: z.number().int().optional(),
     max_input_tokens: z.number().int().optional(),
+    // Channel-wide rate limits (channel_extend, 0 = no limit)
+    rpm_limit: z.number().int().optional(),
+    tpm_limit: z.number().int().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
     system_prompt_override: z.boolean().optional(),
@@ -456,6 +460,14 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_CHANNEL_INPUT_TOKENS_RANGE
       )
     }
+    const rpmLimit = data.rpm_limit ?? 0
+    if (rpmLimit < 0 || rpmLimit > MAX_CHANNEL_RATE_LIMIT_VALUE) {
+      addRequiredIssue(ctx, 'rpm_limit', ERROR_MESSAGES.INVALID_CHANNEL_RPM_LIMIT)
+    }
+    const tpmLimit = data.tpm_limit ?? 0
+    if (tpmLimit < 0 || tpmLimit > MAX_CHANNEL_RATE_LIMIT_VALUE) {
+      addRequiredIssue(ctx, 'tpm_limit', ERROR_MESSAGES.INVALID_CHANNEL_TPM_LIMIT)
+    }
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -501,6 +513,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   streaming_timeout: 0,
   min_input_tokens: 0,
   max_input_tokens: 0,
+  rpm_limit: 0,
+  tpm_limit: 0,
   pass_through_body_enabled: false,
   system_prompt: '',
   system_prompt_override: false,
@@ -658,6 +672,8 @@ export function transformChannelToFormDefaults(
     streaming_timeout: channel.extend_config?.streaming_timeout || 0,
     min_input_tokens: channel.extend_config?.min_input_tokens || 0,
     max_input_tokens: channel.extend_config?.max_input_tokens || 0,
+    rpm_limit: channel.extend_config?.rpm_limit || 0,
+    tpm_limit: channel.extend_config?.tpm_limit || 0,
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
     vertex_key_type: vertexKeyType,
@@ -872,6 +888,8 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
     streaming_timeout: formData.streaming_timeout || 0,
     min_input_tokens: formData.min_input_tokens || 0,
     max_input_tokens: formData.max_input_tokens || 0,
+    rpm_limit: formData.rpm_limit || 0,
+    tpm_limit: formData.tpm_limit || 0,
   }
 }
 

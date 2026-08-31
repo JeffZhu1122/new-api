@@ -100,6 +100,11 @@ func Distribute() func(c *gin.Context) {
 				abortWithOpenAiMessage(c, http.StatusBadRequest, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), errCode)
 				return
 			}
+			// 指定渠道无处转移：饱和即拒绝。限流归因只进日志，对外保持通用错误
+			if !service.TakeChannelRateLimit(c, channel) {
+				abortWithOpenAiMessage(c, http.StatusServiceUnavailable, i18n.T(c, i18n.MsgDistributorNoAvailableChannel, map[string]any{"Group": common.GetContextKeyString(c, constant.ContextKeyUsingGroup), "Model": modelRequest.Model}), types.ErrorCodeModelNotFound)
+				return
+			}
 		} else {
 			// Select a channel for the user
 			// check token model mapping
@@ -157,24 +162,29 @@ func Distribute() func(c *gin.Context) {
 						affinitySatisfied, _ = model.ChannelSatisfiesFilters(preferred, modelRequest.Model, constraints.Filters)
 					}
 					if affinitySatisfied {
+						affinityGroup := ""
 						if usingGroup == "auto" {
 							userGroup := common.GetContextKeyString(c, constant.ContextKeyUserGroup)
 							autoGroups := service.GetRequestAutoGroups(c, userGroup)
 							for _, g := range autoGroups {
 								if model.IsChannelEnabledForGroupModel(g, modelRequest.Model, preferred.Id) {
-									selectGroup = g
-									common.SetContextKey(c, constant.ContextKeyAutoGroup, g)
-									channel = preferred
-									affinityUsable = true
-									service.MarkChannelAffinityUsed(c, g, preferred.Id)
+									affinityGroup = g
 									break
 								}
 							}
 						} else if model.IsChannelEnabledForGroupModel(usingGroup, modelRequest.Model, preferred.Id) {
+							affinityGroup = usingGroup
+						}
+						// 渠道限流最后扣减：确认本请求有资格使用该渠道后才消耗配额，
+						// 避免无资格请求空耗渠道 RPM 槽位；饱和时放弃亲和走常规选择转移
+						if affinityGroup != "" && service.TakeChannelRateLimit(c, preferred) {
+							if usingGroup == "auto" {
+								common.SetContextKey(c, constant.ContextKeyAutoGroup, affinityGroup)
+							}
 							channel = preferred
-							selectGroup = usingGroup
+							selectGroup = affinityGroup
 							affinityUsable = true
-							service.MarkChannelAffinityUsed(c, usingGroup, preferred.Id)
+							service.MarkChannelAffinityUsed(c, affinityGroup, preferred.Id)
 						}
 					}
 					if !affinityUsable && !service.ShouldKeepChannelAffinityOnChannelDisabled() {

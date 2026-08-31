@@ -5607,6 +5607,12 @@
     "Zero retention": "Aucune rétention",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Channel RPM Limit": "Limite RPM du canal",
+    "Channel TPM Limit": "Limite TPM du canal",
+    "Maximum requests per minute routed to this channel, across all users and keys. A saturated channel is skipped and traffic fails over to other channels. 0 means no limit.": "Nombre maximal de requêtes par minute acheminées vers ce canal, tous utilisateurs et clés confondus. Un canal saturé est ignoré et le trafic bascule vers d'autres canaux. 0 signifie aucune limite.",
+    "Maximum tokens per minute accounted to this channel. Usage is settled after billing, so set it with some margin below the upstream limit. 0 means no limit.": "Nombre maximal de jetons par minute comptabilisés pour ce canal. L'utilisation est réglée après facturation, prévoyez donc une marge sous la limite amont. 0 signifie aucune limite.",
+    "Channel RPM limit must be between 0 and 2147483647": "La limite RPM du canal doit être comprise entre 0 et 2147483647",
+    "Channel TPM limit must be between 0 and 2147483647": "La limite TPM du canal doit être comprise entre 0 et 2147483647"
   }
 }

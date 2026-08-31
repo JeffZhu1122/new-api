@@ -5607,6 +5607,12 @@
     "Zero retention": "Không lưu dữ liệu",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V4",
-    "Zoom": "Zoom"
+    "Zoom": "Zoom",
+    "Channel RPM Limit": "Giới hạn RPM của kênh",
+    "Channel TPM Limit": "Giới hạn TPM của kênh",
+    "Maximum requests per minute routed to this channel, across all users and keys. A saturated channel is skipped and traffic fails over to other channels. 0 means no limit.": "Số yêu cầu tối đa mỗi phút được định tuyến đến kênh này, trên tất cả người dùng và khóa. Kênh bão hòa sẽ bị bỏ qua và lưu lượng chuyển sang các kênh khác. 0 nghĩa là không giới hạn.",
+    "Maximum tokens per minute accounted to this channel. Usage is settled after billing, so set it with some margin below the upstream limit. 0 means no limit.": "Số token tối đa mỗi phút được tính cho kênh này. Mức dùng được ghi nhận sau khi thanh toán, nên đặt thấp hơn giới hạn phía trên một chút. 0 nghĩa là không giới hạn.",
+    "Channel RPM limit must be between 0 and 2147483647": "Giới hạn RPM của kênh phải nằm trong khoảng 0 đến 2147483647",
+    "Channel TPM limit must be between 0 and 2147483647": "Giới hạn TPM của kênh phải nằm trong khoảng 0 đến 2147483647"
   }
 }

@@ -5607,6 +5607,12 @@
     "Zero retention": "零數據保留",
     "Zhipu": "智譜",
     "Zhipu V4": "智譜 V4",
-    "Zoom": "縮放"
+    "Zoom": "縮放",
+    "Channel RPM Limit": "渠道 RPM 上限",
+    "Channel TPM Limit": "渠道 TPM 上限",
+    "Maximum requests per minute routed to this channel, across all users and keys. A saturated channel is skipped and traffic fails over to other channels. 0 means no limit.": "每分鐘最多路由到本渠道的請求數（跨所有使用者和金鑰）。達到上限的渠道會被跳過，流量自動轉移到其他渠道。0 表示不限制。",
+    "Maximum tokens per minute accounted to this channel. Usage is settled after billing, so set it with some margin below the upstream limit. 0 means no limit.": "每分鐘計入本渠道的最大 token 數。用量在計費結算後記帳，可能短暫超出，建議設定為略低於上游限額。0 表示不限制。",
+    "Channel RPM limit must be between 0 and 2147483647": "渠道 RPM 上限必須在 0 到 2147483647 之間",
+    "Channel TPM limit must be between 0 and 2147483647": "渠道 TPM 上限必須在 0 到 2147483647 之間"
   }
 }

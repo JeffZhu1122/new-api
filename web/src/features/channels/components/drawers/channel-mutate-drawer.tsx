@@ -296,6 +296,8 @@ const SENSITIVE_FORM_FIELDS = [
   'streaming_timeout',
   'min_input_tokens',
   'max_input_tokens',
+  'rpm_limit',
+  'tpm_limit',
   'pass_through_body_enabled',
   'system_prompt',
   'system_prompt_override',
@@ -359,6 +361,8 @@ function hasAdvancedSettingsValues(values: ChannelFormValues): boolean {
     (values.streaming_timeout != null && values.streaming_timeout > 0) ||
     (values.min_input_tokens != null && values.min_input_tokens > 0) ||
     (values.max_input_tokens != null && values.max_input_tokens > 0) ||
+    (values.rpm_limit != null && values.rpm_limit > 0) ||
+    (values.tpm_limit != null && values.tpm_limit > 0) ||
     values.claude_beta_query ||
     values.count_tokens_enabled ||
     values.upstream_model_update_check_enabled ||
@@ -4536,6 +4540,64 @@ export function ChannelMutateDrawer({
                                   <FormDescription>
                                     {t(
                                       'Route requests to this channel only when the estimated input tokens do not exceed this value. Estimation is approximate and applies to text requests only. 0 means no maximum. Keep at least one channel per model without a maximum to avoid rejecting large requests.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='rpm_limit'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>
+                                    {t('Channel RPM Limit')}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type='number'
+                                      placeholder='0'
+                                      {...field}
+                                      value={field.value ?? 0}
+                                      onChange={(e) =>
+                                        field.onChange(Number(e.target.value))
+                                      }
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'Maximum requests per minute routed to this channel, across all users and keys. A saturated channel is skipped and traffic fails over to other channels. 0 means no limit.'
+                                    )}
+                                  </FormDescription>
+                                  <FormMessage />
+                                </FormItem>
+                              )}
+                            />
+
+                            <FormField
+                              control={form.control}
+                              name='tpm_limit'
+                              render={({ field }) => (
+                                <FormItem>
+                                  <FormLabel>
+                                    {t('Channel TPM Limit')}
+                                  </FormLabel>
+                                  <FormControl>
+                                    <Input
+                                      type='number'
+                                      placeholder='0'
+                                      {...field}
+                                      value={field.value ?? 0}
+                                      onChange={(e) =>
+                                        field.onChange(Number(e.target.value))
+                                      }
+                                    />
+                                  </FormControl>
+                                  <FormDescription>
+                                    {t(
+                                      'Maximum tokens per minute accounted to this channel. Usage is settled after billing, so set it with some margin below the upstream limit. 0 means no limit.'
                                     )}
                                   </FormDescription>
                                   <FormMessage />

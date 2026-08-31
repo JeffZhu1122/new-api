@@ -45,6 +45,8 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'streaming_timeout',
   'min_input_tokens',
   'max_input_tokens',
+  'rpm_limit',
+  'tpm_limit',
   'system_prompt',
   'system_prompt_override',
   'allow_service_tier',

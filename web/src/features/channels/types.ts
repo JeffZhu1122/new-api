@@ -77,6 +77,8 @@ export const channelSchema = z.object({
       streaming_timeout: z.number().optional(),
       min_input_tokens: z.number().optional(),
       max_input_tokens: z.number().optional(),
+      rpm_limit: z.number().optional(),
+      tpm_limit: z.number().optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -104,6 +106,8 @@ export interface ChannelExtendSettings {
   streaming_timeout?: number
   min_input_tokens?: number
   max_input_tokens?: number
+  rpm_limit?: number
+  tpm_limit?: number
 }
 
 export interface ChannelOtherSettings {

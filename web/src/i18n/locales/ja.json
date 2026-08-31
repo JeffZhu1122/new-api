@@ -5607,6 +5607,12 @@
     "Zero retention": "データ保持なし",
     "Zhipu": "Zhipu",
     "Zhipu V4": "Zhipu V 4",
-    "Zoom": "ズーム"
+    "Zoom": "ズーム",
+    "Channel RPM Limit": "チャンネル RPM 上限",
+    "Channel TPM Limit": "チャンネル TPM 上限",
+    "Maximum requests per minute routed to this channel, across all users and keys. A saturated channel is skipped and traffic fails over to other channels. 0 means no limit.": "このチャンネルに毎分ルーティングされる最大リクエスト数（全ユーザー・全キー合計）。上限に達したチャンネルはスキップされ、他のチャンネルにフェイルオーバーします。0 は無制限です。",
+    "Maximum tokens per minute accounted to this channel. Usage is settled after billing, so set it with some margin below the upstream limit. 0 means no limit.": "このチャンネルに毎分計上される最大トークン数。使用量は課金精算後に記録されるため、上流の制限より余裕を持って設定してください。0 は無制限です。",
+    "Channel RPM limit must be between 0 and 2147483647": "チャンネル RPM 上限は 0 から 2147483647 の間で指定してください",
+    "Channel TPM limit must be between 0 and 2147483647": "チャンネル TPM 上限は 0 から 2147483647 の間で指定してください"
   }
 }

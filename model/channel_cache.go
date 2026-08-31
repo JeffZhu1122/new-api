@@ -24,14 +24,18 @@ var channelsIDM map[int]*Channel                     // all channels include dis
 var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
 var channelExtendIDM map[int]kitdto.ChannelExtendSettings
 var anyInputTokensLimit bool // true when at least one channel configures min_input_tokens or max_input_tokens
+var anyChannelRateLimit bool // true when at least one channel configures rpm_limit or tpm_limit
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
-	// 管理端改动渠道后会调用本函数；DB 模式下也要让 min/max_input_tokens 的
-	// TTL 缓存立即失效，否则新保存的输入范围配置最长一分钟内不生效
+	// 管理端改动渠道后会调用本函数；DB 模式下也要让 min/max_input_tokens 和
+	// rpm/tpm_limit 的 TTL 缓存立即失效，否则新保存的配置最长一分钟内不生效
 	inputTokensLimitDBCheck.Lock()
 	inputTokensLimitDBCheck.expiresAt = time.Time{}
 	inputTokensLimitDBCheck.Unlock()
+	channelRateLimitDBCheck.Lock()
+	channelRateLimitDBCheck.expiresAt = time.Time{}
+	channelRateLimitDBCheck.Unlock()
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
 		return
@@ -52,11 +56,15 @@ func InitChannelCache() {
 	DB.Find(&extends)
 	newChannelExtendIDM := make(map[int]kitdto.ChannelExtendSettings, len(extends))
 	newAnyInputTokensLimit := false
+	newAnyChannelRateLimit := false
 	for _, extend := range extends {
 		settings := extend.ToSettings()
 		newChannelExtendIDM[extend.ChannelId] = settings
 		if settings.MinInputTokens > 0 || settings.MaxInputTokens > 0 {
 			newAnyInputTokensLimit = true
+		}
+		if settings.RpmLimit > 0 || settings.TpmLimit > 0 {
+			newAnyChannelRateLimit = true
 		}
 		// 预填 ExtendConfig，使 min/max_input_tokens 过滤在持锁的选择路径中
 		// 无需再查扩展配置（见 channelMatchesFilter 的死锁说明）
@@ -120,6 +128,7 @@ func InitChannelCache() {
 	channel2advancedCustomConfig = newChannel2advancedCustomConfig
 	channelExtendIDM = newChannelExtendIDM
 	anyInputTokensLimit = newAnyInputTokensLimit
+	anyChannelRateLimit = newAnyChannelRateLimit
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -191,6 +200,42 @@ func HasAnyInputTokensLimit() bool {
 	inputTokensLimitDBCheck.value = count > 0
 	inputTokensLimitDBCheck.expiresAt = time.Now().Add(time.Minute)
 	return inputTokensLimitDBCheck.value
+}
+
+var channelRateLimitDBCheck struct {
+	sync.Mutex
+	expiresAt time.Time
+	value     bool
+}
+
+// HasAnyChannelRateLimit reports whether any channel configures rpm_limit or
+// tpm_limit, so selection and settlement can skip channel rate limiting (and
+// its per-request extend lookup in DB mode) when the feature is unused.
+// Memory-cache mode reads a flag maintained by InitChannelCache; DB mode uses
+// a short-TTL cached count (failing open to true on query errors).
+func HasAnyChannelRateLimit() bool {
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		defer channelSyncLock.RUnlock()
+		return anyChannelRateLimit
+	}
+	if DB == nil {
+		return false
+	}
+	channelRateLimitDBCheck.Lock()
+	defer channelRateLimitDBCheck.Unlock()
+	if time.Now().Before(channelRateLimitDBCheck.expiresAt) {
+		return channelRateLimitDBCheck.value
+	}
+	var count int64
+	err := DB.Model(&ChannelExtend{}).Where("rpm_limit > 0 OR tpm_limit > 0").Count(&count).Error
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to count channel rate limit channels: %v", err))
+		return true
+	}
+	channelRateLimitDBCheck.value = count > 0
+	channelRateLimitDBCheck.expiresAt = time.Now().Add(time.Minute)
+	return channelRateLimitDBCheck.value
 }
 
 func GetRandomSatisfiedChannel(

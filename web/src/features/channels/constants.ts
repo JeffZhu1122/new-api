@@ -272,6 +272,10 @@ export const ERROR_MESSAGES = {
     'Maximum input tokens must be between 0 and 10000000',
   INVALID_CHANNEL_INPUT_TOKENS_RANGE:
     'Maximum input tokens must be greater than minimum input tokens',
+  INVALID_CHANNEL_RPM_LIMIT:
+    'Channel RPM limit must be between 0 and 2147483647',
+  INVALID_CHANNEL_TPM_LIMIT:
+    'Channel TPM limit must be between 0 and 2147483647',
   CREATE_FAILED: 'Failed to create channel',
   UPDATE_FAILED: 'Failed to update channel',
   DELETE_FAILED: 'Failed to delete channel',

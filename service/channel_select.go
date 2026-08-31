@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -79,7 +80,35 @@ func (p *RetryParam) ResetRetryNextTry() {
 	p.resetNextTry = true
 }
 
-// CacheGetRandomSatisfiedChannel tries to get a random channel that satisfies the requirements.
+// CacheGetRandomSatisfiedChannel selects a channel and enforces per-channel
+// RPM/TPM limits: a saturated channel is excluded for the rest of this request
+// and selection runs again, so traffic fails over to remaining channels no
+// matter how many saturated candidates sit ahead of a healthy one. Every
+// rejected channel joins ExcludeChannelIds, so the candidate set strictly
+// shrinks and the loop terminates once the selector returns nil (exclusions
+// exhausted), which upstream reports as the generic "no available channel";
+// the real reason is only logged.
+func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+	selectGroup := param.TokenGroup
+	for {
+		channel, group, err := cacheGetRandomSatisfiedChannelOnce(param)
+		if err != nil || channel == nil {
+			return channel, group, err
+		}
+		selectGroup = group
+		if TakeChannelRateLimit(param.Ctx, channel) {
+			return channel, group, nil
+		}
+		// 防御性断路：选择器绝不应返回已排除的渠道，若违反则报无可用渠道而非死循环
+		if param.ExcludeChannelIds[channel.Id] {
+			logger.LogError(param.Ctx, fmt.Sprintf("channel selection returned excluded channel %d, aborting reselect", channel.Id))
+			return nil, selectGroup, nil
+		}
+		param.AddFailedChannel(channel.Id)
+	}
+}
+
+// cacheGetRandomSatisfiedChannelOnce tries to get a random channel that satisfies the requirements.
 // 尝试获取一个满足要求的随机渠道。
 //
 // For "auto" tokenGroup with cross-group Retry enabled:
@@ -114,7 +143,7 @@ func (p *RetryParam) ResetRetryNextTry() {
 //
 //	Retry=3: GroupB, priority1 (startRetryIndex=2, priorityRetry=1)
 //	         分组B, 优先级1
-func CacheGetRandomSatisfiedChannel(param *RetryParam) (*model.Channel, string, error) {
+func cacheGetRandomSatisfiedChannelOnce(param *RetryParam) (*model.Channel, string, error) {
 	var channel *model.Channel
 	var err error
 	selectGroup := param.TokenGroup
