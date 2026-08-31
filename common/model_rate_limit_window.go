@@ -24,6 +24,23 @@ func ModelTpmRedisKey(userId int, group string, model string, unixMinute int64) 
 	return fmt.Sprintf("%s:%d", ModelTpmKey(userId, group, model), unixMinute)
 }
 
+// ChannelRpmKey identifies one channel's RPM fixed window; the limit applies
+// to the whole channel across all users, groups, models and keys.
+func ChannelRpmKey(channelId int) string {
+	return fmt.Sprintf("rateLimit:v2:crpm:%d", channelId)
+}
+
+// ChannelTpmKey identifies one channel's TPM counter. It is used directly as
+// the in-memory counter key; the Redis key appends the minute bucket via
+// ChannelTpmRedisKey.
+func ChannelTpmKey(channelId int) string {
+	return fmt.Sprintf("rateLimit:v2:ctpm:%d", channelId)
+}
+
+func ChannelTpmRedisKey(channelId int, unixMinute int64) string {
+	return fmt.Sprintf("%s:%d", ChannelTpmKey(channelId), unixMinute)
+}
+
 // UnixMinute returns the current fixed one-minute window bucket.
 func UnixMinute() int64 {
 	return time.Now().Unix() / 60
@@ -45,6 +62,10 @@ type InMemoryWindowCounter struct {
 // ModelTpmMemoryCounter is the process-wide TPM counter used when Redis is
 // disabled. Note the limits then apply per instance, not cluster-wide.
 var ModelTpmMemoryCounter InMemoryWindowCounter
+
+// ChannelTpmMemoryCounter is the no-Redis fallback for channel-level TPM
+// accounting; the same per-instance caveat applies.
+var ChannelTpmMemoryCounter InMemoryWindowCounter
 
 func (c *InMemoryWindowCounter) Add(key string, minute int64, delta int64) {
 	c.mutex.Lock()
