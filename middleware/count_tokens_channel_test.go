@@ -9,12 +9,14 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// count_tokens 路径的渠道可用性判定（亲和渠道 / 令牌指定渠道共用 ChannelSatisfiesFilters）：
-// 必须是 Anthropic 类型且开启 count_tokens_enabled；普通路径不受影响。
+// 计数路径的渠道可用性判定（亲和渠道 / 令牌指定渠道共用 ChannelSatisfiesFilters）：
+// /v1/messages/count_tokens 必须是 Anthropic 类型、/v1/responses/input_tokens 必须是 OpenAI 类型，
+// 且都需开启 count_tokens_enabled；普通路径不受影响。
 func TestChannelSatisfiesFiltersCountTokens(t *testing.T) {
 	anthropicEnabled := &model.Channel{Type: constant.ChannelTypeAnthropic, OtherSettings: `{"count_tokens_enabled":true}`}
 	anthropicDisabled := &model.Channel{Type: constant.ChannelTypeAnthropic}
 	openAIEnabled := &model.Channel{Type: constant.ChannelTypeOpenAI, OtherSettings: `{"count_tokens_enabled":true}`}
+	openAIDisabled := &model.Channel{Type: constant.ChannelTypeOpenAI}
 
 	tests := []struct {
 		name    string
@@ -26,6 +28,10 @@ func TestChannelSatisfiesFiltersCountTokens(t *testing.T) {
 		{name: "anthropic_disabled_count_tokens", channel: anthropicDisabled, path: constant.ClaudeCountTokensPath, want: false},
 		{name: "openai_enabled_count_tokens", channel: openAIEnabled, path: constant.ClaudeCountTokensPath, want: false},
 		{name: "nil_channel", channel: nil, path: constant.ClaudeCountTokensPath, want: false},
+		{name: "openai_enabled_input_tokens", channel: openAIEnabled, path: constant.OpenAIInputTokensPath, want: true},
+		{name: "openai_disabled_input_tokens", channel: openAIDisabled, path: constant.OpenAIInputTokensPath, want: false},
+		{name: "anthropic_enabled_input_tokens", channel: anthropicEnabled, path: constant.OpenAIInputTokensPath, want: false},
+		{name: "openai_disabled_responses", channel: openAIDisabled, path: "/v1/responses", want: true},
 		{name: "anthropic_disabled_messages", channel: anthropicDisabled, path: "/v1/messages", want: true},
 		{name: "openai_enabled_chat", channel: openAIEnabled, path: "/v1/chat/completions", want: true},
 	}

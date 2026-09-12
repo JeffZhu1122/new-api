@@ -54,7 +54,8 @@ func createCountTokensTestChannel(t *testing.T, id int, channelType int, otherSe
 	}).Error)
 }
 
-// count_tokens 路径只允许「Anthropic 类型且开启 count_tokens_enabled」的渠道；
+// count_tokens 路径只允许「Anthropic 类型且开启 count_tokens_enabled」的渠道，
+// input_tokens 路径只允许「OpenAI 类型且开启 count_tokens_enabled」的渠道；
 // 普通路径不受该开关影响。内存缓存与数据库直查两条选择路径必须同规则。
 func TestGetRandomSatisfiedChannelCountTokensPath(t *testing.T) {
 	setupCountTokensChannelTest(t)
@@ -79,6 +80,13 @@ func TestGetRandomSatisfiedChannelCountTokensPath(t *testing.T) {
 			}
 
 			for i := 0; i < 20; i++ {
+				channel, err := GetRandomSatisfiedChannel("default", countTokensTestModel, 0, []dto.ChannelFilter{{Kind: dto.FilterRequestPath, RequestPath: constant.OpenAIInputTokensPath}}, nil)
+				require.NoError(t, err)
+				require.NotNil(t, channel)
+				assert.Equal(t, 4203, channel.Id)
+			}
+
+			for i := 0; i < 20; i++ {
 				channel, err := GetRandomSatisfiedChannel("default", countTokensTestModel, 0, []dto.ChannelFilter{{Kind: dto.FilterRequestPath, RequestPath: "/v1/messages"}}, nil)
 				require.NoError(t, err)
 				require.NotNil(t, channel)
@@ -88,10 +96,12 @@ func TestGetRandomSatisfiedChannelCountTokensPath(t *testing.T) {
 	}
 }
 
+// 开关未开启、或类型不匹配（即使开启了开关）的渠道都不能服务计数路径。
 func TestGetRandomSatisfiedChannelCountTokensPathNoEligibleChannel(t *testing.T) {
 	setupCountTokensChannelTest(t)
 	createCountTokensTestChannel(t, 4211, constant.ChannelTypeAnthropic, "")
-	createCountTokensTestChannel(t, 4212, constant.ChannelTypeOpenAI, `{"count_tokens_enabled":true}`)
+	createCountTokensTestChannel(t, 4212, constant.ChannelTypeOpenAI, "")
+	createCountTokensTestChannel(t, 4213, constant.ChannelTypeAzure, `{"count_tokens_enabled":true}`)
 
 	for _, memoryCache := range []bool{true, false} {
 		name := "db"
@@ -102,9 +112,11 @@ func TestGetRandomSatisfiedChannelCountTokensPathNoEligibleChannel(t *testing.T)
 			common.MemoryCacheEnabled = memoryCache
 			InitChannelCache()
 
-			channel, err := GetRandomSatisfiedChannel("default", countTokensTestModel, 0, []dto.ChannelFilter{{Kind: dto.FilterRequestPath, RequestPath: constant.ClaudeCountTokensPath}}, nil)
-			require.NoError(t, err)
-			assert.Nil(t, channel)
+			for _, path := range []string{constant.ClaudeCountTokensPath, constant.OpenAIInputTokensPath} {
+				channel, err := GetRandomSatisfiedChannel("default", countTokensTestModel, 0, []dto.ChannelFilter{{Kind: dto.FilterRequestPath, RequestPath: path}}, nil)
+				require.NoError(t, err)
+				assert.Nil(t, channel, path)
+			}
 		})
 	}
 }
