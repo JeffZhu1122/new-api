@@ -707,6 +707,11 @@ func GenRelayInfo(c *gin.Context, relayFormat types.RelayFormat, request dto.Req
 			return GenRelayInfoResponsesCompaction(c, request), nil
 		}
 		return nil, errors.New("request is not a OpenAIResponsesCompactionRequest")
+	case types.RelayFormatOpenAIResponsesInputTokens:
+		if request, ok := request.(*dto.OpenAIResponsesRequest); ok {
+			return GenRelayInfoResponsesInputTokens(c, request), nil
+		}
+		return nil, errors.New("request is not a OpenAIResponsesRequest")
 	case types.RelayFormatOpenAIAlphaSearch:
 		if request, ok := request.(*dto.AlphaSearchRequest); ok {
 			return GenRelayInfoAlphaSearch(c, request), nil
@@ -783,6 +788,17 @@ func GenRelayInfoResponsesCompaction(c *gin.Context, request *dto.OpenAIResponse
 		info.RelayMode = relayconstant.RelayModeResponsesCompact
 	}
 	info.RelayFormat = types.RelayFormatOpenAIResponsesCompaction
+	return info
+}
+
+// GenRelayInfoResponsesInputTokens builds relay info for /v1/responses/input_tokens.
+// The endpoint is a free passthrough, so no ResponsesUsageInfo is attached.
+func GenRelayInfoResponsesInputTokens(c *gin.Context, request *dto.OpenAIResponsesRequest) *RelayInfo {
+	info := genBaseRelayInfo(c, request)
+	if info.RelayMode == relayconstant.RelayModeUnknown {
+		info.RelayMode = relayconstant.RelayModeResponsesInputTokens
+	}
+	info.RelayFormat = types.RelayFormatOpenAIResponsesInputTokens
 	return info
 }
 

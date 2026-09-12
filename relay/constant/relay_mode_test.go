@@ -13,6 +13,10 @@ func TestPath2RelayMode(t *testing.T) {
 	}{
 		{path: "/v1/alpha/search", want: RelayModeAlphaSearch},
 		{path: "/v1/alpha/search?foo=1", want: RelayModeAlphaSearch},
+		{path: "/v1/responses", want: RelayModeResponses},
+		{path: "/v1/responses/compact", want: RelayModeResponsesCompact},
+		{path: "/v1/responses/input_tokens", want: RelayModeResponsesInputTokens},
+		{path: "/v1/messages/count_tokens", want: RelayModeClaudeCountTokens},
 	}
 	for _, tt := range tests {
 		t.Run(tt.path, func(t *testing.T) {

@@ -39,6 +39,8 @@ func GetAndValidateRequest(c *gin.Context, format types.RelayFormat) (request dt
 		request, err = GetAndValidateResponsesRequest(c)
 	case types.RelayFormatOpenAIResponsesCompaction:
 		request, err = GetAndValidateResponsesCompactionRequest(c)
+	case types.RelayFormatOpenAIResponsesInputTokens:
+		request, err = GetAndValidateResponsesInputTokensRequest(c)
 	case types.RelayFormatOpenAIAlphaSearch:
 		request, err = GetAndValidateAlphaSearchRequest(c)
 
@@ -146,6 +148,22 @@ func GetAndValidateResponsesRequest(c *gin.Context) (*dto.OpenAIResponsesRequest
 	}
 	if ExceedsMaxTokensLimit(request.MaxOutputTokens) {
 		return nil, errors.New("max_output_tokens is invalid")
+	}
+	return request, nil
+}
+
+// GetAndValidateResponsesInputTokensRequest parses a /v1/responses/input_tokens
+// request. The body shares the Responses request shape, but upstream treats
+// input as optional (previous_response_id / conversation are valid sources), so
+// only model is required here.
+func GetAndValidateResponsesInputTokensRequest(c *gin.Context) (*dto.OpenAIResponsesRequest, error) {
+	request := &dto.OpenAIResponsesRequest{}
+	err := common.UnmarshalBodyReusable(c, request)
+	if err != nil {
+		return nil, err
+	}
+	if request.Model == "" {
+		return nil, errors.New("model is required")
 	}
 	return request, nil
 }

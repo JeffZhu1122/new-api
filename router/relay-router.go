@@ -114,6 +114,9 @@ func SetRelayRouter(router *gin.Engine) {
 		httpRouter.POST("/responses/compact", func(c *gin.Context) {
 			controller.Relay(c, types.RelayFormatOpenAIResponsesCompaction)
 		})
+		httpRouter.POST("/responses/input_tokens", func(c *gin.Context) {
+			controller.Relay(c, types.RelayFormatOpenAIResponsesInputTokens)
+		})
 
 		// alpha search related routes (Codex standalone web search)
 		httpRouter.POST("/alpha/search", func(c *gin.Context) {
