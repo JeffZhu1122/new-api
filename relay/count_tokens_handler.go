@@ -19,15 +19,25 @@ import (
 )
 
 // ClaudeCountTokensHelper 将 /v1/messages/count_tokens 透传到 Anthropic 渠道。
-// 请求体原样转发（仅在渠道配置了模型映射时重写 model 字段），上游 JSON 响应逐字返回；
-// 不扣费，成功后写一条零额消费日志。
 func ClaudeCountTokensHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
+	return countTokensPassthrough(c, info, constant.ChannelTypeAnthropic, "count_tokens")
+}
+
+// OpenAIInputTokensHelper 将 /v1/responses/input_tokens 透传到 OpenAI 渠道。
+func OpenAIInputTokensHelper(c *gin.Context, info *relaycommon.RelayInfo) *types.NewAPIError {
+	return countTokensPassthrough(c, info, constant.ChannelTypeOpenAI, "input_tokens")
+}
+
+// countTokensPassthrough 是免费 token 计数端点的公共透传实现。
+// 请求体原样转发（仅在渠道配置了模型映射时重写 model 字段），上游 JSON 响应逐字返回；
+// 不扣费，成功后写一条零额消费日志。两个端点的上游响应都以 input_tokens 字段返回计数。
+func countTokensPassthrough(c *gin.Context, info *relaycommon.RelayInfo, allowedChannelType int, endpoint string) *types.NewAPIError {
 	info.InitChannelMeta(c)
 
-	// 渠道选择各路径已按「Anthropic 类型 + count_tokens 开关」过滤，此处为纵深防御
-	if info.ChannelType != constant.ChannelTypeAnthropic {
+	// 渠道选择各路径已按「厂商类型 + count_tokens 开关」过滤，此处为纵深防御
+	if info.ChannelType != allowedChannelType {
 		return types.NewErrorWithStatusCode(
-			fmt.Errorf("channel type %d does not support count_tokens, only Anthropic channels are allowed", info.ChannelType),
+			fmt.Errorf("channel type %d does not support %s, only channel type %d is allowed", info.ChannelType, endpoint, allowedChannelType),
 			types.ErrorCodeGetChannelFailed, http.StatusServiceUnavailable)
 	}
 
@@ -96,6 +106,6 @@ func ClaudeCountTokensHelper(c *gin.Context, info *relaycommon.RelayInfo) *types
 
 	service.IOCopyBytesGracefully(c, httpResp, responseBody)
 
-	service.PostClaudeCountTokensLog(c, info, int(inputTokens))
+	service.PostCountTokensLog(c, info, int(inputTokens), endpoint)
 	return nil
 }
