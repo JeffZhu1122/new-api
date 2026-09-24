@@ -53,6 +53,11 @@ func requestPolicyDefaultOptions() map[string]string {
 	}
 	defaults["RetryTimes"] = strconv.Itoa(common.RetryTimes)
 	defaults["AutomaticRetryStatusCodes"] = operation_setting.AutomaticRetryStatusCodesToString()
+	defaults["AutomaticRetryKeywordsEnabled"] = strconv.FormatBool(operation_setting.AutomaticRetryKeywordsEnabled)
+	defaults["AutomaticRetryKeywords"] = operation_setting.AutomaticRetryKeywordsToString()
+	defaults["RetryAvoidFailedChannelsEnabled"] = strconv.FormatBool(operation_setting.RetryAvoidFailedChannelsEnabled)
+	defaults["RetryAvoidFailedChannelsStatusCode"] = strconv.Itoa(operation_setting.RetryAvoidFailedChannelsStatusCode)
+	defaults["RetryAvoidFailedChannelsErrorMessage"] = operation_setting.RetryAvoidFailedChannelsErrorMessage
 	defaults["AutomaticDisableStatusCodes"] = operation_setting.AutomaticDisableStatusCodesToString()
 	defaults["AutomaticDisableKeywords"] = operation_setting.AutomaticDisableKeywordsToString()
 	defaults["AutomaticDisableChannelEnabled"] = strconv.FormatBool(common.AutomaticDisableChannelEnabled)
@@ -69,7 +74,8 @@ func IsRequestPolicyOption(key string) bool {
 		return true
 	}
 	switch key {
-	case "CheckSensitiveEnabled", "CheckSensitiveOnPromptEnabled", "SensitiveWords", "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords":
+	case "CheckSensitiveEnabled", "CheckSensitiveOnPromptEnabled", "SensitiveWords", "AutomaticEnableChannelEnabled", "ChannelDisableThreshold", "monitor_setting.auto_test_channel_enabled", "monitor_setting.auto_test_channel_minutes", "monitor_setting.channel_test_concurrency", "monitor_setting.channel_test_mode", "RetryTimes", "AutomaticRetryStatusCodes", "AutomaticDisableChannelEnabled", "AutomaticDisableStatusCodes", "AutomaticDisableKeywords",
+		"AutomaticRetryKeywordsEnabled", "AutomaticRetryKeywords", "RetryAvoidFailedChannelsEnabled", "RetryAvoidFailedChannelsStatusCode", "RetryAvoidFailedChannelsErrorMessage":
 		return true
 	}
 	return false
@@ -143,10 +149,13 @@ func BuildRequestPolicy(options map[string]string) (*RequestPolicySnapshot, erro
 		return nil, err
 	}
 	snapshot.DisableKeywords = strings.Split(raw["AutomaticDisableKeywords"], "\n")
-	for _, key := range []string{"CheckSensitiveEnabled", "CheckSensitiveOnPromptEnabled", "AutomaticEnableChannelEnabled", "monitor_setting.auto_test_channel_enabled"} {
+	for _, key := range []string{"CheckSensitiveEnabled", "CheckSensitiveOnPromptEnabled", "AutomaticEnableChannelEnabled", "monitor_setting.auto_test_channel_enabled", "AutomaticRetryKeywordsEnabled", "RetryAvoidFailedChannelsEnabled"} {
 		if _, err := strconv.ParseBool(raw[key]); err != nil {
 			return nil, fmt.Errorf("invalid boolean: %s", key)
 		}
+	}
+	if code, err := strconv.Atoi(raw["RetryAvoidFailedChannelsStatusCode"]); err != nil || code < 100 || code > 599 {
+		return nil, fmt.Errorf("retry avoid failed channels status code must be between 100 and 599")
 	}
 	snapshot.CheckText = raw["CheckSensitiveEnabled"] == "true" && raw["CheckSensitiveOnPromptEnabled"] == "true"
 	for word := range strings.SplitSeq(raw["SensitiveWords"], "\n") {
