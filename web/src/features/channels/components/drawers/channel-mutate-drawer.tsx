@@ -2773,7 +2773,9 @@ export function ChannelMutateDrawer({
                 <div className='flex flex-col gap-0.5'>
                   <FormLabel>{t('Enabled')}</FormLabel>
                   <FormDescription className='text-xs'>
-                    {t('Enable or disable this channel')}
+                    {t(
+                      'New channels start disabled. Test the channel, then enable it.'
+                    )}
                   </FormDescription>
                 </div>
                 <FormControl>
@@ -3959,7 +3961,9 @@ export function ChannelMutateDrawer({
                       </SelectContent>
                     </Select>
                     <FormDescription>
-                      {t(CLAUDE_AUTH_MODE_DESCRIPTIONS[field.value ?? 'api_key'])}
+                      {t(
+                        CLAUDE_AUTH_MODE_DESCRIPTIONS[field.value ?? 'api_key']
+                      )}
                     </FormDescription>
                     <FormMessage />
                   </FormItem>
