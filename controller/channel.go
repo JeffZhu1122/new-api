@@ -17,6 +17,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/jsplugin"
 	relaychannel "github.com/QuantumNous/new-api/relay/channel"
+	"github.com/QuantumNous/new-api/relay/channel/claude"
 	"github.com/QuantumNous/new-api/relay/channel/ollama"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
@@ -290,6 +291,7 @@ func buildFetchModelsHeaders(channel *model.Channel, key string) (http.Header, e
 	switch channel.Type {
 	case constant.ChannelTypeAnthropic:
 		headers = GetClaudeAuthHeader(key)
+		claude.SetClaudeAuthHeader(&headers, fetchModelsClaudeAuthMode(channel), key)
 	default:
 		headers = GetAuthHeader(key)
 	}
@@ -298,6 +300,23 @@ func buildFetchModelsHeaders(channel *model.Channel, key string) (http.Header, e
 		return nil, err
 	}
 	return headers, nil
+}
+
+// fetchModelsClaudeAuthMode returns the channel's configured Anthropic auth
+// mode. The default ("", also stored for explicit api_key) and unsaved form
+// previews fall back to auto: an sk-ant-oat token can never list models via
+// x-api-key, so prefix detection only turns a certain failure into a success.
+func fetchModelsClaudeAuthMode(channel *model.Channel) string {
+	mode := ""
+	if channel.ExtendConfig != nil {
+		mode = channel.ExtendConfig.ClaudeAuthMode
+	} else if channel.Id > 0 {
+		mode = model.GetChannelExtendSettings(channel.Id).ClaudeAuthMode
+	}
+	if mode == "" {
+		return dto.ClaudeAuthModeAuto
+	}
+	return mode
 }
 
 func applyFetchModelsHeaderOverrides(channel *model.Channel, key string, headers http.Header) error {

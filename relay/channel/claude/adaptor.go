@@ -6,7 +6,9 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"strings"
 
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/relay/channel"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relayconstant "github.com/QuantumNous/new-api/relay/constant"
@@ -109,14 +111,48 @@ func CommonClaudeHeadersOperation(c *gin.Context, req *http.Header, info *relayc
 
 func (a *Adaptor) SetupRequestHeader(c *gin.Context, req *http.Header, info *relaycommon.RelayInfo) error {
 	channel.SetupApiRequestHeader(info, c, req)
-	req.Set("x-api-key", info.ApiKey)
 	anthropicVersion := c.Request.Header.Get("anthropic-version")
 	if anthropicVersion == "" {
 		anthropicVersion = "2023-06-01"
 	}
 	req.Set("anthropic-version", anthropicVersion)
 	CommonClaudeHeadersOperation(c, req, info)
+	// 在 CommonClaudeHeadersOperation 之后设置：它会用客户端的 anthropic-beta
+	// 覆盖请求头，OAuth 模式需要把 oauth beta 标识合并进去。
+	// 复用本适配器的其他渠道类型（DeepSeek、Moonshot 等）始终走 x-api-key。
+	authMode := ""
+	if info.ChannelType == constant.ChannelTypeAnthropic {
+		authMode = info.ChannelExtendSetting.ClaudeAuthMode
+	}
+	SetClaudeAuthHeader(req, authMode, info.ApiKey)
 	return nil
+}
+
+// ClaudeOAuthBeta is the anthropic-beta flag required for OAuth access tokens.
+const ClaudeOAuthBeta = "oauth-2025-04-20"
+
+// SetClaudeAuthHeader writes the upstream credential using the scheme the
+// channel's claude_auth_mode resolves to for this key: x-api-key for standard
+// API keys, or Authorization: Bearer plus the oauth anthropic-beta flag for
+// OAuth access tokens. The two are mutually exclusive upstream.
+func SetClaudeAuthHeader(req *http.Header, mode string, key string) {
+	if dto.ResolveClaudeAuthMode(mode, key) != dto.ClaudeAuthModeOAuth {
+		req.Del("Authorization")
+		req.Set("x-api-key", key)
+		return
+	}
+	req.Del("x-api-key")
+	req.Set("Authorization", "Bearer "+key)
+	betas := []string{ClaudeOAuthBeta}
+	for _, value := range req.Values("anthropic-beta") {
+		for item := range strings.SplitSeq(value, ",") {
+			item = strings.TrimSpace(item)
+			if item != "" && item != ClaudeOAuthBeta {
+				betas = append(betas, item)
+			}
+		}
+	}
+	req.Set("anthropic-beta", strings.Join(betas, ","))
 }
 
 func (a *Adaptor) ConvertOpenAIRequest(c *gin.Context, info *relaycommon.RelayInfo, request *dto.GeneralOpenAIRequest) (any, error) {
