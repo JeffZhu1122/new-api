@@ -519,7 +519,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   weight: 0,
   test_model: '',
   auto_ban: 1,
-  status: CHANNEL_STATUS.ENABLED,
+  // New channels start disabled so an untested channel never receives traffic;
+  // the create form keeps a switch for admins who want to enable immediately.
+  status: CHANNEL_STATUS.MANUAL_DISABLED,
   status_code_mapping: '',
   tag: '',
   remark: '',
