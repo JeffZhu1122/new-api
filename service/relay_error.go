@@ -2,6 +2,8 @@ package service
 
 import (
 	"fmt"
+	"net/http"
+	"strings"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -50,6 +52,12 @@ func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) Po
 	}
 	if operation_setting.IsAlwaysSkipRetryCode(err.GetErrorCode()) || operation_setting.IsAlwaysSkipRetryStatusCode(code) {
 		return PolicyDecision{Action: "stop", Reason: "system_retry_exclusion", Source: "system"}
+	}
+	// 400 关键词重试：上游以 400 返回可换渠道恢复的错误（如内容策略、无效 prompt）时，按运营配置的关键词重试
+	if code == http.StatusBadRequest && operation_setting.AutomaticRetryKeywordsEnabled && len(operation_setting.AutomaticRetryKeywords) > 0 {
+		if matched, _ := AcSearch(strings.ToLower(err.Error()), operation_setting.AutomaticRetryKeywords, true); matched {
+			return PolicyDecision{Action: "retry", Reason: "retry_keyword_matched", Source: "global"}
+		}
 	}
 	if operation_setting.ShouldRetryByStatusCode(code) {
 		return PolicyDecision{Action: "retry", Reason: "retry_status_matched", Source: "global"}

@@ -561,6 +561,8 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 // 该类端点免费，不触碰任何配额流转，仅保留调用审计（渠道、模型、上游返回的 input_tokens）。
 // endpoint 用于在日志 other 字段中区分来源，如 "count_tokens" / "input_tokens"。
 func PostCountTokensLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, inputTokens int, endpoint string) {
+	other := model.NewLogOther()
+	other.SetPublic("endpoint", endpoint)
 	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
 		ChannelId:      relayInfo.ChannelId,
 		PromptTokens:   inputTokens,
@@ -572,6 +574,6 @@ func PostCountTokensLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, inpu
 		UseTimeSeconds: int(time.Now().Unix() - relayInfo.StartTime.Unix()),
 		IsStream:       false,
 		Group:          relayInfo.UsingGroup,
-		Other:          map[string]interface{}{"endpoint": endpoint},
+		Other:          other,
 	})
 }

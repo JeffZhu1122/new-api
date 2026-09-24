@@ -28,8 +28,14 @@ import {
   FormMessage,
 } from '@/components/ui/form'
 import { Input } from '@/components/ui/input'
+import { Switch } from '@/components/ui/switch'
+import { Textarea } from '@/components/ui/textarea'
 
 import { SettingsCard } from '../components/settings-card'
+import {
+  SettingsSwitchContent,
+  SettingsSwitchItem,
+} from '../components/settings-form-layout'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import type { RoutingPolicyFormValues } from './routing-form'
 
@@ -75,6 +81,121 @@ export function RetrySection() {
               </FormControl>
               <FormDescription>
                 {t('2xx, 504 and 524 are always excluded.')}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name='AutomaticRetryKeywordsEnabled'
+          render={({ field }) => (
+            <SettingsSwitchItem>
+              <SettingsSwitchContent>
+                <FormLabel>{t('Retry 400 errors by keywords')}</FormLabel>
+                <FormDescription>
+                  {t(
+                    'Master switch. Keyword-based retry of 400 errors only takes effect when enabled.'
+                  )}
+                </FormDescription>
+              </SettingsSwitchContent>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </SettingsSwitchItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name='AutomaticRetryKeywords'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Retry keywords for 400 errors')}</FormLabel>
+              <FormControl>
+                <Textarea
+                  rows={6}
+                  placeholder={t('one keyword per line')}
+                  {...field}
+                  onChange={(event) => field.onChange(event.target.value)}
+                />
+              </FormControl>
+              <FormDescription>
+                {t(
+                  'When upstream returns status code 400 and the error message contains any of these keywords (case insensitive), the request will be retried on another channel.'
+                )}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name='RetryAvoidFailedChannelsEnabled'
+          render={({ field }) => (
+            <SettingsSwitchItem>
+              <SettingsSwitchContent>
+                <FormLabel>{t('Avoid failed channels on retry')}</FormLabel>
+                <FormDescription>
+                  {t(
+                    'When enabled, retries skip channels that already failed in this request. Multi-key channels are not excluded so keys can rotate. When every channel has failed, the configured status code and error message are returned.'
+                  )}
+                </FormDescription>
+              </SettingsSwitchContent>
+              <FormControl>
+                <Switch
+                  checked={field.value}
+                  onCheckedChange={field.onChange}
+                />
+              </FormControl>
+            </SettingsSwitchItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name='RetryAvoidFailedChannelsStatusCode'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Status code when all channels failed')}</FormLabel>
+              <FormControl>
+                <Input
+                  type='number'
+                  min={100}
+                  max={599}
+                  step={1}
+                  {...safeNumberFieldProps(field)}
+                />
+              </FormControl>
+              <FormDescription>
+                {t(
+                  'HTTP status code returned when every available channel has already failed in this request (100-599).'
+                )}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+        <FormField
+          control={form.control}
+          name='RetryAvoidFailedChannelsErrorMessage'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>
+                {t('Error message when all channels failed')}
+              </FormLabel>
+              <FormControl>
+                <Textarea
+                  rows={2}
+                  {...field}
+                  onChange={(event) => field.onChange(event.target.value)}
+                />
+              </FormControl>
+              <FormDescription>
+                {t(
+                  'Supports the {model} placeholder for the model name. Leave empty to use the default message.'
+                )}
               </FormDescription>
               <FormMessage />
             </FormItem>
