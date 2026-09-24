@@ -3,6 +3,7 @@ package dto
 import (
 	"fmt"
 	"math"
+	"strings"
 )
 
 // MaxChannelTimeoutSeconds bounds per-channel timeout overrides (24h).
@@ -19,6 +20,34 @@ const MaxChannelInputTokensBound = 10_000_000
 // Deprecated: use MaxChannelInputTokensBound, which covers both the minimum
 // and maximum thresholds. Kept as an alias for relaykit API compatibility.
 const MaxChannelMinInputTokens = MaxChannelInputTokensBound
+
+// Anthropic channel credential modes (ChannelExtendSettings.ClaudeAuthMode).
+// Standard API keys (sk-ant-api…) authenticate with x-api-key; organization
+// OAuth access tokens (sk-ant-oat…) must use Authorization: Bearer plus the
+// oauth anthropic-beta flag. Using the wrong scheme is always rejected.
+const (
+	ClaudeAuthModeApiKey = "api_key" // x-api-key (default, "" behaves the same)
+	ClaudeAuthModeOAuth  = "oauth"   // Authorization: Bearer + anthropic-beta oauth
+	ClaudeAuthModeAuto   = "auto"    // pick per key by its sk-ant-oat prefix
+)
+
+// ClaudeOAuthTokenPrefix identifies Anthropic OAuth access tokens.
+const ClaudeOAuthTokenPrefix = "sk-ant-oat"
+
+// ResolveClaudeAuthMode returns the concrete scheme (api_key or oauth) for a
+// key under the configured mode. Auto mode decides per key, so a multi-key
+// channel may mix both credential kinds.
+func ResolveClaudeAuthMode(mode string, key string) string {
+	switch mode {
+	case ClaudeAuthModeOAuth:
+		return ClaudeAuthModeOAuth
+	case ClaudeAuthModeAuto:
+		if strings.HasPrefix(strings.TrimSpace(key), ClaudeOAuthTokenPrefix) {
+			return ClaudeAuthModeOAuth
+		}
+	}
+	return ClaudeAuthModeApiKey
+}
 
 // ChannelExtendSettings carries per-channel overrides stored outside the
 // channels table (see model.ChannelExtend). Zero values mean "inherit the
@@ -49,6 +78,10 @@ type ChannelExtendSettings struct {
 	// user-level TPM limit it is settled after billing, so the first requests
 	// of a fresh minute may overshoot. 0 = no limit.
 	TpmLimit int `json:"tpm_limit,omitempty"`
+	// ClaudeAuthMode selects how Anthropic channels send the key upstream:
+	// api_key (x-api-key), oauth (Authorization: Bearer) or auto (by key
+	// prefix). "" = api_key. Ignored by other channel types.
+	ClaudeAuthMode string `json:"claude_auth_mode,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -77,6 +110,11 @@ func (s *ChannelExtendSettings) Validate() error {
 	if s.TpmLimit < 0 || s.TpmLimit > MaxChannelRateLimitValue {
 		return fmt.Errorf("invalid tpm_limit: %d, must be within [0, %d]", s.TpmLimit, MaxChannelRateLimitValue)
 	}
+	switch s.ClaudeAuthMode {
+	case "", ClaudeAuthModeApiKey, ClaudeAuthModeOAuth, ClaudeAuthModeAuto:
+	default:
+		return fmt.Errorf("invalid claude_auth_mode: %q, must be one of %s, %s, %s", s.ClaudeAuthMode, ClaudeAuthModeApiKey, ClaudeAuthModeOAuth, ClaudeAuthModeAuto)
+	}
 	return nil
 }
 
@@ -84,5 +122,6 @@ func (s *ChannelExtendSettings) Validate() error {
 func (s *ChannelExtendSettings) IsZero() bool {
 	return s == nil || (s.RelayTimeout == 0 && s.StreamingTimeout == 0 &&
 		s.MinInputTokens == 0 && s.MaxInputTokens == 0 &&
-		s.RpmLimit == 0 && s.TpmLimit == 0)
+		s.RpmLimit == 0 && s.TpmLimit == 0 &&
+		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey))
 }
