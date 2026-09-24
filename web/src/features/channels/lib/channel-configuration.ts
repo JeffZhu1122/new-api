@@ -76,6 +76,7 @@ const CONFIGURATION_BLOCKS = {
       'allow_inference_geo',
       'allow_speed',
       'claude_beta_query',
+      'count_tokens_enabled',
     ],
   },
   extraSettings: {
@@ -85,6 +86,12 @@ const CONFIGURATION_BLOCKS = {
       'http_protocol',
       'http2_connection_shards',
       'disable_task_polling_sleep',
+      'relay_timeout',
+      'streaming_timeout',
+      'min_input_tokens',
+      'max_input_tokens',
+      'rpm_limit',
+      'tpm_limit',
     ],
   },
   upstreamModelDetection: {
@@ -169,13 +176,20 @@ export function getChannelConfigurationState(
           values.allow_include_obfuscation)) ||
       (claudePassthrough &&
         (values.allow_speed ||
-          (values.type === 14 && values.claude_beta_query)))
+          (values.type === 14 && values.claude_beta_query))) ||
+      ((values.type === 14 || values.type === 1) && values.count_tokens_enabled)
     ),
     extraSettings: Boolean(
       values.proxy?.trim() ||
       (values.http_protocol && values.http_protocol !== 'auto') ||
       (values.http2_connection_shards ?? 1) > 1 ||
-      values.disable_task_polling_sleep
+      values.disable_task_polling_sleep ||
+      (values.relay_timeout ?? 0) > 0 ||
+      (values.streaming_timeout ?? 0) > 0 ||
+      (values.min_input_tokens ?? 0) > 0 ||
+      (values.max_input_tokens ?? 0) > 0 ||
+      (values.rpm_limit ?? 0) > 0 ||
+      (values.tpm_limit ?? 0) > 0
     ),
     upstreamModelDetection:
       MODEL_FETCHABLE_TYPES.has(values.type) &&
