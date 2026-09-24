@@ -3989,6 +3989,7 @@
     "New API &lt;noreply@example.com&gt;": "API mới &lt;noreply@example.com&gt;",
     "New API Project Repository:": "Kho lưu trữ Dự án API Mới:",
     "New API's flexible channel lets you configure upstream addresses and authentication per endpoint, choose native forwarding or supported protocol conversions, and configure model listing and balance queries independently": "Kênh kết nối linh hoạt của New API cho phép cấu hình địa chỉ thượng nguồn và xác thực theo từng điểm cuối, chọn chuyển tiếp nguyên bản hoặc chuyển đổi giao thức được hỗ trợ, đồng thời cấu hình riêng danh sách mô hình và truy vấn số dư",
+    "New channels start disabled. Test the channel, then enable it.": "Kênh mới mặc định bị tắt. Hãy kiểm tra kênh rồi bật lên.",
     "New domain: {{domain}}": "Tên miền mới: {{domain}}",
     "New email verification code": "Mã xác minh email mới",
     "New Format Template": "Mẫu định dạng mới",

@@ -3989,6 +3989,7 @@
     "New API &lt;noreply@example.com&gt;": "New API &lt;noreply@example.com&gt;",
     "New API Project Repository:": "New API 项目仓库：",
     "New API's flexible channel lets you configure upstream addresses and authentication per endpoint, choose native forwarding or supported protocol conversions, and configure model listing and balance queries independently": "New API 的灵活接入渠道，可按接口配置上游地址与认证方式，选择原生转发或项目支持的协议转换，并独立配置模型列表和余额查询",
+    "New channels start disabled. Test the channel, then enable it.": "新渠道默认禁用，测试通过后再启用。",
     "New domain: {{domain}}": "新域名：{{domain}}",
     "New email verification code": "新邮箱验证码",
     "New Format Template": "新格式模板",

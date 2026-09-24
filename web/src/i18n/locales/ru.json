@@ -3989,6 +3989,7 @@
     "New API &lt;noreply@example.com&gt;": "Новый API &lt;noreply@example.com&gt;",
     "New API Project Repository:": "Репозиторий проекта New API:",
     "New API's flexible channel lets you configure upstream addresses and authentication per endpoint, choose native forwarding or supported protocol conversions, and configure model listing and balance queries independently": "Гибкий канал New API позволяет задавать адреса внешних сервисов и аутентификацию для каждого эндпоинта, выбирать прямую пересылку или поддерживаемое преобразование протоколов, а также отдельно настраивать получение списка моделей и запрос баланса",
+    "New channels start disabled. Test the channel, then enable it.": "Новые каналы создаются отключёнными. Проверьте канал, затем включите его.",
     "New domain: {{domain}}": "Новый домен: {{domain}}",
     "New email verification code": "Код подтверждения новой почты",
     "New Format Template": "Шаблон нового формата",

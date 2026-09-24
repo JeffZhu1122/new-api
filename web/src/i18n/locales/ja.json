@@ -3989,6 +3989,7 @@
     "New API &lt;noreply@example.com&gt;": "新しいAPI __ PH_0 __",
     "New API Project Repository:": "New APIプロジェクトリポジトリ:",
     "New API's flexible channel lets you configure upstream addresses and authentication per endpoint, choose native forwarding or supported protocol conversions, and configure model listing and balance queries independently": "New API の柔軟な接続チャネルでは、エンドポイントごとに上流アドレスと認証方式を設定し、ネイティブ転送または対応するプロトコル変換を選択できます。モデル一覧と残高照会も個別に設定できます",
+    "New channels start disabled. Test the channel, then enable it.": "新しいチャネルは無効の状態で作成されます。テスト後に有効にしてください。",
     "New domain: {{domain}}": "新しいドメイン：{{domain}}",
     "New email verification code": "新しいメールアドレスの確認コード",
     "New Format Template": "新フォーマットテンプレート",

@@ -3989,6 +3989,7 @@
     "New API &lt;noreply@example.com&gt;": "New API &lt;noreply@example.com&gt;",
     "New API Project Repository:": "New API Project Repository:",
     "New API's flexible channel lets you configure upstream addresses and authentication per endpoint, choose native forwarding or supported protocol conversions, and configure model listing and balance queries independently": "New API's flexible channel lets you configure upstream addresses and authentication per endpoint, choose native forwarding or supported protocol conversions, and configure model listing and balance queries independently",
+    "New channels start disabled. Test the channel, then enable it.": "New channels start disabled. Test the channel, then enable it.",
     "New domain: {{domain}}": "New domain: {{domain}}",
     "New email verification code": "New email verification code",
     "New Format Template": "New Format Template",
