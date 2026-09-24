@@ -49,6 +49,11 @@ const options = {
     },
   ]),
   AutomaticRetryStatusCodes: '429,500-503',
+  AutomaticRetryKeywordsEnabled: 'false',
+  AutomaticRetryKeywords: '',
+  RetryAvoidFailedChannelsEnabled: 'false',
+  RetryAvoidFailedChannelsStatusCode: '429',
+  RetryAvoidFailedChannelsErrorMessage: '',
 }
 let currentOptions: Record<string, string>
 let client: QueryClient

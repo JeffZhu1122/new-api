@@ -21,6 +21,11 @@ import type { ChannelAffinitySettings } from '../general/channel-affinity/types'
 export type RetrySettings = {
   RetryTimes: number
   AutomaticRetryStatusCodes: string
+  AutomaticRetryKeywordsEnabled: boolean
+  AutomaticRetryKeywords: string
+  RetryAvoidFailedChannelsEnabled: boolean
+  RetryAvoidFailedChannelsStatusCode: number
+  RetryAvoidFailedChannelsErrorMessage: string
 }
 export type HealthSettings = {
   ChannelDisableThreshold: string
@@ -44,6 +49,12 @@ export const defaultRequestPolicySettings: RequestPolicySettings = {
   RetryTimes: 0,
   AutomaticRetryStatusCodes:
     '100-199,300-399,401-407,409-499,500-503,505-523,525-599',
+  AutomaticRetryKeywordsEnabled: false,
+  AutomaticRetryKeywords: '',
+  RetryAvoidFailedChannelsEnabled: false,
+  RetryAvoidFailedChannelsStatusCode: 429,
+  RetryAvoidFailedChannelsErrorMessage:
+    'all available channels for model {model} have failed in this request, no channels left to retry',
   ChannelDisableThreshold: '',
   AutomaticDisableChannelEnabled: false,
   AutomaticEnableChannelEnabled: false,

@@ -638,6 +638,11 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 		}
 	}
 
+	// 校验 channel extend config（渠道级超时等扩展配置）
+	if err := channel.ExtendConfig.Validate(); err != nil {
+		return fmt.Errorf("渠道扩展设置[channel extend config] 格式错误：%s", err.Error())
+	}
+
 	setting := channel.GetSetting()
 	if len(setting.RequestPlugins) > 0 {
 		saved := map[string]bool{}
@@ -688,11 +693,6 @@ func validateChannel(channel *model.Channel, isAdd bool) error {
 			}
 			bound[key] = struct{}{}
 		}
-	}
-
-	// 校验 channel extend config（渠道级超时等扩展配置）
-	if err := channel.ExtendConfig.Validate(); err != nil {
-		return fmt.Errorf("渠道扩展设置[channel extend config] 格式错误：%s", err.Error())
 	}
 
 	if channel.Type == constant.ChannelTypeNewAPI && strings.TrimSpace(channel.GetBaseURL()) == "" {
