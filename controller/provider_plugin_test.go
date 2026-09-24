@@ -272,7 +272,7 @@ func TestCopyChannelDropsCredentials(t *testing.T) {
 	copied = copyOf(multi.Id)
 	assert.Equal(t, "sk-static", copied.Key)
 	assert.Equal(t, 1, copied.ChannelInfo.MultiKeySize)
-	assert.Equal(t, common.ChannelStatusEnabled, copied.Status)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, copied.Status, "a copy keeps no traffic until an admin enables it")
 }
 
 func TestRemovingCredentialsRevokesThem(t *testing.T) {
