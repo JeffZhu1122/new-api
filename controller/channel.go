@@ -1702,6 +1702,9 @@ func CopyChannel(c *gin.Context) {
 	clone.Name = origin.Name + suffix
 	clone.TestTime = 0
 	clone.ResponseTime = 0
+	// A copy has never been tested: create it manually disabled so it takes no
+	// traffic until an admin verifies it and enables it explicitly.
+	clone.Status = common.ChannelStatusManuallyDisabled
 	if resetBalance {
 		clone.Balance = 0
 		clone.UsedQuota = 0

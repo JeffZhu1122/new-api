@@ -2074,6 +2074,7 @@
     "Enable OIDC": "Bật OIDC",
     "Enable only if the upstream supports Responses WebSocket. HTTP requests are unaffected when disabled.": "Chỉ bật khi nhà cung cấp hỗ trợ Responses WebSocket. Yêu cầu HTTP thông thường vẫn hoạt động khi tắt.",
     "Enable or disable this channel": "Bật hoặc tắt kênh này",
+    "New channels start disabled. Test the channel, then enable it.": "Kênh mới mặc định bị tắt. Hãy kiểm tra kênh rồi bật lên.",
     "Enable or disable this model": "Bật hoặc tắt mô hình này",
     "Enable Passkey": "Bật khóa truy cập",
     "Enable passthrough": "Bật chuyển tiếp",

@@ -2074,6 +2074,7 @@
     "Enable OIDC": "Включить OIDC",
     "Enable only if the upstream supports Responses WebSocket. HTTP requests are unaffected when disabled.": "Включайте, только если провайдер поддерживает Responses WebSocket. При отключении обычные HTTP-запросы остаются доступны.",
     "Enable or disable this channel": "Включить или отключить этот канал",
+    "New channels start disabled. Test the channel, then enable it.": "Новые каналы создаются отключёнными. Проверьте канал, затем включите его.",
     "Enable or disable this model": "Включить или отключить эту модель",
     "Enable Passkey": "Включить Passkey",
     "Enable passthrough": "Включить проброс",

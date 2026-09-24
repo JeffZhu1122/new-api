@@ -2074,6 +2074,7 @@
     "Enable OIDC": "Enable OIDC",
     "Enable only if the upstream supports Responses WebSocket. HTTP requests are unaffected when disabled.": "Enable only if the upstream supports Responses WebSocket. HTTP requests are unaffected when disabled.",
     "Enable or disable this channel": "Enable or disable this channel",
+    "New channels start disabled. Test the channel, then enable it.": "New channels start disabled. Test the channel, then enable it.",
     "Enable or disable this model": "Enable or disable this model",
     "Enable Passkey": "Enable Passkey",
     "Enable passthrough": "Enable passthrough",

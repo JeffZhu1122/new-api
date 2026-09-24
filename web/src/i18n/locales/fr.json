@@ -2074,6 +2074,7 @@
     "Enable OIDC": "Activer OIDC",
     "Enable only if the upstream supports Responses WebSocket. HTTP requests are unaffected when disabled.": "Activez uniquement si le fournisseur prend en charge Responses WebSocket. Les requêtes HTTP restent disponibles lorsque cette option est désactivée.",
     "Enable or disable this channel": "Activer ou désactiver ce canal",
+    "New channels start disabled. Test the channel, then enable it.": "Les nouveaux canaux sont désactivés par défaut. Testez le canal, puis activez-le.",
     "Enable or disable this model": "Activer ou désactiver ce modèle",
     "Enable Passkey": "Activer Passkey",
     "Enable passthrough": "Activer la transmission",

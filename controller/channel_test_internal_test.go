@@ -191,6 +191,41 @@ func TestCopyChannelRejectsInvalidLegacyProxySettings(t *testing.T) {
 	assert.Equal(t, int64(1), channelCount)
 }
 
+func TestCopyChannelCreatesManuallyDisabledClone(t *testing.T) {
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.AuditLog{}))
+	origin := &model.Channel{
+		Type:   constant.ChannelTypeOpenAI,
+		Name:   "enabled origin",
+		Key:    "test-key",
+		Models: "gpt-test",
+		Group:  "default",
+		Status: common.ChannelStatusEnabled,
+	}
+	require.NoError(t, origin.Insert())
+
+	recorder := httptest.NewRecorder()
+	ctx, _ := gin.CreateTestContext(recorder)
+	ctx.Params = gin.Params{{Key: "id", Value: fmt.Sprintf("%d", origin.Id)}}
+	ctx.Request = httptest.NewRequest(http.MethodPost, "/api/channel/copy", nil)
+
+	CopyChannel(ctx)
+
+	assert.Contains(t, recorder.Body.String(), `"success":true`)
+	var clone model.Channel
+	require.NoError(t, db.Where("name = ?", "enabled origin_复制").First(&clone).Error)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, clone.Status, "a copy must never take traffic before an admin enables it")
+	var abilities []model.Ability
+	require.NoError(t, db.Where("channel_id = ?", clone.Id).Find(&abilities).Error)
+	require.NotEmpty(t, abilities)
+	for _, ability := range abilities {
+		assert.False(t, ability.Enabled, "routing rows of the copy must be disabled too")
+	}
+	var originAfter model.Channel
+	require.NoError(t, db.First(&originAfter, origin.Id).Error)
+	assert.Equal(t, common.ChannelStatusEnabled, originAfter.Status, "the source channel keeps its status")
+}
+
 func TestDeleteChannelResetsProxyCacheWhenPreReadFails(t *testing.T) {
 	db := setupModelListControllerTestDB(t)
 	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.AuditLog{}))
