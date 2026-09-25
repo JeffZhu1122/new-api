@@ -147,7 +147,8 @@ func TestUpdateTokenAutoGroupsTriStateAndNonAutoCleanup(t *testing.T) {
 		{name: "omitted preserves", group: "auto", expectedAutoGroups: `["vip","default"]`, expectedRetry: true},
 		{name: "null inherits", includeField: true, value: nil, group: "auto", expectedRetry: true},
 		{name: "empty inherits", includeField: true, value: []string{}, group: "auto", expectedRetry: true},
-		{name: "non auto clears and disables retry", includeField: true, value: []string{"vip"}, group: "default"},
+		{name: "non auto with empty list clears and disables retry", includeField: true, value: []string{}, group: "default"},
+		{name: "non auto with list becomes primary plus fallbacks", includeField: true, value: []string{"vip"}, group: "default", expectedAutoGroups: `["vip"]`, expectedRetry: true},
 	}
 
 	for _, test := range tests {

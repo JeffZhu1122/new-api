@@ -27,9 +27,36 @@ type Token struct {
 	AllowIps           *string        `json:"allow_ips" gorm:"default:''"`
 	UsedQuota          int            `json:"used_quota" gorm:"default:0"` // used quota
 	Group              string         `json:"group" gorm:"default:''"`
-	CrossGroupRetry    bool           `json:"cross_group_retry"` // 跨分组重试，仅auto分组有效
-	AutoGroups         string         `json:"-" gorm:"type:text"`
+	CrossGroupRetry    bool           `json:"cross_group_retry"`  // 跨分组重试，仅 auto 分组与多分组令牌有效
+	AutoGroups         string         `json:"-" gorm:"type:text"` // auto 分组：自定义 Auto 顺序；普通分组：有序备用分组
 	DeletedAt          gorm.DeletedAt `gorm:"index"`
+}
+
+// IsMultiGroup 判断令牌是否为"主分组 + 有序备用分组"的多分组令牌。
+// 多分组令牌在运行时按 auto 语义路由：主分组优先，随后按顺序回退到各备用分组。
+func (token *Token) IsMultiGroup() bool {
+	if token.Group == "" || token.Group == "auto" || token.AutoGroups == "" {
+		return false
+	}
+	groups, err := token.GetAutoGroups()
+	return err == nil && len(groups) > 0
+}
+
+// GetRoutingGroups 返回多分组令牌的完整有序路由列表：主分组在前，随后是备用分组（去重）。
+// 非多分组令牌返回 nil。
+func (token *Token) GetRoutingGroups() []string {
+	if !token.IsMultiGroup() {
+		return nil
+	}
+	fallbacks, _ := token.GetAutoGroups()
+	groups := make([]string, 0, len(fallbacks)+1)
+	groups = append(groups, token.Group)
+	for _, group := range fallbacks {
+		if group != token.Group {
+			groups = append(groups, group)
+		}
+	}
+	return groups
 }
 
 func (token *Token) GetAutoGroups() ([]string, error) {

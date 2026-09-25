@@ -180,3 +180,129 @@ describe('API key Auto group form mapping', () => {
     )
   })
 })
+
+describe('API key fallback group form mapping', () => {
+  const ordinaryDefaults = {
+    ...getApiKeyFormDefaultValues(false),
+    name: 'ordinary token',
+    group: 'vip',
+  }
+
+  test('submits ordered fallback groups for an ordinary group', () => {
+    const payload = transformFormDataToPayload({
+      ...ordinaryDefaults,
+      fallback_groups: ['default', 'svip'],
+      cross_group_retry: true,
+    })
+
+    expect(payload.group).toBe('vip')
+    expect(payload.auto_groups).toEqual(['default', 'svip'])
+    expect(payload.cross_group_retry).toBe(true)
+  })
+
+  test('never sends fallback groups without a concrete primary group', () => {
+    const followUser = transformFormDataToPayload({
+      ...ordinaryDefaults,
+      group: '',
+      fallback_groups: ['default'],
+      cross_group_retry: true,
+    })
+    expect(followUser.auto_groups).toEqual([])
+    expect(followUser.cross_group_retry).toBe(false)
+
+    const auto = transformFormDataToPayload({
+      ...ordinaryDefaults,
+      group: 'auto',
+      fallback_groups: ['default'],
+      cross_group_retry: true,
+    })
+    expect(auto.auto_groups).toEqual([])
+    expect(auto.cross_group_retry).toBe(true)
+  })
+
+  test('disables cross-group retry when no fallback groups remain', () => {
+    const payload = transformFormDataToPayload({
+      ...ordinaryDefaults,
+      fallback_groups: ['vip'],
+      cross_group_retry: true,
+    })
+
+    expect(payload.auto_groups).toEqual([])
+    expect(payload.cross_group_retry).toBe(false)
+  })
+
+  test('maps a stored fallback snapshot onto the form and strips the primary', () => {
+    const defaults = transformApiKeyToFormDefaults(
+      {
+        ...baseApiKey,
+        group: 'vip',
+        auto_groups: ['vip', 'revoked', 'default', 'svip'],
+        cross_group_retry: true,
+      },
+      ['default', 'vip', 'svip'],
+      3
+    )
+
+    expect(defaults.group).toBe('vip')
+    expect(defaults.fallback_groups).toEqual(['default', 'svip'])
+    expect(defaults.auto_groups_mode).toBe('inherit')
+    expect(defaults.auto_groups).toEqual([])
+    expect(defaults.cross_group_retry).toBe(true)
+  })
+
+  test('keeps the Auto snapshot out of the fallback list', () => {
+    const defaults = transformApiKeyToFormDefaults(
+      { ...baseApiKey, auto_groups: ['vip', 'default'] },
+      ['default', 'vip'],
+      5
+    )
+
+    expect(defaults.group).toBe('auto')
+    expect(defaults.auto_groups_mode).toBe('custom')
+    expect(defaults.auto_groups).toEqual(['vip', 'default'])
+    expect(defaults.fallback_groups).toEqual([])
+  })
+
+  test('rejects more fallback groups than the shared limit allows', () => {
+    const result = getApiKeyFormSchema(t, 2).safeParse({
+      ...ordinaryDefaults,
+      fallback_groups: ['default', 'svip'],
+    })
+
+    expect(result.success).toBe(false)
+    if (result.success) return
+    expect(result.error.issues[0]?.path).toEqual(['fallback_groups'])
+    expect(result.error.issues[0]?.message).toBe(
+      'Select at most 1 fallback groups'
+    )
+  })
+
+  test('rejects fallback groups that repeat or include the primary group', () => {
+    const duplicate = getApiKeyFormSchema(t).safeParse({
+      ...ordinaryDefaults,
+      fallback_groups: ['default', 'default'],
+    })
+    expect(duplicate.success).toBe(false)
+    if (!duplicate.success) {
+      expect(duplicate.error.issues[0]?.message).toBe(
+        'Fallback groups must not contain duplicates'
+      )
+    }
+
+    const primary = getApiKeyFormSchema(t).safeParse({
+      ...ordinaryDefaults,
+      fallback_groups: ['vip'],
+    })
+    expect(primary.success).toBe(false)
+    if (!primary.success) {
+      expect(primary.error.issues[0]?.message).toBe(
+        'Fallback groups must not include the primary group'
+      )
+    }
+  })
+
+  test('accepts an ordinary group without fallback groups', () => {
+    const result = getApiKeyFormSchema(t, 1).safeParse(ordinaryDefaults)
+    expect(result.success).toBe(true)
+  })
+})

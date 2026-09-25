@@ -31,6 +31,9 @@ import type { ApiKey, ApiKeyFormData } from '../types'
 export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
   const autoGroupLimit =
     Number.isInteger(maxAutoGroups) && maxAutoGroups > 0 ? maxAutoGroups : 5
+  // The primary group counts toward the same limit, so an ordinary key can
+  // carry at most (limit - 1) fallback groups.
+  const fallbackGroupLimit = Math.max(0, autoGroupLimit - 1)
 
   return z
     .object({
@@ -43,10 +46,41 @@ export function getApiKeyFormSchema(t: TFunction, maxAutoGroups = 5) {
       group: z.string().optional(),
       auto_groups_mode: z.enum(['inherit', 'custom']),
       auto_groups: z.array(z.string()),
+      fallback_groups: z.array(z.string()),
       cross_group_retry: z.boolean().optional(),
       tokenCount: z.number().min(1).optional(),
     })
     .superRefine((data, ctx) => {
+      if (data.group !== 'auto') {
+        if (data.fallback_groups.length > fallbackGroupLimit) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['fallback_groups'],
+            message: t('Select at most {{max}} fallback groups', {
+              max: fallbackGroupLimit,
+            }),
+          })
+        }
+
+        if (
+          new Set(data.fallback_groups).size !== data.fallback_groups.length
+        ) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['fallback_groups'],
+            message: t('Fallback groups must not contain duplicates'),
+          })
+        }
+
+        if (data.group && data.fallback_groups.includes(data.group)) {
+          ctx.addIssue({
+            code: 'custom',
+            path: ['fallback_groups'],
+            message: t('Fallback groups must not include the primary group'),
+          })
+        }
+      }
+
       if (data.group === 'auto') {
         if (
           data.auto_groups_mode === 'custom' &&
@@ -113,6 +147,7 @@ export const API_KEY_FORM_DEFAULT_VALUES: ApiKeyFormValues = {
   group: DEFAULT_GROUP,
   auto_groups_mode: 'inherit',
   auto_groups: [],
+  fallback_groups: [],
   cross_group_retry: true,
   tokenCount: 1,
 }
@@ -125,6 +160,7 @@ export function getApiKeyFormDefaultValues(
     group: defaultUseAutoGroup ? 'auto' : DEFAULT_GROUP,
     auto_groups_mode: 'inherit',
     auto_groups: [],
+    fallback_groups: [],
     cross_group_retry: defaultUseAutoGroup,
   }
 }
@@ -139,6 +175,19 @@ export function getApiKeyFormDefaultValues(
 export function transformFormDataToPayload(
   data: ApiKeyFormValues
 ): ApiKeyFormData {
+  const isAuto = data.group === 'auto'
+  // Fallback groups only make sense for a concrete primary group: a key that
+  // follows the user group or routes through Auto never sends them.
+  const fallbackGroups =
+    !isAuto && data.group
+      ? data.fallback_groups.filter((group) => group !== data.group)
+      : []
+  // The same wire field carries the custom Auto order for Auto keys and the
+  // ordered fallback groups for ordinary keys.
+  let autoGroups: string[] = fallbackGroups
+  if (isAuto) {
+    autoGroups = data.auto_groups_mode === 'custom' ? data.auto_groups : []
+  }
   return {
     name: data.name,
     remain_quota: data.unlimited_quota
@@ -152,11 +201,9 @@ export function transformFormDataToPayload(
     model_limits: data.model_limits.join(','),
     allow_ips: data.allow_ips || '',
     group: data.group || '',
-    auto_groups:
-      data.group === 'auto' && data.auto_groups_mode === 'custom'
-        ? data.auto_groups
-        : [],
-    cross_group_retry: data.group === 'auto' ? !!data.cross_group_retry : false,
+    auto_groups: autoGroups,
+    cross_group_retry:
+      isAuto || fallbackGroups.length > 0 ? !!data.cross_group_retry : false,
   }
 }
 
@@ -169,11 +216,21 @@ export function transformApiKeyToFormDefaults(
   maxAutoGroups = 5
 ): ApiKeyFormValues {
   const availableSet = new Set(availableAutoGroups)
-  const storedAutoGroups = apiKey.auto_groups ?? []
-  const autoGroups = storedAutoGroups
-    .filter((group) => availableSet.has(group))
-    .slice(0, Math.max(0, maxAutoGroups))
-  const autoGroupsMode = storedAutoGroups.length > 0 ? 'custom' : 'inherit'
+  const isAuto = apiKey.group === 'auto'
+  // The stored list is the custom Auto order for Auto keys and the ordered
+  // fallback groups for ordinary keys; never let one leak into the other mode.
+  const storedGroups = apiKey.auto_groups ?? []
+  const autoGroups = isAuto
+    ? storedGroups
+        .filter((group) => availableSet.has(group))
+        .slice(0, Math.max(0, maxAutoGroups))
+    : []
+  const autoGroupsMode = isAuto && storedGroups.length > 0 ? 'custom' : 'inherit'
+  const fallbackGroups = isAuto
+    ? []
+    : storedGroups
+        .filter((group) => availableSet.has(group) && group !== apiKey.group)
+        .slice(0, Math.max(0, maxAutoGroups - 1))
 
   return {
     name: apiKey.name,
@@ -192,6 +249,7 @@ export function transformApiKeyToFormDefaults(
     group: apiKey.group || DEFAULT_GROUP,
     auto_groups_mode: autoGroupsMode,
     auto_groups: autoGroups,
+    fallback_groups: fallbackGroups,
     cross_group_retry: !!apiKey.cross_group_retry,
     tokenCount: 1,
   }
