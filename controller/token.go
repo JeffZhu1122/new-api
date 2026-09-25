@@ -127,6 +127,84 @@ func setTokenAutoGroups(c *gin.Context, token *model.Token, groups []string) boo
 	return true
 }
 
+// setTokenFallbackGroups 校验并落地多分组令牌的备用分组列表。
+// 主分组也计入 MaxTokenAutoGroups 上限（主分组 + 备用分组 ≤ 上限），
+// 主分组与每个备用分组都必须是当前用户可选择的分组，且备用分组不得重复或包含主分组。
+func setTokenFallbackGroups(c *gin.Context, token *model.Token, fallbacks []string) bool {
+	maxCount := setting.GetMaxTokenAutoGroups()
+	if len(fallbacks)+1 > maxCount {
+		common.ApiErrorI18n(c, i18n.MsgTokenFallbackGroupsTooMany, map[string]any{"Max": maxCount - 1})
+		return false
+	}
+
+	userGroup, err := getTokenRequestUserGroup(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	if !service.IsUserSelectableGroup(userGroup, token.Group) {
+		common.ApiErrorI18n(c, i18n.MsgTokenPrimaryGroupInvalid, map[string]any{"Group": token.Group})
+		return false
+	}
+	seen := make(map[string]struct{}, len(fallbacks))
+	for _, group := range fallbacks {
+		if group == token.Group {
+			common.ApiErrorI18n(c, i18n.MsgTokenFallbackGroupIsPrimary, map[string]any{"Group": group})
+			return false
+		}
+		if _, ok := seen[group]; ok {
+			common.ApiErrorI18n(c, i18n.MsgTokenFallbackGroupsDuplicate, map[string]any{"Group": group})
+			return false
+		}
+		seen[group] = struct{}{}
+		if !service.IsUserSelectableGroup(userGroup, group) {
+			common.ApiErrorI18n(c, i18n.MsgTokenFallbackGroupsInvalid, map[string]any{"Group": group})
+			return false
+		}
+	}
+
+	if err := token.SetAutoGroups(fallbacks); err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	return true
+}
+
+// applyTokenGroupBinding 根据令牌分组类型落地 auto_groups 与 cross_group_retry：
+//   - auto 分组：auto_groups 为自定义 Auto 顺序（更新时未传则保留原快照，null/[] 表示继承全局）；
+//   - 普通分组 + 非空 auto_groups：多分组令牌，auto_groups 为有序备用分组；
+//   - 普通分组 + 空 auto_groups：单分组令牌，清空列表并关闭跨组重试。
+//
+// previousGroup 为更新前的分组（创建时为空）。普通分组更新且未传 auto_groups 时，
+// 沿用已保存的备用分组（剔除新主分组）；从 auto 切换到普通分组则视为未设置备用分组。
+func applyTokenGroupBinding(c *gin.Context, token *model.Token, input tokenAutoGroupsInput, previousGroup string) bool {
+	if token.Group == "auto" {
+		if !input.Set && previousGroup == "auto" {
+			return true
+		}
+		return setTokenAutoGroups(c, token, input.Groups)
+	}
+
+	fallbacks := input.Groups
+	if !input.Set {
+		fallbacks = nil
+		if previousGroup != "" && previousGroup != "auto" {
+			stored, _ := token.GetAutoGroups()
+			for _, group := range stored {
+				if group != token.Group {
+					fallbacks = append(fallbacks, group)
+				}
+			}
+		}
+	}
+	if len(fallbacks) == 0 {
+		token.CrossGroupRetry = false
+		_ = token.SetAutoGroups(nil)
+		return true
+	}
+	return setTokenFallbackGroups(c, token, fallbacks)
+}
+
 func GetAllTokens(c *gin.Context) {
 	userId := c.GetInt("id")
 	pageInfo := common.GetPageQuery(c)
@@ -315,13 +393,8 @@ func AddToken(c *gin.Context) {
 		})
 		return
 	}
-	if token.Group == "auto" {
-		if !setTokenAutoGroups(c, &token, request.AutoGroups.Groups) {
-			return
-		}
-	} else {
-		token.CrossGroupRetry = false
-		_ = token.SetAutoGroups(nil)
+	if !applyTokenGroupBinding(c, &token, request.AutoGroups, "") {
+		return
 	}
 	key, err := common.GenerateKey()
 	if err != nil {
@@ -439,13 +512,8 @@ func UpdateToken(c *gin.Context) {
 		cleanToken.AllowIps = token.AllowIps
 		cleanToken.Group = token.Group
 		cleanToken.CrossGroupRetry = token.CrossGroupRetry
-		if token.Group != "auto" {
-			cleanToken.CrossGroupRetry = false
-			_ = cleanToken.SetAutoGroups(nil)
-		} else if request.AutoGroups.Set {
-			if !setTokenAutoGroups(c, cleanToken, request.AutoGroups.Groups) {
-				return
-			}
+		if !applyTokenGroupBinding(c, cleanToken, request.AutoGroups, previous.Group) {
+			return
 		}
 	}
 	err = cleanToken.Update()

@@ -454,7 +454,15 @@ func TokenAuth() func(c *gin.Context) {
 
 		userGroup := userCache.Group
 		tokenGroup := token.Group
-		if tokenGroup != "" {
+		if token.IsMultiGroup() {
+			// 多分组令牌：主分组 + 备用分组按 auto 语义有序回退，分组权限在选渠道时逐个过滤，
+			// 这里只要求至少有一个分组仍然可用；不要求管理员开放 auto 分组。
+			if len(service.FilterUserTokenAutoGroups(userGroup, token.GetRoutingGroups())) == 0 {
+				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组及其备用分组", tokenGroup))
+				return
+			}
+			userGroup = "auto"
+		} else if tokenGroup != "" {
 			// check common.UserUsableGroups[userGroup]
 			if _, ok := service.GetUserUsableGroups(userGroup)[tokenGroup]; !ok {
 				abortWithOpenAiMessage(c, http.StatusForbidden, fmt.Sprintf("无权访问 %s 分组", tokenGroup))
@@ -521,9 +529,14 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 	} else {
 		c.Set("token_model_limit_enabled", false)
 	}
-	common.SetContextKey(c, constant.ContextKeyTokenGroup, token.Group)
+	tokenGroup := token.Group
 	common.SetContextKey(c, constant.ContextKeyTokenCrossGroupRetry, token.CrossGroupRetry)
-	if token.AutoGroups != "" {
+	if token.IsMultiGroup() {
+		// 多分组令牌在运行时归一为 auto 语义：分组占位为 auto，
+		// 路由列表 = 主分组 + 备用分组，选渠道 / 重试 / 计费 / 模型列表全部复用 auto 路径。
+		tokenGroup = "auto"
+		common.SetContextKey(c, constant.ContextKeyTokenAutoGroups, token.GetRoutingGroups())
+	} else if token.AutoGroups != "" {
 		autoGroups, err := token.GetAutoGroups()
 		if err != nil {
 			common.SysError(fmt.Sprintf("failed to parse auto groups for token %d: %v", token.Id, err))
@@ -533,6 +546,7 @@ func SetupContextForToken(c *gin.Context, token *model.Token, parts ...string) e
 			common.SetContextKey(c, constant.ContextKeyTokenAutoGroups, autoGroups)
 		}
 	}
+	common.SetContextKey(c, constant.ContextKeyTokenGroup, tokenGroup)
 	if len(parts) > 1 {
 		if model.IsAdmin(token.UserId) {
 			id, err := strconv.Atoi(parts[1])

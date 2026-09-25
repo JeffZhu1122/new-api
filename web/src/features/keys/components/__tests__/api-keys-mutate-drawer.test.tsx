@@ -154,6 +154,7 @@ function findButton(text: string, required = true): HTMLButtonElement | null {
 function getControlByLabel(labelText: 'Name' | 'Quantity'): HTMLInputElement
 function getControlByLabel(labelText: 'Group'): HTMLButtonElement
 function getControlByLabel(labelText: 'Auto group order'): HTMLElement
+function getControlByLabel(labelText: 'Fallback groups'): HTMLElement
 function getControlByLabel(labelText: string): HTMLElement {
   const label = [...document.querySelectorAll<HTMLLabelElement>('label')].find(
     (candidate) => candidate.textContent?.trim() === labelText
@@ -276,5 +277,89 @@ describe('API keys mutate drawer Auto group integration', () => {
     fireEvent.click(findButton('Save changes', true))
     await waitFor(() => expect(createdPayloads).toHaveLength(1))
     expect(createdPayloads[0]?.auto_groups).toEqual(['vip'])
+  })
+
+  test('binds ordered fallback groups to an ordinary group key', async () => {
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads)
+    await renderCreateDrawer()
+
+    expect(
+      [...document.querySelectorAll('label')].some(
+        (label) => label.textContent?.trim() === 'Fallback groups'
+      )
+    ).toBe(false)
+
+    selectComboboxOption(getControlByLabel('Group'), 'Standard access')
+
+    const fallbackControl = getControlByLabel('Fallback groups')
+    expect(
+      document.body.textContent?.includes('0 / 2 fallback groups selected')
+    ).toBe(true)
+    const addFallbackTrigger =
+      fallbackControl.querySelector<HTMLButtonElement>('button[role="combobox"]')
+    if (!addFallbackTrigger) {
+      throw new Error('Expected fallback group combobox')
+    }
+    fireEvent.click(addFallbackTrigger)
+    const optionTexts = [
+      ...document.querySelectorAll<HTMLElement>('[data-slot="command-item"]'),
+    ].map((item) => item.textContent ?? '')
+    expect(optionTexts.some((text) => text.includes('Standard access'))).toBe(
+      false
+    )
+    expect(
+      optionTexts.some((text) => text.includes('Automatic routing'))
+    ).toBe(false)
+    fireEvent.click(addFallbackTrigger)
+
+    selectComboboxOption(addFallbackTrigger, 'Priority access')
+    expect(
+      document.body.textContent?.includes('1 / 2 fallback groups selected')
+    ).toBe(true)
+    expect(
+      [...document.querySelectorAll('label')].some(
+        (label) => label.textContent?.trim() === 'Cross-group retry'
+      )
+    ).toBe(true)
+
+    changeInput(getControlByLabel('Name'), 'fallback')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+
+    expect(createdPayloads[0]?.group).toBe('default')
+    expect(createdPayloads[0]?.auto_groups).toEqual(['vip'])
+    expect(createdPayloads[0]?.cross_group_retry).toBe(true)
+  })
+
+  test('drops a fallback group that becomes the primary group', async () => {
+    const createdPayloads: Array<Record<string, unknown>> = []
+    installApiFixtures(createdPayloads)
+    await renderCreateDrawer()
+
+    selectComboboxOption(getControlByLabel('Group'), 'Standard access')
+    const addFallbackTrigger = getControlByLabel(
+      'Fallback groups'
+    ).querySelector<HTMLButtonElement>('button[role="combobox"]')
+    if (!addFallbackTrigger) {
+      throw new Error('Expected fallback group combobox')
+    }
+    selectComboboxOption(addFallbackTrigger, 'Priority access')
+    expect(
+      document.body.textContent?.includes('1 / 2 fallback groups selected')
+    ).toBe(true)
+
+    selectComboboxOption(getControlByLabel('Group'), 'Priority access')
+    expect(
+      document.body.textContent?.includes('0 / 2 fallback groups selected')
+    ).toBe(true)
+
+    changeInput(getControlByLabel('Name'), 'promoted')
+    fireEvent.click(findButton('Save changes', true))
+    await waitFor(() => expect(createdPayloads).toHaveLength(1))
+
+    expect(createdPayloads[0]?.group).toBe('vip')
+    expect(createdPayloads[0]?.auto_groups).toEqual([])
+    expect(createdPayloads[0]?.cross_group_retry).toBe(false)
   })
 })

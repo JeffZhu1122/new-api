@@ -53,6 +53,11 @@ token.db_error: "Invalid token, database query error, please contact administrat
 token.auto_groups_too_many: "A token can select at most {{.Max}} Auto groups"
 token.auto_groups_duplicate: "Auto group {{.Group}} is duplicated"
 token.auto_groups_invalid: "Auto group {{.Group}} is unavailable or unauthorized"
+token.primary_group_invalid: "Group {{.Group}} is unavailable or unauthorized"
+token.fallback_groups_too_many: "A token can have at most {{.Max}} fallback groups"
+token.fallback_groups_duplicate: "Fallback group {{.Group}} is duplicated"
+token.fallback_groups_invalid: "Fallback group {{.Group}} is unavailable or unauthorized"
+token.fallback_group_is_primary: "Fallback group {{.Group}} is already the primary group"
 
 # Redemption messages
 redemption.name_length: "Redemption code name length must be between 1-20"

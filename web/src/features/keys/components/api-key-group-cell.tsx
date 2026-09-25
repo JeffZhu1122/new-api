@@ -33,6 +33,7 @@ import { GroupRatioBadge, type GroupRatio } from './auto-group-visuals'
 
 type ApiKeyGroupCellProps = {
   crossGroupRetry: boolean
+  fallbackGroups?: string[] | null
   group: string
   ratio?: GroupRatio
   shouldReduceMotion: boolean
@@ -46,21 +47,62 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
   if (group !== 'auto') {
     const ratio =
       group && typeof props.ratio === 'number' ? props.ratio : undefined
+    const fallbackGroups = group
+      ? (props.fallbackGroups ?? []).filter(
+          (item) => item && item !== group
+        )
+      : []
+    const badge = (
+      <GroupBadge
+        group={group}
+        ratio={ratio}
+        ratioLabel={group ? undefined : t('Inherited')}
+        className='px-0'
+        containerClassName={cn('gap-3', isMobile && 'w-full justify-between')}
+      />
+    )
+    if (fallbackGroups.length === 0) {
+      return (
+        <TruncatedCell
+          className={isMobile ? 'w-full' : 'max-w-50'}
+          tabIndex={0}
+          tooltipContent={group || t('Follow user group')}
+          tooltipClassName='break-all'
+        >
+          {badge}
+        </TruncatedCell>
+      )
+    }
     return (
-      <TruncatedCell
-        className={isMobile ? 'w-full' : 'max-w-50'}
-        tabIndex={0}
-        tooltipContent={group || t('Follow user group')}
-        tooltipClassName='break-all'
-      >
-        <GroupBadge
-          group={group}
-          ratio={ratio}
-          ratioLabel={group ? undefined : t('Inherited')}
-          className='px-0'
-          containerClassName={cn('gap-3', isMobile && 'w-full justify-between')}
-        />
-      </TruncatedCell>
+      <Tooltip>
+        <TooltipTrigger
+          render={
+            <BadgeCell
+              data-api-key-group-cell='fallback'
+              tabIndex={0}
+              className={cn(
+                'ml-0 gap-2 overflow-visible text-xs',
+                isMobile ? 'w-full justify-between' : 'max-w-50'
+              )}
+            />
+          }
+        >
+          {badge}
+          <StatusBadge
+            label={`+${fallbackGroups.length}`}
+            variant='info'
+            copyable={false}
+            className='px-0'
+          />
+        </TooltipTrigger>
+        <TooltipContent>
+          <span className='text-xs break-all'>
+            {t('Fallback order: {{chain}}', {
+              chain: [group, ...fallbackGroups].join(' → '),
+            })}
+          </span>
+        </TooltipContent>
+      </Tooltip>
     )
   }
 

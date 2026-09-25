@@ -54,6 +54,11 @@ token.db_error: "無效的令牌，資料庫查詢出錯，請聯繫管理員"
 token.auto_groups_too_many: "每個令牌最多可選擇 {{.Max}} 個 Auto 分組"
 token.auto_groups_duplicate: "Auto 分組 {{.Group}} 重複"
 token.auto_groups_invalid: "Auto 分組 {{.Group}} 不可用或無權存取"
+token.primary_group_invalid: "分組 {{.Group}} 不可用或無權存取"
+token.fallback_groups_too_many: "每個令牌最多可設定 {{.Max}} 個備用分組"
+token.fallback_groups_duplicate: "備用分組 {{.Group}} 重複"
+token.fallback_groups_invalid: "備用分組 {{.Group}} 不可用或無權存取"
+token.fallback_group_is_primary: "備用分組 {{.Group}} 已是主分組"
 
 # Redemption messages
 redemption.name_length: "兌換碼名稱長度必須在1-20之間"

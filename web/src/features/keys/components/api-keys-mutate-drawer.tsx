@@ -91,6 +91,7 @@ import {
 } from './api-key-group-combobox'
 import { useApiKeys } from './api-keys-provider'
 import { AutoGroupOrderEditor } from './auto-group-order-editor'
+import { FallbackGroupOrderEditor } from './fallback-group-order-editor'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
@@ -192,6 +193,8 @@ export function ApiKeysMutateDrawer({
     Number(autoGroupsData?.data?.max_count) > 0
       ? Number(autoGroupsData?.data?.max_count)
       : 5
+  // The primary group counts toward the same limit as the Auto order.
+  const maxFallbackGroups = Math.max(0, maxAutoGroups - 1)
   const schema = useMemo(
     () => getApiKeyFormSchema(t, maxAutoGroups),
     [t, maxAutoGroups]
@@ -273,6 +276,10 @@ export function ApiKeysMutateDrawer({
         groups[0]?.value ??
         ''
       form.setValue('group', fallback)
+      form.setValue(
+        'fallback_groups',
+        form.getValues('fallback_groups').filter((group) => group !== fallback)
+      )
       if (currentGroup === 'auto') {
         form.setValue('auto_groups', [])
         form.setValue('auto_groups_mode', 'inherit')
@@ -362,7 +369,12 @@ export function ApiKeysMutateDrawer({
     ? t('Enter quota in tokens')
     : t('Enter quota in {{currency}}', { currency: currencyLabel })
   const autoGroupsMode = form.watch('auto_groups_mode')
+  const fallbackGroups = form.watch('fallback_groups')
   const unlimitedQuota = form.watch('unlimited_quota')
+  const showFallbackGroups =
+    !!selectedGroup && selectedGroup !== 'auto' && maxFallbackGroups > 0
+  const showCrossGroupRetry =
+    selectedGroup === 'auto' || fallbackGroups.length > 0
 
   return (
     <Sheet
@@ -434,9 +446,19 @@ export function ApiKeysMutateDrawer({
                             })
                             return
                           }
-                          form.setValue('cross_group_retry', false, {
+                          // The new primary group can no longer be a fallback.
+                          const remaining = form
+                            .getValues('fallback_groups')
+                            .filter((item) => item !== group)
+                          form.setValue('fallback_groups', remaining, {
                             shouldDirty: true,
+                            shouldValidate: true,
                           })
+                          if (remaining.length === 0) {
+                            form.setValue('cross_group_retry', false, {
+                              shouldDirty: true,
+                            })
+                          }
                         }}
                         placeholder={t('Select a group')}
                       />
@@ -487,7 +509,53 @@ export function ApiKeysMutateDrawer({
                 />
               )}
 
-              {selectedGroup === 'auto' && (
+              {showFallbackGroups && (
+                <FormField
+                  control={form.control}
+                  name='fallback_groups'
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>{t('Fallback groups')}</FormLabel>
+                      <FormDescription>
+                        {t(
+                          'Groups to try in order when the primary group has no available channel or its retries are exhausted.'
+                        )}
+                      </FormDescription>
+                      <FormControl>
+                        <FallbackGroupOrderEditor
+                          value={field.value}
+                          primaryGroup={selectedGroup || ''}
+                          options={groups}
+                          maxCount={maxFallbackGroups}
+                          onChange={(next) => {
+                            const wasEmpty = field.value.length === 0
+                            form.setValue(
+                              'fallback_groups',
+                              next.slice(0, maxFallbackGroups),
+                              {
+                                shouldDirty: true,
+                                shouldValidate: true,
+                              }
+                            )
+                            if (next.length === 0) {
+                              form.setValue('cross_group_retry', false, {
+                                shouldDirty: true,
+                              })
+                            } else if (wasEmpty) {
+                              form.setValue('cross_group_retry', true, {
+                                shouldDirty: true,
+                              })
+                            }
+                          }}
+                        />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              )}
+
+              {showCrossGroupRetry && (
                 <FormField
                   control={form.control}
                   name='cross_group_retry'
