@@ -46,3 +46,69 @@ func TestSetupContextForTokenMalformedAutoGroupsFailsClosed(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, []string{}, value)
 }
+
+func TestSetupContextForTokenNormalizesMultiGroupTokenToAutoSemantics(t *testing.T) {
+	ctx := newTokenAutoGroupsContext()
+	token := &model.Token{Id: 1, UserId: 2, Group: "vip", CrossGroupRetry: true, AutoGroups: `["default","svip"]`}
+
+	require.NoError(t, SetupContextForToken(ctx, token))
+	assert.Equal(t, "auto", common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+	assert.True(t, common.GetContextKeyBool(ctx, constant.ContextKeyTokenCrossGroupRetry))
+	value, ok := common.GetContextKey(ctx, constant.ContextKeyTokenAutoGroups)
+	require.True(t, ok)
+	assert.Equal(t, []string{"vip", "default", "svip"}, value)
+}
+
+func TestSetupContextForTokenDropsFallbackThatRepeatsPrimary(t *testing.T) {
+	ctx := newTokenAutoGroupsContext()
+	token := &model.Token{Id: 1, UserId: 2, Group: "vip", AutoGroups: `["vip","default"]`}
+
+	require.NoError(t, SetupContextForToken(ctx, token))
+	assert.Equal(t, "auto", common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+	value, ok := common.GetContextKey(ctx, constant.ContextKeyTokenAutoGroups)
+	require.True(t, ok)
+	assert.Equal(t, []string{"vip", "default"}, value)
+}
+
+func TestSetupContextForTokenKeepsSingleGroupTokenUntouched(t *testing.T) {
+	tests := []struct {
+		name  string
+		token *model.Token
+	}{
+		{name: "no stored list", token: &model.Token{Id: 1, UserId: 2, Group: "vip"}},
+		{name: "empty stored list", token: &model.Token{Id: 1, UserId: 2, Group: "vip", AutoGroups: `[]`}},
+	}
+
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			ctx := newTokenAutoGroupsContext()
+
+			require.NoError(t, SetupContextForToken(ctx, test.token))
+			assert.Equal(t, "vip", common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+			_, ok := common.GetContextKey(ctx, constant.ContextKeyTokenAutoGroups)
+			assert.False(t, ok)
+		})
+	}
+}
+
+func TestSetupContextForTokenMalformedFallbacksFallBackToPrimaryGroup(t *testing.T) {
+	ctx := newTokenAutoGroupsContext()
+	token := &model.Token{Id: 1, UserId: 2, Group: "vip", AutoGroups: `not-json`}
+
+	require.NoError(t, SetupContextForToken(ctx, token))
+	assert.Equal(t, "vip", common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+	value, ok := common.GetContextKey(ctx, constant.ContextKeyTokenAutoGroups)
+	require.True(t, ok)
+	assert.Equal(t, []string{}, value)
+}
+
+func TestSetupContextForTokenKeepsAutoTokenGroupLiteral(t *testing.T) {
+	ctx := newTokenAutoGroupsContext()
+	token := &model.Token{Id: 1, UserId: 2, Group: "auto", AutoGroups: `["vip","default"]`}
+
+	require.NoError(t, SetupContextForToken(ctx, token))
+	assert.Equal(t, "auto", common.GetContextKeyString(ctx, constant.ContextKeyTokenGroup))
+	value, ok := common.GetContextKey(ctx, constant.ContextKeyTokenAutoGroups)
+	require.True(t, ok)
+	assert.Equal(t, []string{"vip", "default"}, value)
+}
