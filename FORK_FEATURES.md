@@ -4,13 +4,13 @@
 
 | 项目 | 值 |
 |---|---|
-| 文档基线（fork HEAD） | `207c5d622` — 2026-09-26 |
-| 上游基线（merge-base） | `d04c118c8` — 2026-09-23 `fix(channel): preserve Responses WebSocket setting on save (#7468)` |
-| 编写时上游 main | `c2b7a9a9e` — 2026-09-25（领先基线 1 个提交） |
-| fork 专有提交数 | 18 |
+| 文档覆盖的最后一个功能提交 | `f69683a02` — 2026-09-26 `feat(tokens): bind a key to a primary group plus ordered fallback groups` |
+| 上游基线（merge-base） | `c2b7a9a9e` — 2026-09-25 `fix(claude): preserve per-message output_config in Claude messages (#7561)` |
+| 最近一次同步 | 2026-09-27，rebase 到 `c2b7a9a9e`，无冲突 |
+| fork 专有提交数 | 18 个功能提交（不含本文档自身的提交） |
 | 变更规模 | 146 个文件，+8762 / −1214 行 |
 
-同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log d04c118c8..HEAD` 得到的 18 个提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `3c0340d90` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
+同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log c2b7a9a9e..HEAD` 得到的提交（18 个功能提交加本文档的提交）就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
 ---
 
@@ -40,18 +40,18 @@
 
 | # | 功能 | 主要提交 | 默认状态 | 存储位置 | 主要影响面 |
 |---|---|---|---|---|---|
-| 3 | 400 关键词重试 | `3c0340d90` `630921e67` | 关闭 | options 表（2 个 key） | 重试决策 |
-| 4 | 避开已失败渠道 | `43a6956c6` `630921e67` | 关闭 | options 表（3 个 key） | 重试 + 渠道选择 |
-| 5 | 渠道级超时 | `9c22d475e` | 0 = 继承全局 | `channel_extend` | 上游 HTTP 请求 / 流式 |
-| 6 | count_tokens / input_tokens 免费端点 | `c28886576` `ca8de16ff` | 渠道开关默认关 | 渠道 settings JSON | 路由、计费跳过 |
-| 7 | 用户 × 模型 RPM/TPM | `b52f36685` `84c9d5874` `fd59282a7` | 关闭 | options 表 + `user_extend` | 中间件 |
-| 8 | 渠道级 RPM/TPM | `b4c0b49d1` | 0 = 不限 | `channel_extend` | 渠道选择 |
-| 9 | 分组 / 用户模型折扣 | `03bf0c39c` `37aa8f83f` | 空 = 1.0 | options 表 + `user_extend` | 计费倍率 |
-| 10 | 渠道输入 token 边界 | `08aca98f9` `ddf86d1ce` | 0 = 不限 | `channel_extend` | 渠道选择 |
-| 11 | Anthropic 认证模式 | `3f593a802` | api_key | `channel_extend` | Claude 适配器请求头 |
-| 12 | 新建 / 复制默认禁用 | `91a672408` | 始终生效 | 无 | 渠道管理 |
-| 13 | Key 主分组 + 备用分组 | `207c5d622` | 无变化 | tokens 表既有列 | 鉴权、路由、计费 |
-| 14 | 移除 GitHub workflows | `4132d0ba4` | — | `.github/workflows/` | CI |
+| 3 | 400 关键词重试 | `20d115227` `5f22a93b0` | 关闭 | options 表（2 个 key） | 重试决策 |
+| 4 | 避开已失败渠道 | `274d26fe0` `5f22a93b0` | 关闭 | options 表（3 个 key） | 重试 + 渠道选择 |
+| 5 | 渠道级超时 | `c7ed417aa` | 0 = 继承全局 | `channel_extend` | 上游 HTTP 请求 / 流式 |
+| 6 | count_tokens / input_tokens 免费端点 | `746188d58` `ce0dca5c8` | 渠道开关默认关 | 渠道 settings JSON | 路由、计费跳过 |
+| 7 | 用户 × 模型 RPM/TPM | `3bde0f328` `55673f314` `b7c5bbd2e` | 关闭 | options 表 + `user_extend` | 中间件 |
+| 8 | 渠道级 RPM/TPM | `09ac2e64d` | 0 = 不限 | `channel_extend` | 渠道选择 |
+| 9 | 分组 / 用户模型折扣 | `6104962f2` `5b114b6cf` | 空 = 1.0 | options 表 + `user_extend` | 计费倍率 |
+| 10 | 渠道输入 token 边界 | `e65956272` `0fe0e61f5` | 0 = 不限 | `channel_extend` | 渠道选择 |
+| 11 | Anthropic 认证模式 | `455ec8282` | api_key | `channel_extend` | Claude 适配器请求头 |
+| 12 | 新建 / 复制默认禁用 | `168dbbafc` | 始终生效 | 无 | 渠道管理 |
+| 13 | Key 主分组 + 备用分组 | `f69683a02` | 无变化 | tokens 表既有列 | 鉴权、路由、计费 |
+| 14 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作）。
 
@@ -330,7 +330,7 @@ Claude Code / Anthropic SDK 在发送前用 `/v1/messages/count_tokens` 估算�
 ### 前端
 
 - 系统设置 → 安全设置 → **模型 RPM/TPM 限流**（`security/section-registry.tsx` id `model-rate-limit`，位于"限流"与"SSRF 防护"之间）。
-- `request-limits/model-rate-limit-section.tsx`：总开关 + 规则字段，可在**可视化模式 / JSON 模式**切换。JSON 模式用 `JsonCodeEditor`，zod 只允许 default/models/groups 键。`fd59282a7` 修复了字段跨栏（`data-settings-form-span='full'`）。
+- `request-limits/model-rate-limit-section.tsx`：总开关 + 规则字段，可在**可视化模式 / JSON 模式**切换。JSON 模式用 `JsonCodeEditor`，zod 只允许 default/models/groups 键。`b7c5bbd2e` 修复了字段跨栏（`data-settings-form-span='full'`）。
 - `model-rate-limit-visual-editor.tsx`：把 JSON 展平为 (Group, Model, RPM, TPM) 行表格，支持搜索、增删改，显示 Inherit / Unlimited。
 - `model-rate-limit-dialog.tsx`：Group（空 = 全局）、Model（空 = 作用域默认）、RPM、TPM，至少填一项；编辑时作用域不可改。
 - 用户编辑抽屉 **限流覆盖**（Rate Limit Override）区块（仅编辑模式）：默认 RPM / 默认 TPM 输入框 + 按模型 JSON 文本域。`user-form.ts` `buildRateLimitOverride` 在更新时总是发送 `rate_limit`。
@@ -408,7 +408,7 @@ Claude Code / Anthropic SDK 在发送前用 `/v1/messages/count_tokens` 估算�
 
 ### 前端
 
-- 系统设置 → 计费 → **分组定价**（Group Pricing）→ `group-ratio-form.tsx`。可视化编辑器 `group-ratio-visual-editor.tsx`（`37aa8f83f`）增加 **"分组模型折扣"** 标签页：按分组添加（不在定价表内的分组显示警告），每组一张表（模型 / 折扣），对话框输入模型名（提示 `"*"` 匹配该分组所有模型）与折扣（`(0, 10]` 才可保存）；删掉最后一个模型时连带删组。JSON 模式为 `JsonCodeEditor`。
+- 系统设置 → 计费 → **分组定价**（Group Pricing）→ `group-ratio-form.tsx`。可视化编辑器 `group-ratio-visual-editor.tsx`（`5b114b6cf`）增加 **"分组模型折扣"** 标签页：按分组添加（不在定价表内的分组显示警告），每组一张表（模型 / 折扣），对话框输入模型名（提示 `"*"` 匹配该分组所有模型）与折扣（`(0, 10]` 才可保存）；删掉最后一个模型时连带删组。JSON 模式为 `JsonCodeEditor`。
 - 用户编辑抽屉（仅编辑态）**模型折扣覆盖**（Model Discount Override）Textarea，`user-form.ts` 校验：空串通过；非数组对象；每个值有限且 `(0, 10]`。
 - 文案：分组模型折扣、用户模型折扣、"0.9 = 九折。取值范围 (0, 10]。"、"与该分组的分组倍率相乘生效。`*` 作为该分组下所有模型的兜底折扣"。
 
@@ -578,11 +578,11 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 ## 14. 仓库维护类变更
 
-### 14.1 移除 GitHub workflows（`4132d0ba4`）
+### 14.1 移除 GitHub workflows（`a034e98b3`）
 
 删除 `.github/workflows/` 下全部 6 个文件：`ci.yml`、`docker-build.yml`、`docker-image-branch.yml`、`electron-build.yml`、`release.yml`、`sync-release-to-gitcode.yml`。目的是避免 fork 在 GitHub 上触发上游的构建、发版和镜像同步流水线。`.github/` 下的 issue / PR 模板、`CODE_OF_CONDUCT.md`、`FUNDING.yml`、`SECURITY.md` 保留。
 
-### 14.2 移植提交（`630921e67`）
+### 14.2 移植提交（`5f22a93b0`）
 
 上游在基线之前重构了四个接缝（seam）：重试判定抽到 `service.DecideRelayRetry`；渠道选择抽到 `service.SelectChannelForRequest`（HTTP distributor 与 Responses WebSocket 共用）；计费准备抽到 `relay.PrepareRequestBilling`；重试设置 UI 迁到 request-policies 页并经 `/api/option/request_policy` 整体校验。该提交把 fork 功能 re-home 到这些接缝上：
 
@@ -602,7 +602,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 1. `git fetch https://github.com/QuantumNous/new-api.git main`
 2. `git rebase FETCH_HEAD`（fork 提交线性重放）
 3. 解决冲突后跑 Go 与前端测试，重点是下面列出的热点文件。
-4. 如上游再次重构接缝，参照 `630921e67` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
+4. 如上游再次重构接缝，参照 `5f22a93b0` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
 
 ### 15.2 高频冲突文件
 
@@ -715,21 +715,21 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 | 提交 | 日期 | 标题 |
 |---|---|---|
-| `3c0340d90` | 2026-08-15 | add 400 retry option |
-| `43a6956c6` | 2026-08-15 | retry without tried channels |
-| `9c22d475e` | 2026-08-16 | add channel relay timeout |
-| `c28886576` | 2026-08-20 | add anthropic token count |
-| `b52f36685` | 2026-08-29 | add rate limited control |
-| `84c9d5874` | 2026-08-30 | add rate limit control gui |
-| `4132d0ba4` | 2026-08-30 | chore: remove github workflows on fork |
-| `03bf0c39c` | 2026-08-30 | add discount control |
-| `fd59282a7` | 2026-08-30 | fix rpm limit control gui |
-| `37aa8f83f` | 2026-08-30 | fix rpm discount gui |
-| `08aca98f9` | 2026-08-31 | add min input channel config |
-| `ddf86d1ce` | 2026-08-31 | add max input channel config |
-| `b4c0b49d1` | 2026-08-31 | add channel tpm rpm limit |
-| `ca8de16ff` | 2026-09-12 | add openai responses input_tokens count tokens endpoint |
-| `3f593a802` | 2026-09-24 | add anthropic channel auth mode |
-| `630921e67` | 2026-09-24 | port fork features onto upstream request-policy and channel-selection refactors |
-| `91a672408` | 2026-09-24 | feat(channels): create and copy channels as manually disabled |
-| `207c5d622` | 2026-09-26 | feat(tokens): bind a key to a primary group plus ordered fallback groups |
+| `20d115227` | 2026-08-15 | add 400 retry option |
+| `274d26fe0` | 2026-08-15 | retry without tried channels |
+| `c7ed417aa` | 2026-08-16 | add channel relay timeout |
+| `746188d58` | 2026-08-20 | add anthropic token count |
+| `3bde0f328` | 2026-08-29 | add rate limited control |
+| `55673f314` | 2026-08-30 | add rate limit control gui |
+| `a034e98b3` | 2026-08-30 | chore: remove github workflows on fork |
+| `6104962f2` | 2026-08-30 | add discount control |
+| `b7c5bbd2e` | 2026-08-30 | fix rpm limit control gui |
+| `5b114b6cf` | 2026-08-30 | fix rpm discount gui |
+| `e65956272` | 2026-08-31 | add min input channel config |
+| `0fe0e61f5` | 2026-08-31 | add max input channel config |
+| `09ac2e64d` | 2026-08-31 | add channel tpm rpm limit |
+| `ce0dca5c8` | 2026-09-12 | add openai responses input_tokens count tokens endpoint |
+| `455ec8282` | 2026-09-24 | add anthropic channel auth mode |
+| `5f22a93b0` | 2026-09-24 | port fork features onto upstream request-policy and channel-selection refactors |
+| `168dbbafc` | 2026-09-24 | feat(channels): create and copy channels as manually disabled |
+| `f69683a02` | 2026-09-26 | feat(tokens): bind a key to a primary group plus ordered fallback groups |
