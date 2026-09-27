@@ -3,6 +3,7 @@ package dto
 import (
 	"fmt"
 	"math"
+	"slices"
 	"strings"
 )
 
@@ -33,6 +34,21 @@ const (
 
 // ClaudeOAuthTokenPrefix identifies Anthropic OAuth access tokens.
 const ClaudeOAuthTokenPrefix = "sk-ant-oat"
+
+// Response header filter modes (ChannelExtendSettings.ResponseHeaderMode).
+// They decide which upstream response headers are copied back to the client.
+const (
+	ResponseHeaderModeBlacklist = "blacklist" // drop the listed headers, copy everything else
+	ResponseHeaderModeWhitelist = "whitelist" // copy only the listed headers
+)
+
+// MaxChannelResponseHeaderRules bounds the number of header names in a
+// per-channel response header filter.
+const MaxChannelResponseHeaderRules = 64
+
+// MaxChannelResponseHeaderNameLength bounds a single header name in a
+// per-channel response header filter.
+const MaxChannelResponseHeaderNameLength = 128
 
 // ResolveClaudeAuthMode returns the concrete scheme (api_key or oauth) for a
 // key under the configured mode. Auto mode decides per key, so a multi-key
@@ -82,6 +98,15 @@ type ChannelExtendSettings struct {
 	// api_key (x-api-key), oauth (Authorization: Bearer) or auto (by key
 	// prefix). "" = api_key. Ignored by other channel types.
 	ClaudeAuthMode string `json:"claude_auth_mode,omitempty"`
+	// ResponseHeaderMode filters which upstream response headers are copied
+	// back to the client: blacklist drops the names in ResponseHeaders,
+	// whitelist keeps only those names. "" = copy every upstream header.
+	// Content-Type and Content-Encoding are always kept so the body stays
+	// interpretable.
+	ResponseHeaderMode string `json:"response_header_mode,omitempty"`
+	// ResponseHeaders lists the header names (case-insensitive) that
+	// ResponseHeaderMode applies to.
+	ResponseHeaders []string `json:"response_headers,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -115,6 +140,40 @@ func (s *ChannelExtendSettings) Validate() error {
 	default:
 		return fmt.Errorf("invalid claude_auth_mode: %q, must be one of %s, %s, %s", s.ClaudeAuthMode, ClaudeAuthModeApiKey, ClaudeAuthModeOAuth, ClaudeAuthModeAuto)
 	}
+	switch s.ResponseHeaderMode {
+	case "":
+		if len(s.ResponseHeaders) > 0 {
+			return fmt.Errorf("response_headers requires response_header_mode %s or %s", ResponseHeaderModeBlacklist, ResponseHeaderModeWhitelist)
+		}
+	case ResponseHeaderModeBlacklist, ResponseHeaderModeWhitelist:
+		if len(s.ResponseHeaders) == 0 {
+			return fmt.Errorf("response_headers must list at least one header for response_header_mode %s", s.ResponseHeaderMode)
+		}
+		if len(s.ResponseHeaders) > MaxChannelResponseHeaderRules {
+			return fmt.Errorf("too many response_headers: %d, at most %d", len(s.ResponseHeaders), MaxChannelResponseHeaderRules)
+		}
+		seen := make(map[string]struct{}, len(s.ResponseHeaders))
+		for _, name := range s.ResponseHeaders {
+			trimmed := strings.TrimSpace(name)
+			if trimmed == "" || len(trimmed) > MaxChannelResponseHeaderNameLength {
+				return fmt.Errorf("invalid response header name %q: must be 1-%d characters", name, MaxChannelResponseHeaderNameLength)
+			}
+			for _, r := range trimmed {
+				// RFC 7230 token characters are the only ones legal in a field name.
+				isTokenChar := r < 0x80 && (r >= '0' && r <= '9' || r >= 'A' && r <= 'Z' || r >= 'a' && r <= 'z' || strings.ContainsRune("!#$%&'*+-.^_`|~", r))
+				if !isTokenChar {
+					return fmt.Errorf("invalid response header name %q: only RFC 7230 token characters are allowed", name)
+				}
+			}
+			lower := strings.ToLower(trimmed)
+			if _, dup := seen[lower]; dup {
+				return fmt.Errorf("duplicate response header name %q", name)
+			}
+			seen[lower] = struct{}{}
+		}
+	default:
+		return fmt.Errorf("invalid response_header_mode: %q, must be one of %s, %s", s.ResponseHeaderMode, ResponseHeaderModeBlacklist, ResponseHeaderModeWhitelist)
+	}
 	return nil
 }
 
@@ -123,5 +182,29 @@ func (s *ChannelExtendSettings) IsZero() bool {
 	return s == nil || (s.RelayTimeout == 0 && s.StreamingTimeout == 0 &&
 		s.MinInputTokens == 0 && s.MaxInputTokens == 0 &&
 		s.RpmLimit == 0 && s.TpmLimit == 0 &&
-		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey))
+		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey) &&
+		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0)
+}
+
+// AllowsResponseHeader reports whether an upstream response header may be
+// copied to the client under the channel's response header filter. Without a
+// mode every header passes. Content-Type and Content-Encoding always pass
+// because dropping them would leave the body uninterpretable.
+func (s *ChannelExtendSettings) AllowsResponseHeader(name string) bool {
+	if s == nil || s.ResponseHeaderMode == "" {
+		return true
+	}
+	if strings.EqualFold(name, "Content-Type") || strings.EqualFold(name, "Content-Encoding") {
+		return true
+	}
+	listed := slices.ContainsFunc(s.ResponseHeaders, func(rule string) bool {
+		return strings.EqualFold(strings.TrimSpace(rule), name)
+	})
+	switch s.ResponseHeaderMode {
+	case ResponseHeaderModeWhitelist:
+		return listed
+	case ResponseHeaderModeBlacklist:
+		return !listed
+	}
+	return true
 }
