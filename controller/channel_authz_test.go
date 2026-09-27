@@ -105,6 +105,28 @@ func TestChannelHasSensitiveChanges(t *testing.T) {
 		}))
 	})
 
+	t.Run("response header filter change is sensitive", func(t *testing.T) {
+		originWithExtend := *origin
+		originWithExtend.ExtendConfig = &kitdto.ChannelExtendSettings{ResponseHeaderMode: kitdto.ResponseHeaderModeBlacklist, ResponseHeaders: []string{"OpenAI-Organization"}}
+		updated := PatchChannel{Channel: *origin}
+		updated.ExtendConfig = &kitdto.ChannelExtendSettings{ResponseHeaderMode: kitdto.ResponseHeaderModeBlacklist, ResponseHeaders: []string{"OpenAI-Organization", "Set-Cookie"}}
+
+		assert.True(t, channelHasSensitiveChanges(&updated, &originWithExtend, map[string]any{
+			"extend_config": map[string]any{"response_header_mode": "blacklist", "response_headers": []string{"OpenAI-Organization", "Set-Cookie"}},
+		}))
+	})
+
+	t.Run("empty response_headers array equals a missing list", func(t *testing.T) {
+		originWithExtend := *origin
+		originWithExtend.ExtendConfig = &kitdto.ChannelExtendSettings{RelayTimeout: 30}
+		updated := PatchChannel{Channel: *origin}
+		updated.ExtendConfig = &kitdto.ChannelExtendSettings{RelayTimeout: 30, ResponseHeaders: []string{}}
+
+		assert.False(t, channelHasSensitiveChanges(&updated, &originWithExtend, map[string]any{
+			"extend_config": map[string]any{"relay_timeout": 30, "response_headers": []string{}},
+		}))
+	})
+
 	t.Run("null extend_config clearing existing overrides is sensitive", func(t *testing.T) {
 		originWithExtend := *origin
 		originWithExtend.ExtendConfig = &kitdto.ChannelExtendSettings{MaxInputTokens: 500}
