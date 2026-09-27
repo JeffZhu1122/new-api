@@ -92,6 +92,8 @@ const CONFIGURATION_BLOCKS = {
       'max_input_tokens',
       'rpm_limit',
       'tpm_limit',
+      'response_header_mode',
+      'response_headers',
     ],
   },
   upstreamModelDetection: {
@@ -189,7 +191,8 @@ export function getChannelConfigurationState(
       (values.min_input_tokens ?? 0) > 0 ||
       (values.max_input_tokens ?? 0) > 0 ||
       (values.rpm_limit ?? 0) > 0 ||
-      (values.tpm_limit ?? 0) > 0
+      (values.tpm_limit ?? 0) > 0 ||
+      (values.response_header_mode ?? 'off') !== 'off'
     ),
     upstreamModelDetection:
       MODEL_FETCHABLE_TYPES.has(values.type) &&

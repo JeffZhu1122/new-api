@@ -117,3 +117,33 @@ func TestBatchDeleteChannelsCascadesExtend(t *testing.T) {
 	require.NoError(t, DB.Model(&ChannelExtend{}).Count(&count).Error)
 	assert.Equal(t, int64(0), count)
 }
+
+func TestUpsertChannelExtendPersistsResponseHeaderFilter(t *testing.T) {
+	db := useChannelExtendDB(t)
+	// 新列上重复 AutoMigrate 必须幂等
+	require.NoError(t, db.AutoMigrate(&ChannelExtend{}))
+
+	blacklist := dto.ChannelExtendSettings{ResponseHeaderMode: dto.ResponseHeaderModeBlacklist, ResponseHeaders: []string{"OpenAI-Organization", "X-RateLimit-Limit-Requests"}}
+	require.NoError(t, UpsertChannelExtend(nil, 9, blacklist))
+	settings, err := GetChannelExtend(9)
+	require.NoError(t, err)
+	assert.Equal(t, blacklist, settings)
+	assert.False(t, settings.IsZero())
+
+	// 切换为白名单并缩减列表：原地覆盖，不能残留旧名称
+	whitelist := dto.ChannelExtendSettings{ResponseHeaderMode: dto.ResponseHeaderModeWhitelist, ResponseHeaders: []string{"X-Request-Id"}}
+	require.NoError(t, UpsertChannelExtend(nil, 9, whitelist))
+	settings, err = GetChannelExtend(9)
+	require.NoError(t, err)
+	assert.Equal(t, whitelist, settings)
+
+	// 关闭过滤但保留其他覆盖：两列都清空，行仍存在
+	require.NoError(t, UpsertChannelExtend(nil, 9, dto.ChannelExtendSettings{RelayTimeout: 5}))
+	var row ChannelExtend
+	require.NoError(t, DB.Where("channel_id = ?", 9).Take(&row).Error)
+	assert.Equal(t, "", row.ResponseHeaderMode)
+	assert.Equal(t, "", row.ResponseHeaders)
+	settings, err = GetChannelExtend(9)
+	require.NoError(t, err)
+	assert.Equal(t, dto.ChannelExtendSettings{RelayTimeout: 5}, settings)
+}

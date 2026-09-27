@@ -372,6 +372,14 @@ export const ERROR_MESSAGES = {
     'Channel RPM limit must be between 0 and 2147483647',
   INVALID_CHANNEL_TPM_LIMIT:
     'Channel TPM limit must be between 0 and 2147483647',
+  INVALID_CHANNEL_RESPONSE_HEADERS_EMPTY:
+    'List at least one header name for the response header filter',
+  INVALID_CHANNEL_RESPONSE_HEADERS_TOO_MANY:
+    'Response header filter supports at most 64 header names',
+  INVALID_CHANNEL_RESPONSE_HEADER_NAME:
+    'Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters',
+  INVALID_CHANNEL_RESPONSE_HEADERS_DUPLICATE:
+    'Response header names must be unique (case-insensitive)',
   CREATE_FAILED: 'Failed to create channel',
   UPDATE_FAILED: 'Failed to update channel',
   DELETE_FAILED: 'Failed to delete channel',

@@ -7353,6 +7353,20 @@
     "Select auth mode": "Select auth mode",
     "For sk-ant-oat01- / sk-ant-oat03- tokens: sent as Authorization: Bearer with the oauth anthropic-beta flag": "For sk-ant-oat01- / sk-ant-oat03- tokens: sent as Authorization: Bearer with the oauth anthropic-beta flag",
     "Keys starting with sk-ant-oat use Bearer, all others use x-api-key; mixed multi-key channels are supported": "Keys starting with sk-ant-oat use Bearer, all others use x-api-key; mixed multi-key channels are supported",
-    "For sk-ant-api01- / sk-ant-api03- keys: sent as the x-api-key header": "For sk-ant-api01- / sk-ant-api03- keys: sent as the x-api-key header"
+    "For sk-ant-api01- / sk-ant-api03- keys: sent as the x-api-key header": "For sk-ant-api01- / sk-ant-api03- keys: sent as the x-api-key header",
+    "Response Header Filter": "Response Header Filter",
+    "Off (copy all upstream headers)": "Off (copy all upstream headers)",
+    "Blacklist (drop listed headers)": "Blacklist (drop listed headers)",
+    "Whitelist (keep only listed headers)": "Whitelist (keep only listed headers)",
+    "Select filter mode": "Select filter mode",
+    "Filtered Response Headers": "Filtered Response Headers",
+    "One header name per line (commas also work). Matching is case-insensitive. Content-Type and Content-Encoding are always kept.": "One header name per line (commas also work). Matching is case-insensitive. Content-Type and Content-Encoding are always kept.",
+    "Every upstream response header is copied to the client (default behaviour).": "Every upstream response header is copied to the client (default behaviour).",
+    "Upstream response headers listed below are dropped; everything else is copied to the client.": "Upstream response headers listed below are dropped; everything else is copied to the client.",
+    "Only the upstream response headers listed below are copied to the client; everything else is dropped.": "Only the upstream response headers listed below are copied to the client; everything else is dropped.",
+    "List at least one header name for the response header filter": "List at least one header name for the response header filter",
+    "Response header filter supports at most 64 header names": "Response header filter supports at most 64 header names",
+    "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters",
+    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)"
   }
 }

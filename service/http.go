@@ -8,7 +8,9 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 )
@@ -27,7 +29,9 @@ func CloseResponseBodyGracefully(httpResponse *http.Response) {
 // should be copied to the client response. It returns false for Content-Length
 // (managed separately) and X-Oneapi-Request-Id (to preserve the local instance
 // ID). When the upstream header is X-Oneapi-Request-Id, the value is captured
-// into the Gin context for later logging.
+// into the Gin context for later logging. Every other header is subject to the
+// selected channel's response header filter (ChannelExtendSettings), which by
+// default copies everything.
 func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 	if strings.EqualFold(k, "Content-Length") {
 		return false
@@ -38,7 +42,14 @@ func ShouldCopyUpstreamHeader(c *gin.Context, k string, v []string) bool {
 		}
 		return false
 	}
-	return true
+	if c == nil {
+		return true
+	}
+	extendSetting, ok := common.GetContextKeyType[dto.ChannelExtendSettings](c, constant.ContextKeyChannelExtendSetting)
+	if !ok {
+		return true
+	}
+	return extendSetting.AllowsResponseHeader(k)
 }
 
 func IOCopyBytesGracefully(c *gin.Context, src *http.Response, data []byte) {

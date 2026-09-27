@@ -2,7 +2,9 @@ package model
 
 import (
 	"errors"
+	"fmt"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 
 	"gorm.io/gorm"
@@ -22,6 +24,10 @@ type ChannelExtend struct {
 	TpmLimit         int `json:"tpm_limit" gorm:"default:0"`         // channel-wide tokens per minute, 0 = no limit
 	// Anthropic credential scheme: "" / api_key (x-api-key), oauth (Bearer), auto (by key prefix)
 	ClaudeAuthMode string `json:"claude_auth_mode" gorm:"type:varchar(16);default:''"`
+	// Upstream response header filter: "" / blacklist / whitelist
+	ResponseHeaderMode string `json:"response_header_mode" gorm:"type:varchar(16);default:''"`
+	// JSON array of header names for ResponseHeaderMode, "" when the filter is off
+	ResponseHeaders string `json:"response_headers" gorm:"type:text"`
 }
 
 func (ChannelExtend) TableName() string {
@@ -32,15 +38,22 @@ func (ce *ChannelExtend) ToSettings() dto.ChannelExtendSettings {
 	if ce == nil {
 		return dto.ChannelExtendSettings{}
 	}
-	return dto.ChannelExtendSettings{
-		RelayTimeout:     ce.RelayTimeout,
-		StreamingTimeout: ce.StreamingTimeout,
-		MinInputTokens:   ce.MinInputTokens,
-		MaxInputTokens:   ce.MaxInputTokens,
-		RpmLimit:         ce.RpmLimit,
-		TpmLimit:         ce.TpmLimit,
-		ClaudeAuthMode:   ce.ClaudeAuthMode,
+	settings := dto.ChannelExtendSettings{
+		RelayTimeout:       ce.RelayTimeout,
+		StreamingTimeout:   ce.StreamingTimeout,
+		MinInputTokens:     ce.MinInputTokens,
+		MaxInputTokens:     ce.MaxInputTokens,
+		RpmLimit:           ce.RpmLimit,
+		TpmLimit:           ce.TpmLimit,
+		ClaudeAuthMode:     ce.ClaudeAuthMode,
+		ResponseHeaderMode: ce.ResponseHeaderMode,
 	}
+	if ce.ResponseHeaders != "" {
+		if err := common.Unmarshal([]byte(ce.ResponseHeaders), &settings.ResponseHeaders); err != nil {
+			common.SysError(fmt.Sprintf("channel %d has invalid response_headers json: %s", ce.ChannelId, err.Error()))
+		}
+	}
+	return settings
 }
 
 // UpsertChannelExtend persists per-channel overrides. All-zero settings delete
@@ -55,19 +68,29 @@ func UpsertChannelExtend(tx *gorm.DB, channelId int, settings dto.ChannelExtendS
 	if settings.IsZero() {
 		return tx.Where("channel_id = ?", channelId).Delete(&ChannelExtend{}).Error
 	}
+	responseHeaders := ""
+	if len(settings.ResponseHeaders) > 0 {
+		encoded, err := common.Marshal(settings.ResponseHeaders)
+		if err != nil {
+			return err
+		}
+		responseHeaders = string(encoded)
+	}
 	extend := ChannelExtend{
-		ChannelId:        channelId,
-		RelayTimeout:     settings.RelayTimeout,
-		StreamingTimeout: settings.StreamingTimeout,
-		MinInputTokens:   settings.MinInputTokens,
-		MaxInputTokens:   settings.MaxInputTokens,
-		RpmLimit:         settings.RpmLimit,
-		TpmLimit:         settings.TpmLimit,
-		ClaudeAuthMode:   settings.ClaudeAuthMode,
+		ChannelId:          channelId,
+		RelayTimeout:       settings.RelayTimeout,
+		StreamingTimeout:   settings.StreamingTimeout,
+		MinInputTokens:     settings.MinInputTokens,
+		MaxInputTokens:     settings.MaxInputTokens,
+		RpmLimit:           settings.RpmLimit,
+		TpmLimit:           settings.TpmLimit,
+		ClaudeAuthMode:     settings.ClaudeAuthMode,
+		ResponseHeaderMode: settings.ResponseHeaderMode,
+		ResponseHeaders:    responseHeaders,
 	}
 	return tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "channel_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode"}),
+		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode", "response_header_mode", "response_headers"}),
 	}).Create(&extend).Error
 }
 

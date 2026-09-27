@@ -48,6 +48,8 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'max_input_tokens',
   'rpm_limit',
   'tpm_limit',
+  'response_header_mode',
+  'response_headers',
   'system_prompt',
   'system_prompt_override',
   'allow_service_tier',

@@ -285,6 +285,16 @@ const CLAUDE_AUTH_MODE_DESCRIPTIONS: Record<ClaudeAuthMode, string> = {
     'For sk-ant-oat01- / sk-ant-oat03- tokens: sent as Authorization: Bearer with the oauth anthropic-beta flag',
   auto: 'Keys starting with sk-ant-oat use Bearer, all others use x-api-key; mixed multi-key channels are supported',
 }
+const RESPONSE_HEADER_MODE_DESCRIPTIONS: Record<
+  'off' | 'blacklist' | 'whitelist',
+  string
+> = {
+  off: 'Every upstream response header is copied to the client (default behaviour).',
+  blacklist:
+    'Upstream response headers listed below are dropped; everything else is copied to the client.',
+  whitelist:
+    'Only the upstream response headers listed below are copied to the client; everything else is dropped.',
+}
 const SENSITIVE_FORM_FIELDS = [
   'type',
   'base_url',
@@ -313,6 +323,8 @@ const SENSITIVE_FORM_FIELDS = [
   'max_input_tokens',
   'rpm_limit',
   'tpm_limit',
+  'response_header_mode',
+  'response_headers',
   'pass_through_body_enabled',
   'responses_websocket_enabled',
   'system_prompt',
@@ -2320,6 +2332,84 @@ export function ChannelMutateDrawer({
           </FormItem>
         )}
       />
+      <FormField
+        control={form.control}
+        name='response_header_mode'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Response Header Filter')}</FormLabel>
+            <Select
+              disabled={sensitiveLocked}
+              items={[
+                {
+                  value: 'off',
+                  label: t('Off (copy all upstream headers)'),
+                },
+                {
+                  value: 'blacklist',
+                  label: t('Blacklist (drop listed headers)'),
+                },
+                {
+                  value: 'whitelist',
+                  label: t('Whitelist (keep only listed headers)'),
+                },
+              ]}
+              onValueChange={field.onChange}
+              value={field.value ?? 'off'}
+            >
+              <FormControl>
+                <SelectTrigger>
+                  <SelectValue placeholder={t('Select filter mode')} />
+                </SelectTrigger>
+              </FormControl>
+              <SelectContent alignItemWithTrigger={false}>
+                <SelectGroup>
+                  <SelectItem value='off'>
+                    {t('Off (copy all upstream headers)')}
+                  </SelectItem>
+                  <SelectItem value='blacklist'>
+                    {t('Blacklist (drop listed headers)')}
+                  </SelectItem>
+                  <SelectItem value='whitelist'>
+                    {t('Whitelist (keep only listed headers)')}
+                  </SelectItem>
+                </SelectGroup>
+              </SelectContent>
+            </Select>
+            <FormDescription>
+              {t(RESPONSE_HEADER_MODE_DESCRIPTIONS[field.value ?? 'off'])}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      {(formValues.response_header_mode ?? 'off') !== 'off' && (
+        <FormField
+          control={form.control}
+          name='response_headers'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Filtered Response Headers')}</FormLabel>
+              <FormControl>
+                <Textarea
+                  placeholder={
+                    'openai-organization\nx-ratelimit-limit-requests'
+                  }
+                  rows={4}
+                  {...field}
+                  value={field.value ?? ''}
+                />
+              </FormControl>
+              <FormDescription>
+                {t(
+                  'One header name per line (commas also work). Matching is case-insensitive. Content-Type and Content-Encoding are always kept.'
+                )}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
     </>
   )
 

@@ -31,7 +31,12 @@ import {
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
-import type { Channel, ChannelExtendSettings, ClaudeAuthMode } from '../types'
+import type {
+  Channel,
+  ChannelExtendSettings,
+  ClaudeAuthMode,
+  ResponseHeaderMode,
+} from '../types'
 import {
   CHANNEL_TYPE_ADVANCED_CUSTOM,
   advancedCustomConfigUsesRelativeUpstreamPath,
@@ -85,6 +90,30 @@ export const MAX_HTTP2_CONNECTION_SHARDS = 8
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 86400
 export const MAX_CHANNEL_INPUT_TOKENS_BOUND = 10000000
 export const MAX_CHANNEL_RATE_LIMIT_VALUE = 2147483647
+export const MAX_CHANNEL_RESPONSE_HEADER_RULES = 64
+export const MAX_CHANNEL_RESPONSE_HEADER_NAME_LENGTH = 128
+// RFC 7230 token characters, the only ones legal in a header field name
+const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
+
+export type ResponseHeaderModeOption = ResponseHeaderMode | 'off'
+
+/**
+ * Split the response header textarea (one name per line, commas also accepted)
+ * into trimmed, non-empty header names in their original order.
+ */
+export function parseResponseHeaderNames(value: string | undefined): string[] {
+  if (!value) return []
+  return value
+    .split(/[\n,]/)
+    .map((name) => name.trim())
+    .filter((name) => name.length > 0)
+}
+
+function parseResponseHeaderMode(
+  value: string | undefined
+): ResponseHeaderModeOption {
+  return value === 'blacklist' || value === 'whitelist' ? value : 'off'
+}
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
@@ -281,6 +310,9 @@ export const channelFormSchema = z
     // Channel-wide rate limits (channel_extend, 0 = no limit)
     rpm_limit: z.number().int().optional(),
     tpm_limit: z.number().int().optional(),
+    // Upstream response header filter (channel_extend, 'off' = copy all)
+    response_header_mode: z.enum(['off', 'blacklist', 'whitelist']).optional(),
+    response_headers: z.string().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -496,6 +528,41 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_CHANNEL_TPM_LIMIT
       )
     }
+    if (parseResponseHeaderMode(data.response_header_mode) !== 'off') {
+      const names = parseResponseHeaderNames(data.response_headers)
+      const lowerCaseNames = new Set(names.map((name) => name.toLowerCase()))
+      if (names.length === 0) {
+        addRequiredIssue(
+          ctx,
+          'response_headers',
+          ERROR_MESSAGES.INVALID_CHANNEL_RESPONSE_HEADERS_EMPTY
+        )
+      } else if (names.length > MAX_CHANNEL_RESPONSE_HEADER_RULES) {
+        addRequiredIssue(
+          ctx,
+          'response_headers',
+          ERROR_MESSAGES.INVALID_CHANNEL_RESPONSE_HEADERS_TOO_MANY
+        )
+      } else if (
+        names.some(
+          (name) =>
+            name.length > MAX_CHANNEL_RESPONSE_HEADER_NAME_LENGTH ||
+            !HEADER_NAME_PATTERN.test(name)
+        )
+      ) {
+        addRequiredIssue(
+          ctx,
+          'response_headers',
+          ERROR_MESSAGES.INVALID_CHANNEL_RESPONSE_HEADER_NAME
+        )
+      } else if (lowerCaseNames.size !== names.length) {
+        addRequiredIssue(
+          ctx,
+          'response_headers',
+          ERROR_MESSAGES.INVALID_CHANNEL_RESPONSE_HEADERS_DUPLICATE
+        )
+      }
+    }
   })
 
 export type ChannelFormValues = z.infer<typeof channelFormSchema>
@@ -546,6 +613,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   max_input_tokens: 0,
   rpm_limit: 0,
   tpm_limit: 0,
+  response_header_mode: 'off',
+  response_headers: '',
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -717,6 +786,12 @@ export function transformChannelToFormDefaults(
     tpm_limit: channel.extend_config?.tpm_limit || 0,
     claude_auth_mode: parseClaudeAuthMode(
       channel.extend_config?.claude_auth_mode
+    ),
+    response_header_mode: parseResponseHeaderMode(
+      channel.extend_config?.response_header_mode
+    ),
+    response_headers: (channel.extend_config?.response_headers ?? []).join(
+      '\n'
     ),
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
@@ -946,6 +1021,9 @@ function normalizeBaseUrl(value: string | undefined): string {
  * Always included so an all-zero payload clears existing overrides.
  */
 function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
+  const responseHeaderMode = parseResponseHeaderMode(
+    formData.response_header_mode
+  )
   return {
     relay_timeout: formData.relay_timeout || 0,
     streaming_timeout: formData.streaming_timeout || 0,
@@ -958,6 +1036,13 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
       formData.type === 14 && formData.claude_auth_mode !== 'api_key'
         ? formData.claude_auth_mode
         : undefined,
+    // The response header filter only exists together with a mode; 'off' clears it.
+    response_header_mode:
+      responseHeaderMode === 'off' ? undefined : responseHeaderMode,
+    response_headers:
+      responseHeaderMode === 'off'
+        ? undefined
+        : parseResponseHeaderNames(formData.response_headers),
   }
 }
 

@@ -7353,6 +7353,20 @@
     "Select auth mode": "選擇驗證方式",
     "For sk-ant-oat01- / sk-ant-oat03- tokens: sent as Authorization: Bearer with the oauth anthropic-beta flag": "適用於 sk-ant-oat01- / sk-ant-oat03- 權杖：以 Authorization: Bearer 傳送，並附加 oauth anthropic-beta 標識",
     "Keys starting with sk-ant-oat use Bearer, all others use x-api-key; mixed multi-key channels are supported": "以 sk-ant-oat 開頭的金鑰使用 Bearer，其餘使用 x-api-key；支援多金鑰渠道混用兩類憑證",
-    "For sk-ant-api01- / sk-ant-api03- keys: sent as the x-api-key header": "適用於 sk-ant-api01- / sk-ant-api03- 金鑰：以 x-api-key 請求標頭傳送"
+    "For sk-ant-api01- / sk-ant-api03- keys: sent as the x-api-key header": "適用於 sk-ant-api01- / sk-ant-api03- 金鑰：以 x-api-key 請求標頭傳送",
+    "Response Header Filter": "回應標頭過濾",
+    "Off (copy all upstream headers)": "關閉（複製全部上游回應標頭）",
+    "Blacklist (drop listed headers)": "黑名單（丟棄列出的回應標頭）",
+    "Whitelist (keep only listed headers)": "白名單（僅保留列出的回應標頭）",
+    "Select filter mode": "選擇過濾模式",
+    "Filtered Response Headers": "過濾的回應標頭",
+    "One header name per line (commas also work). Matching is case-insensitive. Content-Type and Content-Encoding are always kept.": "每行一個回應標頭名稱（也可用逗號分隔）。比對不區分大小寫。Content-Type 與 Content-Encoding 始終保留。",
+    "Every upstream response header is copied to the client (default behaviour).": "全部上游回應標頭都會複製給客戶端（預設行為）。",
+    "Upstream response headers listed below are dropped; everything else is copied to the client.": "丟棄下方列出的上游回應標頭，其餘全部複製給客戶端。",
+    "Only the upstream response headers listed below are copied to the client; everything else is dropped.": "僅複製下方列出的上游回應標頭給客戶端，其餘全部丟棄。",
+    "List at least one header name for the response header filter": "回應標頭過濾至少需要列出一個回應標頭名稱",
+    "Response header filter supports at most 64 header names": "回應標頭過濾最多支援 64 個回應標頭名稱",
+    "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "回應標頭名稱只能包含字母、數字、連字號等 RFC 7230 token 字元，且不超過 128 個字元",
+    "Response header names must be unique (case-insensitive)": "回應標頭名稱不能重複（不區分大小寫）"
   }
 }

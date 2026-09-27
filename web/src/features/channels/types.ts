@@ -80,6 +80,8 @@ export const channelSchema = z.object({
       rpm_limit: z.number().optional(),
       tpm_limit: z.number().optional(),
       claude_auth_mode: z.string().optional(),
+      response_header_mode: z.string().optional(),
+      response_headers: z.array(z.string()).optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -114,10 +116,14 @@ export interface ChannelExtendSettings {
   tpm_limit?: number
   // Anthropic only: credential scheme; '' / 'api_key' = x-api-key
   claude_auth_mode?: ClaudeAuthMode
+  // Upstream response header filter; undefined = copy every header
+  response_header_mode?: ResponseHeaderMode
+  response_headers?: string[]
 }
 
 export type ClaudeAuthMode = 'api_key' | 'oauth' | 'auto'
 
+export type ResponseHeaderMode = 'blacklist' | 'whitelist'
 
 export interface ChannelOtherSettings {
   azure_responses_version?: string
