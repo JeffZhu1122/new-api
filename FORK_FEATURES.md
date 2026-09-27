@@ -7,8 +7,8 @@
 | 文档覆盖的最后一个功能提交 | `f69683a02` — 2026-09-26 `feat(tokens): bind a key to a primary group plus ordered fallback groups` |
 | 上游基线（merge-base） | `c2b7a9a9e` — 2026-09-25 `fix(claude): preserve per-message output_config in Claude messages (#7561)` |
 | 最近一次同步 | 2026-09-27，rebase 到 `c2b7a9a9e`，无冲突 |
-| fork 专有提交数 | 18 个功能提交（不含本文档自身的提交） |
-| 变更规模 | 146 个文件，+8762 / −1214 行 |
+| fork 专有提交数 | 19 个功能提交（不含本文档自身的提交） |
+| 变更规模 | 147 个文件，+9313 / −1216 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log c2b7a9a9e..HEAD` 得到的提交（18 个功能提交加本文档的提交）就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -29,10 +29,11 @@
 11. [Anthropic 渠道认证模式](#11-anthropic-渠道认证模式)
 12. [新建 / 复制渠道默认禁用](#12-新建--复制渠道默认禁用)
 13. [API Key 主分组 + 有序备用分组](#13-api-key-主分组--有序备用分组)
-14. [仓库维护类变更](#14-仓库维护类变更)
-15. [与上游同步的注意事项](#15-与上游同步的注意事项)
-16. [已知限制与测试缺口汇总](#16-已知限制与测试缺口汇总)
-17. [附录](#17-附录)
+14. [渠道响应头过滤（黑名单 / 白名单）](#14-渠道响应头过滤黑名单--白名单)
+15. [仓库维护类变更](#15-仓库维护类变更)
+16. [与上游同步的注意事项](#16-与上游同步的注意事项)
+17. [已知限制与测试缺口汇总](#17-已知限制与测试缺口汇总)
+18. [附录](#18-附录)
 
 ---
 
@@ -51,7 +52,8 @@
 | 11 | Anthropic 认证模式 | `455ec8282` | api_key | `channel_extend` | Claude 适配器请求头 |
 | 12 | 新建 / 复制默认禁用 | `168dbbafc` | 始终生效 | 无 | 渠道管理 |
 | 13 | Key 主分组 + 备用分组 | `f69683a02` | 无变化 | tokens 表既有列 | 鉴权、路由、计费 |
-| 14 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
+| 14 | 渠道响应头过滤（黑 / 白名单） | 与本文档同一提交 | 关闭 = 复制全部 | `channel_extend` | 上游响应头回传 |
+| 15 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作）。
 
@@ -77,6 +79,8 @@ fork 的原则是**不修改上游 `channels` / `users` 表结构**，所有 for
 | `rpm_limit` | int | 0 | 渠道整体每分钟请求上限 | §8 |
 | `tpm_limit` | int | 0 | 渠道整体每分钟 token 上限 | §8 |
 | `claude_auth_mode` | varchar(16) | `''` | `""` / `api_key` / `oauth` / `auto` | §11 |
+| `response_header_mode` | varchar(16) | `''` | `""`（复制全部）/ `blacklist` / `whitelist` | §14 |
+| `response_headers` | text | 无 | JSON 字符串数组，过滤涉及的响应头名称 | §14 |
 
 关键方法与行为：
 
@@ -576,13 +580,51 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 ---
 
-## 14. 仓库维护类变更
+## 14. 渠道响应头过滤（黑名单 / 白名单）
 
-### 14.1 移除 GitHub workflows（`a034e98b3`）
+### 动机
+
+上游只有一条硬编码规则：`service/http.go` 的 ShouldCopyUpstreamHeader 除 `Content-Length` 与 `X-Oneapi-Request-Id` 外**全部复制**上游响应头。非流式透传路径因此会把 `openai-organization`、`x-ratelimit-*`、`anthropic-ratelimit-*`、`cf-ray`、`set-cookie` 等直接透给客户端，而流式路径则一律不复制。本功能允许按渠道决定哪些上游响应头可以回传：**黑名单**丢弃列出的头，**白名单**只保留列出的头。
+
+### 存储与校验
+
+- 列：`channel_extend.response_header_mode varchar(16)`，取值 `""`（关闭，复制全部）/ `blacklist` / `whitelist`；`channel_extend.response_headers text`，JSON 字符串数组。
+- DTO：`extend_config.response_header_mode`、`extend_config.response_headers`（`relaykit/dto/channel_extend_settings.go`），常量 `ResponseHeaderModeBlacklist` / `ResponseHeaderModeWhitelist`、`MaxChannelResponseHeaderRules = 64`、`MaxChannelResponseHeaderNameLength = 128`。
+- `Validate()`：模式必须是枚举值；有模式必须至少列出一个名称，无模式不能携带名称；最多 64 个，每个 1-128 字符，仅允许 RFC 7230 token 字符，不区分大小写去重。`IsZero()` 把两字段纳入判断，只配置了过滤的行不会被当作全零删除。
+- 模型层 `model/channel_extend.go` 用 `common.Marshal` / `common.Unmarshal` 在 `[]string` 与 text 列之间转换；解码失败记 `SysError` 并按空列表处理。
+- `[]string` 使 DTO 结构体不可直接比较，`controller/channel_authz.go` 的敏感变更判定改为比较两侧的 JSON 序列化结果（`omitempty` 使 nil 与空数组等价）。
+
+### 过滤实现
+
+- `relaykit/dto` 新增方法 `ChannelExtendSettings.AllowsResponseHeader(name)`：无模式放行；`Content-Type`、`Content-Encoding` **始终放行**（丢掉它们会让响应体不可解释）；黑名单未列出才放行；白名单列出才放行；名称匹配 TrimSpace 且不区分大小写。
+- `service/http.go` ShouldCopyUpstreamHeader 在原有两条固定规则之后，从 gin 上下文 `ContextKeyChannelExtendSetting` 读取选中渠道的设置并调用该方法；上下文中没有设置时保持原行为。
+- 生效范围是所有经 ShouldCopyUpstreamHeader 的复制点：`IOCopyBytesGracefully`（24 处非流式透传，含 count_tokens）、`copyCodexSSEHeaders`（流式路径仅复制的两个 Codex 头）、`relay/channel/openai/audio.go`、`relay/channel/minimax/tts.go`。只设置 Content-Type 后重新序列化 JSON 的适配器本来就不复制上游头，不受影响。
+
+### 前端
+
+渠道编辑抽屉 → 渠道额外设置，位于"渠道 TPM 上限"之后：Select **响应头过滤**（关闭 / 黑名单 / 白名单，随选项显示说明文案），选择非关闭时显示 Textarea **过滤的响应头**（每行一个名称，逗号亦可）。表单校验对应四条文案：至少一个名称、最多 64 个、名称字符非法、名称重复。两字段列入敏感字段与"渠道额外设置"的已配置标记。`buildExtendConfig` 在关闭时不发送这两个字段，后端视为清除。
+
+### 兼容性
+
+无行或模式为空时行为与上游完全一致。新增两列由 AutoMigrate 添加，text 列不设默认值。
+
+### 测试
+
+`relaykit/dto/channel_extend_settings_test.go`（Validate 新增 9 例、IsZero、`TestChannelExtendSettingsAllowsResponseHeader`）、`model/channel_extend_test.go` `TestUpsertChannelExtendPersistsResponseHeaderFilter`（往返、原地覆盖、关闭后清空、二次 AutoMigrate 幂等）、`service/http_test.go`（新增，覆盖 ShouldCopyUpstreamHeader 与 IOCopyBytesGracefully 端到端过滤）、`controller/channel_authz_test.go`（过滤变更属敏感、空数组等价于未配置）、前端 `lib/__tests__/response-header-filter.test.ts`（名称解析、四条校验、payload 映射、编辑回填）。
+
+### 数据库验证
+
+SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）通过模型测试验证，含二次 AutoMigrate。**MySQL 与 PostgreSQL 本机没有实例，尚未验证**，部署前需在这两种数据库上确认 AutoMigrate 新增两列并重复启动无重复 ALTER。
+
+---
+
+## 15. 仓库维护类变更
+
+### 15.1 移除 GitHub workflows（`a034e98b3`）
 
 删除 `.github/workflows/` 下全部 6 个文件：`ci.yml`、`docker-build.yml`、`docker-image-branch.yml`、`electron-build.yml`、`release.yml`、`sync-release-to-gitcode.yml`。目的是避免 fork 在 GitHub 上触发上游的构建、发版和镜像同步流水线。`.github/` 下的 issue / PR 模板、`CODE_OF_CONDUCT.md`、`FUNDING.yml`、`SECURITY.md` 保留。
 
-### 14.2 移植提交（`5f22a93b0`）
+### 15.2 移植提交（`5f22a93b0`）
 
 上游在基线之前重构了四个接缝（seam）：重试判定抽到 `service.DecideRelayRetry`；渠道选择抽到 `service.SelectChannelForRequest`（HTTP distributor 与 Responses WebSocket 共用）；计费准备抽到 `relay.PrepareRequestBilling`；重试设置 UI 迁到 request-policies 页并经 `/api/option/request_policy` 整体校验。该提交把 fork 功能 re-home 到这些接缝上：
 
@@ -595,16 +637,16 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 ---
 
-## 15. 与上游同步的注意事项
+## 16. 与上游同步的注意事项
 
-### 15.1 流程
+### 16.1 流程
 
 1. `git fetch https://github.com/QuantumNous/new-api.git main`
 2. `git rebase FETCH_HEAD`（fork 提交线性重放）
 3. 解决冲突后跑 Go 与前端测试，重点是下面列出的热点文件。
 4. 如上游再次重构接缝，参照 `5f22a93b0` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
 
-### 15.2 高频冲突文件
+### 16.2 高频冲突文件
 
 | 文件 | 原因 |
 |---|---|
@@ -616,6 +658,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 | `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误 |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
 | `relay/helper/price.go` | `HandleGroupRatio` 折扣乘法 |
+| `service/http.go` | `ShouldCopyUpstreamHeader` 响应头过滤 |
 | `relay/request_billing.go` / `service/text_quota.go` / `service/quota.go` | 免费路径、TPM 记账、realtime 预扣读 PriceData |
 | `middleware/distributor.go` | 输入 token 估算、extend setting 注入、count_tokens 不记亲和 |
 | `middleware/auth.go` | 多分组 key 归一化 |
@@ -627,14 +670,14 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 | `web/src/features/channels/lib/channel-form.ts` | extend_config 与 count_tokens 映射 |
 | `web/src/i18n/locales/*.json` | 新增文案 |
 
-### 15.3 上游签名变化的传染点
+### 16.3 上游签名变化的传染点
 
 - `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`。
 - `relaykit/` 必须独立可编译：改动 `relaykit/dto/*` 后运行 `cd relaykit && GOWORK=off go build ./...`。
 
 ---
 
-## 16. 已知限制与测试缺口汇总
+## 17. 已知限制与测试缺口汇总
 
 ### 功能限制
 
@@ -647,6 +690,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 - **渠道超时**：`streaming_timeout` 对 AWS/Bedrock 事件流无效；`DoWssRequest` 不受渠道 `relay_timeout` 影响。
 - **多分组 key**：用户级 RPM/TPM 限流读到的分组为 `"auto"`，而非主分组。
 - **新建默认禁用**：只影响前端表单默认值，直接调 API 仍可创建启用状态的渠道；复制则由后端强制禁用。
+- **响应头过滤**：只作用于会复制上游头的路径（非流式透传、Codex 流式两个头、audio / minimax tts）；流式 SSE 其他头本来不复制，白名单也无法让它们回传；`Content-Type`、`Content-Encoding` 不可被黑名单丢弃。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 
 ### 测试缺口
 
@@ -658,9 +702,9 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 ---
 
-## 17. 附录
+## 18. 附录
 
-### 17.1 新增 option key 一览
+### 18.1 新增 option key 一览
 
 | key | 类型 | 默认 | 所属 |
 |---|---|---|---|
@@ -675,24 +719,24 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 以上 8 个 key 都通过 `GET/PUT /api/option/` 读写；前 5 个另可经 `GET/PATCH /api/option/request_policy` 读写。
 
-### 17.2 新增 HTTP 端点
+### 18.2 新增 HTTP 端点
 
 | 端点 | 说明 |
 |---|---|
 | `POST /v1/messages/count_tokens` | Anthropic token 计数透传，免费 |
 | `POST /v1/responses/input_tokens` | OpenAI Responses 输入 token 计数透传，免费 |
 
-### 17.3 管理 API 新增字段
+### 18.3 管理 API 新增字段
 
 | 资源 | 字段 | 说明 |
 |---|---|---|
-| Channel | `extend_config.{relay_timeout, streaming_timeout, min_input_tokens, max_input_tokens, rpm_limit, tpm_limit, claude_auth_mode}` | §2.1，PUT 缺键不改、`null` 清除 |
+| Channel | `extend_config.{relay_timeout, streaming_timeout, min_input_tokens, max_input_tokens, rpm_limit, tpm_limit, claude_auth_mode, response_header_mode, response_headers}` | §2.1，PUT 缺键不改、`null` 清除 |
 | Channel | `settings.count_tokens_enabled` | §6 |
 | User | `rate_limit` | §7，`nil` 不改、`{}` 清除 |
 | User | `model_discount` | §9，同上 |
 | Token | `auto_groups`（普通分组下） | §13，作为备用分组 |
 
-### 17.4 Redis key 一览
+### 18.4 Redis key 一览
 
 | key | 用途 |
 |---|---|
@@ -703,7 +747,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 | `user_extend_rl:<userId>` | 用户限流覆盖缓存 |
 | `user_extend_md:<userId>` | 用户模型折扣缓存 |
 
-### 17.5 消费日志 `other` 新增键
+### 18.5 消费日志 `other` 新增键
 
 | 键 | 含义 |
 |---|---|
@@ -711,7 +755,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 | `user_model_discount` | 用户模型折扣（≠ 1 时写入） |
 | `endpoint` | `count_tokens` / `input_tokens`，标记零额计数日志 |
 
-### 17.6 fork 提交列表（按时间）
+### 18.6 fork 提交列表（按时间）
 
 | 提交 | 日期 | 标题 |
 |---|---|---|

@@ -1,6 +1,9 @@
 package controller
 
 import (
+	"bytes"
+
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 )
@@ -48,7 +51,11 @@ func channelHasSensitiveChanges(channel *PatchChannel, origin *model.Channel, re
 		if origin.ExtendConfig != nil {
 			originExtend = *origin.ExtendConfig
 		}
-		if newExtend != originExtend {
+		// 按序列化结果比较：response_headers 的 nil 与空数组同样表示未配置，
+		// omitempty 会把两者都省略，避免把无变化的往返误判为敏感变更。
+		newJSON, _ := common.Marshal(newExtend)
+		originJSON, _ := common.Marshal(originExtend)
+		if !bytes.Equal(newJSON, originJSON) {
 			return true
 		}
 	}
