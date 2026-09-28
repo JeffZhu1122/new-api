@@ -960,7 +960,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 		summary.Disabled++
 	}
 
-	if result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel.Status) {
+	if result.localErr == nil && !isChannelEnabled && service.ShouldEnableChannel(newAPIError, channel) {
 		service.EnableChannel(channel.Id, common.GetContextKeyString(result.context, constant.ContextKeyChannelKey), channel.Name)
 		summary.Enabled++
 	}

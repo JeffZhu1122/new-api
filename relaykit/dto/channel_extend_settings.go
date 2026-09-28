@@ -50,6 +50,14 @@ const MaxChannelResponseHeaderRules = 64
 // per-channel response header filter.
 const MaxChannelResponseHeaderNameLength = 128
 
+// MaxChannelCostRatio bounds the per-channel cost ratio: how many USD the
+// operator pays upstream for every $1 of quota billed through the channel.
+const MaxChannelCostRatio = 1000
+
+// MaxChannelQuotaLimit bounds the per-channel quota limit in quota units. It
+// is the JavaScript-safe integer boundary so the value survives the web UI.
+const MaxChannelQuotaLimit = 1<<53 - 1
+
 // ResolveClaudeAuthMode returns the concrete scheme (api_key or oauth) for a
 // key under the configured mode. Auto mode decides per key, so a multi-key
 // channel may mix both credential kinds.
@@ -107,6 +115,14 @@ type ChannelExtendSettings struct {
 	// ResponseHeaders lists the header names (case-insensitive) that
 	// ResponseHeaderMode applies to.
 	ResponseHeaders []string `json:"response_headers,omitempty"`
+	// CostRatio is the estimated USD paid upstream for every $1 of quota
+	// billed through this channel (0.2 means a 20% reseller price). It only
+	// drives cost reporting. 0 = not configured.
+	CostRatio float64 `json:"cost_ratio,omitempty"`
+	// QuotaLimit disables the channel automatically once its cumulative
+	// used quota reaches this value, in quota units (QuotaPerUnit = $1).
+	// 0 = no limit.
+	QuotaLimit int64 `json:"quota_limit,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -174,6 +190,12 @@ func (s *ChannelExtendSettings) Validate() error {
 	default:
 		return fmt.Errorf("invalid response_header_mode: %q, must be one of %s, %s", s.ResponseHeaderMode, ResponseHeaderModeBlacklist, ResponseHeaderModeWhitelist)
 	}
+	if math.IsNaN(s.CostRatio) || math.IsInf(s.CostRatio, 0) || s.CostRatio < 0 || s.CostRatio > MaxChannelCostRatio {
+		return fmt.Errorf("invalid cost_ratio: %v, must be within [0, %d]", s.CostRatio, MaxChannelCostRatio)
+	}
+	if s.QuotaLimit < 0 || s.QuotaLimit > MaxChannelQuotaLimit {
+		return fmt.Errorf("invalid quota_limit: %d, must be within [0, %d]", s.QuotaLimit, MaxChannelQuotaLimit)
+	}
 	return nil
 }
 
@@ -183,7 +205,14 @@ func (s *ChannelExtendSettings) IsZero() bool {
 		s.MinInputTokens == 0 && s.MaxInputTokens == 0 &&
 		s.RpmLimit == 0 && s.TpmLimit == 0 &&
 		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey) &&
-		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0)
+		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0 &&
+		s.CostRatio == 0 && s.QuotaLimit == 0)
+}
+
+// QuotaLimitReached reports whether a channel's cumulative used quota has hit
+// its configured limit. Channels without a limit never reach it.
+func (s *ChannelExtendSettings) QuotaLimitReached(usedQuota int64) bool {
+	return s != nil && s.QuotaLimit > 0 && usedQuota >= s.QuotaLimit
 }
 
 // AllowsResponseHeader reports whether an upstream response header may be
