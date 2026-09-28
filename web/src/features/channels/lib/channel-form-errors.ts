@@ -51,6 +51,8 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'tpm_limit',
   'response_header_mode',
   'response_headers',
+  'cost_ratio',
+  'quota_limit_amount',
   'system_prompt',
   'system_prompt_override',
   'allow_service_tier',

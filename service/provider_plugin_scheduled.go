@@ -328,6 +328,10 @@ func runScheduledPlugin(ctx context.Context, channel *model.Channel, plugin *jsp
 	if statusReason == "" {
 		statusReason = "Disabled by plugin"
 	}
+	// A channel at its quota limit stays disabled until an administrator raises
+	// the limit. The check reads channel_extend, so it runs before the locked
+	// update holds the database connection.
+	quotaLimitReached := result.KeyStatus == "enabled" && current.QuotaLimitReached()
 	var statusChanged, applied bool
 	var delay time.Duration
 	stored, err := model.UpdateScheduledChannelLocked(ctx, channel.Id, func(current *model.Channel) error {
@@ -354,7 +358,9 @@ func runScheduledPlugin(ctx context.Context, channel *model.Channel, plugin *jsp
 		}
 		switch result.KeyStatus {
 		case "enabled":
-			statusChanged = model.SetScheduledChannelKeyStatus(current, keyIndex, common.ChannelStatusEnabled, "")
+			if !quotaLimitReached {
+				statusChanged = model.SetScheduledChannelKeyStatus(current, keyIndex, common.ChannelStatusEnabled, "")
+			}
 		case "auto_disabled":
 			statusChanged = model.SetScheduledChannelKeyStatus(current, keyIndex, common.ChannelStatusAutoDisabled, statusReason)
 		}

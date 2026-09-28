@@ -835,6 +835,35 @@ func TestScheduledCredentialBalanceAndNodeSync(t *testing.T) {
 	assert.Equal(t, stored.Key, replicated, "the other node reloads the changed channel topic")
 }
 
+// A channel at its quota limit stays disabled when the scheduled hook reports
+// its key enabled again; one below the limit is enabled.
+func TestScheduledKeepsChannelAtQuotaLimitDisabled(t *testing.T) {
+	database := useNodeSync(t)
+	require.NoError(t, database.AutoMigrate(&model.ChannelExtend{}))
+	t.Cleanup(func() { require.NoError(t, database.Migrator().DropTable(&model.ChannelExtend{})) })
+	previousMemoryCache := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() { common.MemoryCacheEnabled = previousMemoryCache })
+	plugin := registerScheduledPlugin(t, `export function scheduled(ctx) { return {keyStatus: "enabled"}; }`)
+
+	for _, tc := range []struct {
+		usedQuota int
+		want      int
+	}{
+		{usedQuota: 1000, want: common.ChannelStatusAutoDisabled},
+		{usedQuota: 999, want: common.ChannelStatusEnabled},
+	} {
+		channel := createProviderChannel(t, plugin.Meta.Key, "https://vendor.example", "own-key", false)
+		require.True(t, model.UpdateChannelStatus(channel.Id, "own-key", common.ChannelStatusAutoDisabled, "quota"))
+		require.NoError(t, model.DB.Model(&model.Channel{}).Where("id = ?", channel.Id).Update("used_quota", tc.usedQuota).Error)
+		require.NoError(t, model.UpsertChannelExtend(nil, channel.Id, dto.ChannelExtendSettings{QuotaLimit: 1000}))
+
+		_, _, _, err := runScheduledPlugin(context.Background(), storedChannel(t, channel.Id), plugin, 0, "own-key", "timer")
+		require.NoError(t, err)
+		assert.Equal(t, tc.want, storedChannel(t, channel.Id).Status, "used quota %d", tc.usedQuota)
+	}
+}
+
 func TestScheduledRunsOncePerKey(t *testing.T) {
 	useNodeSync(t)
 	var calls atomic.Int32

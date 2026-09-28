@@ -30,10 +30,11 @@
 12. [新建 / 复制渠道默认禁用](#12-新建--复制渠道默认禁用)
 13. [API Key 主分组 + 有序备用分组](#13-api-key-主分组--有序备用分组)
 14. [渠道响应头过滤（黑名单 / 白名单）](#14-渠道响应头过滤黑名单--白名单)
-15. [仓库维护类变更](#15-仓库维护类变更)
-16. [与上游同步的注意事项](#16-与上游同步的注意事项)
-17. [已知限制与测试缺口汇总](#17-已知限制与测试缺口汇总)
-18. [附录](#18-附录)
+15. [渠道额度上限与成本倍率（达上限自动禁用）](#15-渠道额度上限与成本倍率达上限自动禁用)
+16. [仓库维护类变更](#16-仓库维护类变更)
+17. [与上游同步的注意事项](#17-与上游同步的注意事项)
+18. [已知限制与测试缺口汇总](#18-已知限制与测试缺口汇总)
+19. [附录](#19-附录)
 
 ---
 
@@ -52,8 +53,9 @@
 | 11 | Anthropic 认证模式 | `455ec8282` | api_key | `channel_extend` | Claude 适配器请求头 |
 | 12 | 新建 / 复制默认禁用 | `168dbbafc` | 始终生效 | 无 | 渠道管理 |
 | 13 | Key 主分组 + 备用分组 | `f69683a02` | 无变化 | tokens 表既有列 | 鉴权、路由、计费 |
-| 14 | 渠道响应头过滤（黑 / 白名单） | 与本文档同一提交 | 关闭 = 复制全部 | `channel_extend` | 上游响应头回传 |
-| 15 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
+| 14 | 渠道响应头过滤（黑 / 白名单） | `b0a715551` | 关闭 = 复制全部 | `channel_extend` | 上游响应头回传 |
+| 15 | 渠道额度上限 + 成本倍率（达上限自动禁用） | 与本文档同一提交 | 0 = 不限 | `channel_extend` | 结算后置状态、渠道启用路径、渠道列表 |
+| 16 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作）。
 
@@ -81,17 +83,19 @@ fork 的原则是**不修改上游 `channels` / `users` 表结构**，所有 for
 | `claude_auth_mode` | varchar(16) | `''` | `""` / `api_key` / `oauth` / `auto` | §11 |
 | `response_header_mode` | varchar(16) | `''` | `""`（复制全部）/ `blacklist` / `whitelist` | §14 |
 | `response_headers` | text | 无 | JSON 字符串数组，过滤涉及的响应头名称 | §14 |
+| `cost_ratio` | double | 0 | 成本倍率：每计费 $1 站内额度实际付给上游的美元数，仅用于成本展示 | §15 |
+| `quota_limit` | bigint | 0 | 额度上限（quota 单位，`QuotaPerUnit` = $1），累计 `used_quota` 达到即自动禁用，0 = 不限 | §15 |
 
 关键方法与行为：
 
-- `ChannelExtendSettings.Validate()`：超时 `[0, 86400]`，RPM/TPM `[0, MaxInt32]`，输入 token `[0, 10_000_000]` 且两者都 >0 时要求 `max > min`，auth mode 必须是枚举值。`controller/channel.go` `validateChannel()` 调用它，Add/Update/批量接口共用。
-- `ChannelExtendSettings.IsZero()`：所有数值为 0 且 auth mode 为 `""` 或 `api_key` 时为真。
+- `ChannelExtendSettings.Validate()`：超时 `[0, 86400]`，RPM/TPM `[0, MaxInt32]`，输入 token `[0, 10_000_000]` 且两者都 >0 时要求 `max > min`，auth mode 必须是枚举值，成本倍率为 `[0, 1000]` 内的有限数，额度上限 `[0, 2^53 − 1]`（quota 单位）。`controller/channel.go` `validateChannel()` 调用它，Add/Update/批量接口共用。
+- `ChannelExtendSettings.IsZero()`：所有数值为 0（含成本倍率、额度上限）、响应头过滤为空且 auth mode 为 `""` 或 `api_key` 时为真。
 - `UpsertChannelExtend(tx, channelId, settings)`：`IsZero()` → 删除该行；否则 `ON CONFLICT(channel_id) DO UPDATE` 全列。`Channel.SaveExtendConfig(tx)` 在 `Channel.Insert()` 和 `BatchInsertChannels` 中调用；`ExtendConfig == nil` 时不动已有行。
 - 级联删除：`DeleteChannelExtendByIds` 在 `Channel.Delete()`、`BatchDeleteChannels`、以及新增的 `deleteChannelsWhere`（供 `DeleteChannelByStatus` / `DeleteDisabledChannel` 使用）中调用。
-- 读取：`GetChannelExtend(id)` 无行返回零值且 `err == nil`。
+- 读取：`GetChannelExtend(id)` 无行返回零值且 `err == nil`；`GetChannelExtendsByIds(ids)` 按 id 批量读取，供渠道列表 / 搜索接口附带 `extend_config`。
 - 缓存：`model/channel_cache.go` 的 `channelExtendIDM map[int]ChannelExtendSettings` 在 `InitChannelCache()` 整表加载，并预填到缓存的 `Channel.ExtendConfig`（渠道选择在持锁路径中读取，避免锁内查库）。`GetChannelExtendSettings(id)`：内存缓存开启时查 map，否则查库。
 - 请求链路：`middleware/distributor.go` `SetupContextForSelectedChannel` 写入 `constant.ContextKeyChannelExtendSetting` → `relay/common/relay_info.go` `InitChannelMeta` 拷入 `ChannelMeta.ChannelExtendSetting`，适配器由此读取。
-- 管理 API：`GET /api/channel/:id` 仅在非零时附带 `extend_config`；`PUT /api/channel/` 仅在请求 JSON **显式包含** `extend_config` 键时写入（显式 `null` 视为清除，缺键则不改）；`CopyChannel` 单独读取并随克隆写入。
+- 管理 API：`GET /api/channel/:id` 与列表 / 搜索接口（`GetAllChannels` / `SearchChannels`）的每一行仅在非零时附带 `extend_config`；`PUT /api/channel/` 仅在请求 JSON **显式包含** `extend_config` 键时写入（显式 `null` 视为清除，缺键则不改）；`CopyChannel` 单独读取并随克隆写入。
 - 权限：`controller/channel_authz.go` `channelHasSensitiveChanges` 把 `extend_config` 的任何变化视为敏感变更，需要 `authz.ChannelSensitiveWrite` 权限；原值读取失败时 fail-closed。
 - 前端：`web/src/features/channels/lib/channel-form.ts` `buildExtendConfig()` 在 create 与 update payload 中总是携带 `extend_config`（全零即清除）；`transformChannelToFormDefaults` 从 `channel.extend_config?.*` 回填。字段在编辑抽屉 `other` 页签的 **"渠道额外设置（Channel Extra Settings）"** 卡片中，任一值 > 0 时卡片自动展开。
 
@@ -618,13 +622,67 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 
 ---
 
-## 15. 仓库维护类变更
+## 15. 渠道额度上限与成本倍率（达上限自动禁用）
 
-### 15.1 移除 GitHub workflows（`a034e98b3`）
+### 动机
+
+预付费 / 折扣渠道通常按"买了多少美元额度"计量。上游只维护 `channels.used_quota` 累计消耗，没有"消耗到多少就停"的能力，也没有成本口径。本功能为渠道增加三项：**成本倍率**（每计费 $1 站内额度实际付给上游多少美元）、**额度上限**（累计消耗达到即自动禁用）、以及由前两者算出的**按倍率成本**（只展示，不落库）。上限比较的对象是站内计费消耗 `used_quota`，不是折算成本。
+
+### 存储与校验
+
+- 列：`channel_extend.cost_ratio double`（0 = 未设置）、`channel_extend.quota_limit bigint`（quota 单位，`common.QuotaPerUnit` = $1，0 = 不限）。以 quota 单位存储是为了与 `used_quota` 同单位比较，管理员修改 `QuotaPerUnit` 后判定不漂移。
+- DTO：`extend_config.cost_ratio`、`extend_config.quota_limit`（`relaykit/dto/channel_extend_settings.go`），常量 `MaxChannelCostRatio = 1000`、`MaxChannelQuotaLimit = 2^53 − 1`（JS 安全整数）。
+- `Validate()`：成本倍率必须是 `[0, 1000]` 内的有限数（拒绝 NaN / ±Inf），上限 `[0, 2^53 − 1]`。`IsZero()` 纳入两字段。
+- 新方法 `ChannelExtendSettings.QuotaLimitReached(used int64) bool`：`quota_limit > 0 && used >= quota_limit`，包含边界。`model.Channel.QuotaLimitReached()` 读取渠道设置后调用它，所有启用路径共用。
+
+### 判定与禁用（`model/channel.go`）
+
+- 检查挂在 `updateChannelUsedQuota` 内。它是所有结算调用点（`service/quota.go`、`service/text_quota.go`、`service/task_billing.go`、`service/violation_fee.go`、`service/midjourney.go`、`relay/mjproxy_handler.go`）与批量更新刷盘（`model/utils.go` `batchUpdate`）的共同出口，因此不改任何计费文件，直写模式与 `BATCH_UPDATE_ENABLED` 模式都覆盖。
+- 流程 `enforceChannelQuotaLimit(id)`：增量 ≤ 0（退款 / 差额回减）直接返回；`GetChannelExtendSettings(id)` 无上限时零开销返回；有上限则**读回**数据库中的 `status` 与 `used_quota`（多副本与批量刷盘都以持久化值为准）；渠道已非启用状态则返回；达到上限 → `UpdateChannelStatus(id, "", ChannelStatusAutoDisabled, reason)`，reason 形如 `额度已达上限：已用 $12.3456，上限 $10.0000`（前缀常量 `ChannelStatusReasonQuotaLimitReached`）。`UpdateChannelStatus` 自身负责内存缓存与 abilities 同步，状态未变化时返回 false，天然去重。
+- 通知：model 不能导入 service，故通过钩子 `model.ChannelQuotaLimitReachedHandler` 由 `service/channel.go` 的 `init()` 注册 `notifyChannelQuotaLimitReached`：关闭该渠道的活动 WebSocket（与 `DisableChannel` 一致），`NotifyRootUser(channel_update_<id>_3, …)` 发送含已用 / 上限 / 折算成本的通知。
+- **不受**渠道"自动禁用"开关（`auto_ban`）与全局 `AutomaticDisableChannelEnabled` 约束：上限是管理员显式设置的。
+
+### 防止被重新启用
+
+已耗尽渠道在管理员调高上限前不得回到启用状态，四条启用路径全部加了守卫：
+
+| 路径 | 行为 |
+|---|---|
+| 定时测试自动启用（`controller/channel-test.go` → `service.ShouldEnableChannel`） | 签名改为接收 `*model.Channel`，`QuotaLimitReached()` 为真时返回 false |
+| 单个启用（`controller.UpdateChannelStatus`） | 目标为启用且渠道已耗尽 → `success:false`，消息 `channel.quota_limit_reached`（"该渠道已达额度上限，请先调高额度上限再启用"） |
+| 批量启用（`controller.BatchUpdateChannelStatus`） | 跳过已耗尽渠道，不计入 `data`；有跳过时 `message` 为 `channel.quota_limit_skipped`（"N 个渠道已达额度上限，保持禁用"） |
+| 标签启用（`model.EnableChannelByTag` → `controller.EnableTagChannels`） | 返回值改为 `([]int, error)`，已耗尽渠道不更新状态并把其 abilities 重新置为禁用；控制器在有跳过时返回同一条消息 |
+
+`restoreMultiKeyChannelIfAvailable` 只恢复原因为 `All keys are disabled` 的渠道，不会误恢复。多 Key 渠道以整渠道维度禁用（`usingKey` 为空即写渠道级状态与原因）。后端 i18n 新增 `channel.quota_limit_reached` / `channel.quota_limit_skipped`（en / zh-CN / zh-TW）。
+
+### 前端
+
+- 渠道编辑抽屉 → 渠道额外设置，紧随"渠道 TPM 上限"：**渠道成本倍率**（number，step any）与**渠道额度上限（USD）**（标签随货币显示模式变化；输入用 `parseQuotaFromDollars` / `quotaUnitsToEditableAmount` 与 quota 单位互转）。编辑已有渠道时帮助文案追加"当前累计已用 X"与"按倍率折算的累计成本 Y"。表单字段名分别为 `cost_ratio`、`quota_limit_amount`（显示货币金额）。
+- 校验文案：`渠道成本倍率必须在 0 到 1000 之间`、`渠道额度上限必须为 0 或正数`（含超出安全整数范围）。两字段列入敏感字段与"渠道额外设置"已配置标记。
+- 渠道列表 `BalanceCell`：设置了上限的渠道"已用"徽标变为 `已用 · 83%`，≥ 90% 为 warning、≥ 100% 为 danger；悬浮提示追加"额度上限：$Y (83%)"与"折算成本：$Z (×0.2)"。为此列表 / 搜索接口的每一行现在附带非零 `extend_config`（`controller.attachChannelExtendConfigs`，一次 `WHERE channel_id IN (...)`）。标签聚合行不显示上限与成本。
+- 被自动禁用后，状态列的原因提示直接显示上述 reason 文本。
+
+### 兼容性
+
+无行或两字段为 0 时行为与上游完全一致。两列由 AutoMigrate 添加并带默认值 0，旧行读出为"未设置"。`used_quota` 是渠道建立以来的累计值，续费时需把上限调高（上限 = 旧上限 + 新充值），而不是填"剩余额度"；不提供重新计数。任务退款会让 `used_quota` 回落，已禁用的渠道不会因此自动恢复。
+
+### 测试
+
+`relaykit/dto/channel_extend_settings_test.go`（Validate 新增 8 例、IsZero、`TestChannelExtendSettingsQuotaLimitReached`）、`model/channel_extend_test.go`（`TestUpsertChannelExtendPersistsQuotaLimit` 含二次 AutoMigrate 与 `GetChannelExtendsByIds`；`TestUpdateChannelUsedQuotaDisablesChannelAtQuotaLimit` 覆盖未达 / 恰好达到 / 禁用后继续结算不重复通知 / 无上限渠道不受影响；`TestUpdateChannelUsedQuotaRefundNeverDisables`；`TestEnableChannelByTagKeepsExhaustedChannelsDisabled` 含 abilities 断言）、前端 `lib/__tests__/channel-quota-limit.test.ts`（倍率与上限校验、显示货币 → quota 单位换算、编辑回填）。
+
+### 数据库验证
+
+SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigrate。**MySQL 与 PostgreSQL 本机没有实例，尚未验证**，部署前需确认 AutoMigrate 新增 `cost_ratio`（double）与 `quota_limit`（bigint）两列且重复启动无重复 ALTER。
+
+---
+
+## 16. 仓库维护类变更
+
+### 16.1 移除 GitHub workflows（`a034e98b3`）
 
 删除 `.github/workflows/` 下全部 6 个文件：`ci.yml`、`docker-build.yml`、`docker-image-branch.yml`、`electron-build.yml`、`release.yml`、`sync-release-to-gitcode.yml`。目的是避免 fork 在 GitHub 上触发上游的构建、发版和镜像同步流水线。`.github/` 下的 issue / PR 模板、`CODE_OF_CONDUCT.md`、`FUNDING.yml`、`SECURITY.md` 保留。
 
-### 15.2 移植提交（`5f22a93b0`）
+### 16.2 移植提交（`5f22a93b0`）
 
 上游在基线之前重构了四个接缝（seam）：重试判定抽到 `service.DecideRelayRetry`；渠道选择抽到 `service.SelectChannelForRequest`（HTTP distributor 与 Responses WebSocket 共用）；计费准备抽到 `relay.PrepareRequestBilling`；重试设置 UI 迁到 request-policies 页并经 `/api/option/request_policy` 整体校验。该提交把 fork 功能 re-home 到这些接缝上：
 
@@ -637,16 +695,16 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 
 ---
 
-## 16. 与上游同步的注意事项
+## 17. 与上游同步的注意事项
 
-### 16.1 流程
+### 17.1 流程
 
 1. `git fetch https://github.com/QuantumNous/new-api.git main`
 2. `git rebase FETCH_HEAD`（fork 提交线性重放）
 3. 解决冲突后跑 Go 与前端测试，重点是下面列出的热点文件。
 4. 如上游再次重构接缝，参照 `5f22a93b0` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
 
-### 16.2 高频冲突文件
+### 17.2 高频冲突文件
 
 | 文件 | 原因 |
 |---|---|
@@ -670,14 +728,14 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 | `web/src/features/channels/lib/channel-form.ts` | extend_config 与 count_tokens 映射 |
 | `web/src/i18n/locales/*.json` | 新增文案 |
 
-### 16.3 上游签名变化的传染点
+### 17.3 上游签名变化的传染点
 
 - `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`。
 - `relaykit/` 必须独立可编译：改动 `relaykit/dto/*` 后运行 `cd relaykit && GOWORK=off go build ./...`。
 
 ---
 
-## 17. 已知限制与测试缺口汇总
+## 18. 已知限制与测试缺口汇总
 
 ### 功能限制
 
@@ -691,6 +749,7 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 - **多分组 key**：用户级 RPM/TPM 限流读到的分组为 `"auto"`，而非主分组。
 - **新建默认禁用**：只影响前端表单默认值，直接调 API 仍可创建启用状态的渠道；复制则由后端强制禁用。
 - **响应头过滤**：只作用于会复制上游头的路径（非流式透传、Codex 流式两个头、audio / minimax tts）；流式 SSE 其他头本来不复制，白名单也无法让它们回传；`Content-Type`、`Content-Encoding` 不可被黑名单丢弃。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
+- **渠道额度上限**：判定在结算之后，禁用前已在飞的请求仍会结算，`BATCH_UPDATE_ENABLED` 下还会多出一个刷盘间隔（默认 5 秒）的流量；多副本各自以数据库值判定，其他副本的内存缓存最长 `SYNC_FREQUENCY`（默认 60 秒）后感知禁用；预扣费不参与判定。折算成本 = 站内计费额度 × 成本倍率，是估算值而非上游账单。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 
 ### 测试缺口
 
@@ -699,12 +758,13 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 - `doRequest` 的渠道级 deadline、`cancelOnCloseBody`、`StreamScannerHandler` 的超时覆盖。
 - `countTokensPassthrough`、`PostCountTokensLog`、`PrepareRequestBilling` 的跳过分支。
 - 渠道 RPM/TPM 与输入 token 边界的前端字段测试；distributor 端到端。
+- 控制器层"启用已耗尽渠道被拒绝 / 跳过"（单个 / 批量 / 标签）只有本地端到端验证，没有 Go 单测；前端无渠道成本倍率 / 额度上限字段的组件测试。
 
 ---
 
-## 18. 附录
+## 19. 附录
 
-### 18.1 新增 option key 一览
+### 19.1 新增 option key 一览
 
 | key | 类型 | 默认 | 所属 |
 |---|---|---|---|
@@ -719,24 +779,25 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 
 以上 8 个 key 都通过 `GET/PUT /api/option/` 读写；前 5 个另可经 `GET/PATCH /api/option/request_policy` 读写。
 
-### 18.2 新增 HTTP 端点
+### 19.2 新增 HTTP 端点
 
 | 端点 | 说明 |
 |---|---|
 | `POST /v1/messages/count_tokens` | Anthropic token 计数透传，免费 |
 | `POST /v1/responses/input_tokens` | OpenAI Responses 输入 token 计数透传，免费 |
 
-### 18.3 管理 API 新增字段
+### 19.3 管理 API 新增字段
 
 | 资源 | 字段 | 说明 |
 |---|---|---|
-| Channel | `extend_config.{relay_timeout, streaming_timeout, min_input_tokens, max_input_tokens, rpm_limit, tpm_limit, claude_auth_mode, response_header_mode, response_headers}` | §2.1，PUT 缺键不改、`null` 清除 |
+| Channel | `extend_config.{relay_timeout, streaming_timeout, min_input_tokens, max_input_tokens, rpm_limit, tpm_limit, claude_auth_mode, response_header_mode, response_headers, cost_ratio, quota_limit}` | §2.1，PUT 缺键不改、`null` 清除；列表 / 搜索接口每行也附带非零值（§15） |
+| Channel | 启用接口（`UpdateChannelStatus` / `BatchUpdateChannelStatus` / `EnableTagChannels`） | §15，已耗尽渠道：单个返回 `channel.quota_limit_reached`，批量 / 标签跳过并以 `channel.quota_limit_skipped` 作为 `message` |
 | Channel | `settings.count_tokens_enabled` | §6 |
 | User | `rate_limit` | §7，`nil` 不改、`{}` 清除 |
 | User | `model_discount` | §9，同上 |
 | Token | `auto_groups`（普通分组下） | §13，作为备用分组 |
 
-### 18.4 Redis key 一览
+### 19.4 Redis key 一览
 
 | key | 用途 |
 |---|---|
@@ -747,7 +808,7 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 | `user_extend_rl:<userId>` | 用户限流覆盖缓存 |
 | `user_extend_md:<userId>` | 用户模型折扣缓存 |
 
-### 18.5 消费日志 `other` 新增键
+### 19.5 消费日志 `other` 新增键
 
 | 键 | 含义 |
 |---|---|
@@ -755,7 +816,7 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 | `user_model_discount` | 用户模型折扣（≠ 1 时写入） |
 | `endpoint` | `count_tokens` / `input_tokens`，标记零额计数日志 |
 
-### 18.6 fork 提交列表（按时间）
+### 19.6 fork 提交列表（按时间）
 
 | 提交 | 日期 | 标题 |
 |---|---|---|
@@ -777,3 +838,4 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 | `5f22a93b0` | 2026-09-24 | port fork features onto upstream request-policy and channel-selection refactors |
 | `168dbbafc` | 2026-09-24 | feat(channels): create and copy channels as manually disabled |
 | `f69683a02` | 2026-09-26 | feat(tokens): bind a key to a primary group plus ordered fallback groups |
+| `b0a715551` | 2026-09-27 | feat(channels): filter upstream response headers per channel (blacklist / whitelist) |
