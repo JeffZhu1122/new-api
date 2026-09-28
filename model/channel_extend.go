@@ -28,6 +28,10 @@ type ChannelExtend struct {
 	ResponseHeaderMode string `json:"response_header_mode" gorm:"type:varchar(16);default:''"`
 	// JSON array of header names for ResponseHeaderMode, "" when the filter is off
 	ResponseHeaders string `json:"response_headers" gorm:"type:text"`
+	// Estimated USD paid upstream per $1 of billed quota, cost reporting only, 0 = not set
+	CostRatio float64 `json:"cost_ratio" gorm:"default:0"`
+	// Auto-disable once channels.used_quota reaches this many quota units, 0 = no limit
+	QuotaLimit int64 `json:"quota_limit" gorm:"default:0"`
 }
 
 func (ChannelExtend) TableName() string {
@@ -47,6 +51,8 @@ func (ce *ChannelExtend) ToSettings() dto.ChannelExtendSettings {
 		TpmLimit:           ce.TpmLimit,
 		ClaudeAuthMode:     ce.ClaudeAuthMode,
 		ResponseHeaderMode: ce.ResponseHeaderMode,
+		CostRatio:          ce.CostRatio,
+		QuotaLimit:         ce.QuotaLimit,
 	}
 	if ce.ResponseHeaders != "" {
 		if err := common.Unmarshal([]byte(ce.ResponseHeaders), &settings.ResponseHeaders); err != nil {
@@ -87,10 +93,12 @@ func UpsertChannelExtend(tx *gorm.DB, channelId int, settings dto.ChannelExtendS
 		ClaudeAuthMode:     settings.ClaudeAuthMode,
 		ResponseHeaderMode: settings.ResponseHeaderMode,
 		ResponseHeaders:    responseHeaders,
+		CostRatio:          settings.CostRatio,
+		QuotaLimit:         settings.QuotaLimit,
 	}
 	return tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "channel_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode", "response_header_mode", "response_headers"}),
+		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode", "response_header_mode", "response_headers", "cost_ratio", "quota_limit"}),
 	}).Create(&extend).Error
 }
 
@@ -115,6 +123,23 @@ func GetChannelExtend(channelId int) (dto.ChannelExtendSettings, error) {
 		return dto.ChannelExtendSettings{}, err
 	}
 	return extend.ToSettings(), nil
+}
+
+// GetChannelExtendsByIds returns the stored overrides of the given channels
+// keyed by channel id. Channels without a row are absent from the result.
+func GetChannelExtendsByIds(ids []int) (map[int]dto.ChannelExtendSettings, error) {
+	result := make(map[int]dto.ChannelExtendSettings, len(ids))
+	if len(ids) == 0 {
+		return result, nil
+	}
+	var extends []ChannelExtend
+	if err := DB.Where("channel_id in (?)", ids).Find(&extends).Error; err != nil {
+		return nil, err
+	}
+	for i := range extends {
+		result[extends[i].ChannelId] = extends[i].ToSettings()
+	}
+	return result, nil
 }
 
 func DeleteChannelExtendByIds(tx *gorm.DB, ids []int) error {
