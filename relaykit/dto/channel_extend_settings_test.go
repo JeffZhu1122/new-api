@@ -2,6 +2,7 @@ package dto
 
 import (
 	"fmt"
+	"math"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -47,6 +48,14 @@ func TestChannelExtendSettingsValidate(t *testing.T) {
 		{name: "response header name with space rejected", settings: &ChannelExtendSettings{ResponseHeaderMode: ResponseHeaderModeBlacklist, ResponseHeaders: []string{"X Foo"}}, wantErr: "token characters"},
 		{name: "duplicate response header names rejected ignoring case", settings: &ChannelExtendSettings{ResponseHeaderMode: ResponseHeaderModeWhitelist, ResponseHeaders: []string{"X-Foo", "x-foo"}}, wantErr: "duplicate"},
 		{name: "too many response header names rejected", settings: &ChannelExtendSettings{ResponseHeaderMode: ResponseHeaderModeBlacklist, ResponseHeaders: tooManyHeaders}, wantErr: "too many"},
+		{name: "cost ratio and quota limit at max boundary valid", settings: &ChannelExtendSettings{CostRatio: MaxChannelCostRatio, QuotaLimit: MaxChannelQuotaLimit}},
+		{name: "fractional cost ratio valid", settings: &ChannelExtendSettings{CostRatio: 0.2}},
+		{name: "negative cost ratio rejected", settings: &ChannelExtendSettings{CostRatio: -0.1}, wantErr: "cost_ratio"},
+		{name: "oversized cost ratio rejected", settings: &ChannelExtendSettings{CostRatio: MaxChannelCostRatio + 1}, wantErr: "cost_ratio"},
+		{name: "nan cost ratio rejected", settings: &ChannelExtendSettings{CostRatio: math.NaN()}, wantErr: "cost_ratio"},
+		{name: "infinite cost ratio rejected", settings: &ChannelExtendSettings{CostRatio: math.Inf(1)}, wantErr: "cost_ratio"},
+		{name: "negative quota limit rejected", settings: &ChannelExtendSettings{QuotaLimit: -1}, wantErr: "quota_limit"},
+		{name: "oversized quota limit rejected", settings: &ChannelExtendSettings{QuotaLimit: MaxChannelQuotaLimit + 1}, wantErr: "quota_limit"},
 	}
 
 	for _, tt := range tests {
@@ -76,6 +85,21 @@ func TestChannelExtendSettingsIsZero(t *testing.T) {
 	assert.False(t, (&ChannelExtendSettings{TpmLimit: 1}).IsZero())
 	// 响应头过滤单独配置时同样不得被当作全零删除
 	assert.False(t, (&ChannelExtendSettings{ResponseHeaderMode: ResponseHeaderModeBlacklist, ResponseHeaders: []string{"X-Foo"}}).IsZero())
+	// 成本倍率 / 额度上限单独配置时同样不得被当作全零删除
+	assert.False(t, (&ChannelExtendSettings{CostRatio: 0.5}).IsZero())
+	assert.False(t, (&ChannelExtendSettings{QuotaLimit: 1}).IsZero())
+}
+
+func TestChannelExtendSettingsQuotaLimitReached(t *testing.T) {
+	var nilSettings *ChannelExtendSettings
+	assert.False(t, nilSettings.QuotaLimitReached(math.MaxInt64))
+	// 未设上限的渠道永远不会触发
+	assert.False(t, (&ChannelExtendSettings{}).QuotaLimitReached(math.MaxInt64))
+	limited := &ChannelExtendSettings{QuotaLimit: 5_000_000}
+	assert.False(t, limited.QuotaLimitReached(4_999_999))
+	// 上限为包含边界：恰好达到即触发
+	assert.True(t, limited.QuotaLimitReached(5_000_000))
+	assert.True(t, limited.QuotaLimitReached(5_000_001))
 }
 
 func TestChannelExtendSettingsAllowsResponseHeader(t *testing.T) {
