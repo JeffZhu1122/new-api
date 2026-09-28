@@ -372,6 +372,9 @@ export const ERROR_MESSAGES = {
     'Channel RPM limit must be between 0 and 2147483647',
   INVALID_CHANNEL_TPM_LIMIT:
     'Channel TPM limit must be between 0 and 2147483647',
+  INVALID_CHANNEL_COST_RATIO: 'Channel cost ratio must be between 0 and 1000',
+  INVALID_CHANNEL_QUOTA_LIMIT:
+    'Channel quota limit must be 0 or a positive amount',
   INVALID_CHANNEL_RESPONSE_HEADERS_EMPTY:
     'List at least one header name for the response header filter',
   INVALID_CHANNEL_RESPONSE_HEADERS_TOO_MANY:

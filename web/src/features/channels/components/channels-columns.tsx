@@ -346,6 +346,11 @@ export function BalanceCell({ channel }: { channel: Channel }) {
   const isTagRow = isTagAggregateRow(channel)
   const balance = channel.balance || 0
   const usedQuota = channel.used_quota || 0
+  // Per-channel quota limit and cost ratio live in extend_config (channel_extend).
+  const quotaLimit = channel.extend_config?.quota_limit ?? 0
+  const costRatio = channel.extend_config?.cost_ratio ?? 0
+  const quotaLimitPercent =
+    quotaLimit > 0 ? Math.floor((usedQuota / quotaLimit) * 100) : 0
   const [isUpdating, setIsUpdating] = useState(false)
   const [rawBalanceResponse, setRawBalanceResponse] = useState<string | null>(
     null
@@ -399,6 +404,32 @@ export function BalanceCell({ channel }: { channel: Channel }) {
       : remainingFull
   const usedLabel = `${t('Used:')} ${usedFull}`
   const remainingLabel = `${t('Remaining:')} ${remainingFull}`
+  const compactQuotaOptions = {
+    digitsLarge: 2,
+    digitsSmall: 4,
+    abbreviate: true,
+    showSymbol: layout !== 'card',
+  } as const
+  const quotaLimitLabel =
+    quotaLimit > 0
+      ? `${t('Quota limit:')} ${withSuffix(
+          formatQuotaWithCurrency(quotaLimit, compactQuotaOptions)
+        )} (${quotaLimitPercent}%)`
+      : ''
+  const estimatedCostLabel =
+    costRatio > 0
+      ? `${t('Estimated cost:')} ${withSuffix(
+          formatQuotaWithCurrency(usedQuota * costRatio, compactQuotaOptions)
+        )} (×${costRatio})`
+      : ''
+  const usedBadgeLabel =
+    quotaLimit > 0 ? `${usedDisplay} · ${quotaLimitPercent}%` : usedDisplay
+  let usedBadgeVariant: StatusBadgeProps['variant'] = 'neutral'
+  if (quotaLimit > 0 && usedQuota >= quotaLimit) {
+    usedBadgeVariant = 'danger'
+  } else if (quotaLimit > 0 && quotaLimitPercent >= 90) {
+    usedBadgeVariant = 'warning'
+  }
   const maskedUsedLabel = `${t('Used:')} ${SENSITIVE_MASK}`
   const maskedRemainingLabel = `${t('Remaining:')} ${SENSITIVE_MASK}`
 
@@ -533,8 +564,8 @@ export function BalanceCell({ channel }: { channel: Channel }) {
           <TooltipTrigger
             render={
               <StatusBadge
-                label={sensitiveVisible ? usedDisplay : SENSITIVE_MASK}
-                variant='neutral'
+                label={sensitiveVisible ? usedBadgeLabel : SENSITIVE_MASK}
+                variant={usedBadgeVariant}
                 size='sm'
                 copyable={false}
                 showDot={false}
@@ -544,6 +575,10 @@ export function BalanceCell({ channel }: { channel: Channel }) {
           />
           <TooltipContent>
             <p>{sensitiveVisible ? usedLabel : maskedUsedLabel}</p>
+            {sensitiveVisible && quotaLimitLabel && <p>{quotaLimitLabel}</p>}
+            {sensitiveVisible && estimatedCostLabel && (
+              <p>{estimatedCostLabel}</p>
+            )}
           </TooltipContent>
         </Tooltip>
         <Tooltip>

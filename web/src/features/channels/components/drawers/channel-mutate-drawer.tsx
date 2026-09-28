@@ -117,6 +117,7 @@ import {
   parseChannelConnectionInfo,
   type ChannelConnectionInfo,
 } from '@/lib/channel-connection-info'
+import { formatQuotaWithCurrency, getCurrencyLabel } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
 import { ROLE } from '@/lib/roles'
 import {
@@ -325,6 +326,8 @@ const SENSITIVE_FORM_FIELDS = [
   'tpm_limit',
   'response_header_mode',
   'response_headers',
+  'cost_ratio',
+  'quota_limit_amount',
   'pass_through_body_enabled',
   'responses_websocket_enabled',
   'system_prompt',
@@ -2326,6 +2329,79 @@ export function ChannelMutateDrawer({
             <FormDescription>
               {t(
                 'Maximum tokens per minute accounted to this channel. Usage is settled after billing, so set it with some margin below the upstream limit. 0 means no limit.'
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='cost_ratio'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>{t('Channel Cost Ratio')}</FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                step='any'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.'
+              )}
+              {currentRow && (formValues.cost_ratio ?? 0) > 0 && (
+                <>
+                  {' '}
+                  {t('Estimated cost so far: {{cost}}', {
+                    cost: formatQuotaWithCurrency(
+                      (currentRow.used_quota ?? 0) *
+                        (formValues.cost_ratio ?? 0)
+                    ),
+                  })}
+                </>
+              )}
+            </FormDescription>
+            <FormMessage />
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='quota_limit_amount'
+        render={({ field }) => (
+          <FormItem>
+            <FormLabel>
+              {t('Channel Quota Limit ({{currency}})', {
+                currency: getCurrencyLabel(),
+              })}
+            </FormLabel>
+            <FormControl>
+              <Input
+                type='number'
+                step='any'
+                placeholder='0'
+                {...field}
+                value={field.value ?? 0}
+                onChange={(e) => field.onChange(Number(e.target.value))}
+              />
+            </FormControl>
+            <FormDescription>
+              {t(
+                'Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.'
+              )}
+              {currentRow && (
+                <>
+                  {' '}
+                  {t('Used so far: {{used}}', {
+                    used: formatQuotaWithCurrency(currentRow.used_quota ?? 0),
+                  })}
+                </>
               )}
             </FormDescription>
             <FormMessage />

@@ -3193,6 +3193,9 @@
     "Include Group": "Bao gồm nhóm",
     "Include Model": "Bao gồm mô hình",
     "Invalid parameters": "Tham số không hợp lệ",
+    "Channel not found": "Không tìm thấy kênh",
+    "This channel has reached its quota limit. Raise the limit before enabling it": "Kênh này đã đạt giới hạn hạn mức. Hãy tăng giới hạn trước khi bật",
+    "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} kênh vẫn bị tắt vì đã đạt giới hạn hạn mức",
     "Include name": "Bao gồm tên",
     "Invalid Passkey login state": "Trạng thái đăng nhập bằng khóa truy cập không hợp lệ",
     "Include quota": "Bao gồm hạn mức",
@@ -7367,6 +7370,16 @@
     "List at least one header name for the response header filter": "List at least one header name for the response header filter",
     "Response header filter supports at most 64 header names": "Response header filter supports at most 64 header names",
     "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters",
-    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)"
+    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)",
+    "Channel Cost Ratio": "Hệ số chi phí của kênh",
+    "Channel Quota Limit ({{currency}})": "Giới hạn hạn mức của kênh ({{currency}})",
+    "Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.": "Số tiền thực trả cho upstream trên mỗi 1 đơn vị hạn mức được tính phí qua kênh này, ví dụ 0.2 cho giá đại lý 20%. Chỉ dùng để thống kê chi phí. 0 nghĩa là chưa đặt.",
+    "Estimated cost so far: {{cost}}": "Chi phí ước tính đến nay: {{cost}}",
+    "Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.": "Tự động tắt kênh này khi hạn mức đã dùng tích lũy đạt đến số tiền này. Hãy nâng giới hạn sau khi nạp tiền cho tài khoản upstream; kênh đã cạn không thể bật lại trước đó. 0 nghĩa là không giới hạn.",
+    "Used so far: {{used}}": "Đã dùng đến nay: {{used}}",
+    "Quota limit:": "Giới hạn hạn mức:",
+    "Estimated cost:": "Chi phí ước tính:",
+    "Channel cost ratio must be between 0 and 1000": "Hệ số chi phí của kênh phải nằm trong khoảng 0 đến 1000",
+    "Channel quota limit must be 0 or a positive amount": "Giới hạn hạn mức của kênh phải là 0 hoặc một số dương"
   }
 }

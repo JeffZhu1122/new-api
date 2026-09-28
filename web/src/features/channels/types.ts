@@ -82,6 +82,8 @@ export const channelSchema = z.object({
       claude_auth_mode: z.string().optional(),
       response_header_mode: z.string().optional(),
       response_headers: z.array(z.string()).optional(),
+      cost_ratio: z.number().optional(),
+      quota_limit: z.number().optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -119,6 +121,10 @@ export interface ChannelExtendSettings {
   // Upstream response header filter; undefined = copy every header
   response_header_mode?: ResponseHeaderMode
   response_headers?: string[]
+  // Estimated amount paid upstream per 1 unit of billed quota; 0 = not set
+  cost_ratio?: number
+  // Auto-disable once used_quota reaches this many quota units; 0 = no limit
+  quota_limit?: number
 }
 
 export type ClaudeAuthMode = 'api_key' | 'oauth' | 'auto'

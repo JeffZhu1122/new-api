@@ -3193,6 +3193,9 @@
     "Include Group": "Inclure le groupe",
     "Include Model": "Inclure le modèle",
     "Invalid parameters": "Paramètres invalides",
+    "Channel not found": "Canal introuvable",
+    "This channel has reached its quota limit. Raise the limit before enabling it": "Ce canal a atteint sa limite de quota. Augmentez la limite avant de l'activer",
+    "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} canal(aux) sont restés désactivés car ils ont atteint leur limite de quota",
     "Include name": "Inclure le nom",
     "Invalid Passkey login state": "État de connexion Passkey invalide",
     "Include quota": "Inclure le quota",
@@ -7367,6 +7370,16 @@
     "List at least one header name for the response header filter": "List at least one header name for the response header filter",
     "Response header filter supports at most 64 header names": "Response header filter supports at most 64 header names",
     "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters",
-    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)"
+    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)",
+    "Channel Cost Ratio": "Ratio de coût du canal",
+    "Channel Quota Limit ({{currency}})": "Limite de quota du canal ({{currency}})",
+    "Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.": "Montant réellement payé en amont pour chaque unité de quota facturée via ce canal, par exemple 0.2 pour un tarif revendeur à 20 %. Utilisé uniquement pour le suivi des coûts. 0 signifie non défini.",
+    "Estimated cost so far: {{cost}}": "Coût estimé à ce jour : {{cost}}",
+    "Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.": "Désactive automatiquement ce canal lorsque son quota utilisé cumulé atteint ce montant. Augmentez-le après avoir rechargé le compte en amont ; un canal épuisé ne peut pas être activé avant. 0 signifie aucune limite.",
+    "Used so far: {{used}}": "Utilisé à ce jour : {{used}}",
+    "Quota limit:": "Limite de quota :",
+    "Estimated cost:": "Coût estimé :",
+    "Channel cost ratio must be between 0 and 1000": "Le ratio de coût du canal doit être compris entre 0 et 1000",
+    "Channel quota limit must be 0 or a positive amount": "La limite de quota du canal doit être 0 ou un montant positif"
   }
 }

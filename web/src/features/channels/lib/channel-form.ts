@@ -18,6 +18,8 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { z } from 'zod'
 
+import { parseQuotaFromDollars, quotaUnitsToEditableAmount } from '@/lib/format'
+
 import {
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
   CHANNEL_TYPE_NEW_API,
@@ -92,6 +94,9 @@ export const MAX_CHANNEL_INPUT_TOKENS_BOUND = 10000000
 export const MAX_CHANNEL_RATE_LIMIT_VALUE = 2147483647
 export const MAX_CHANNEL_RESPONSE_HEADER_RULES = 64
 export const MAX_CHANNEL_RESPONSE_HEADER_NAME_LENGTH = 128
+export const MAX_CHANNEL_COST_RATIO = 1000
+// Quota units; matches the JavaScript-safe integer boundary used by the backend
+export const MAX_CHANNEL_QUOTA_LIMIT_UNITS = Number.MAX_SAFE_INTEGER
 // RFC 7230 token characters, the only ones legal in a header field name
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
@@ -313,6 +318,10 @@ export const channelFormSchema = z
     // Upstream response header filter (channel_extend, 'off' = copy all)
     response_header_mode: z.enum(['off', 'blacklist', 'whitelist']).optional(),
     response_headers: z.string().optional(),
+    // Cost ratio and auto-disable quota limit (channel_extend, 0 = off);
+    // the limit is edited in the display currency and stored as quota units
+    cost_ratio: z.number().optional(),
+    quota_limit_amount: z.number().optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -528,6 +537,30 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_CHANNEL_TPM_LIMIT
       )
     }
+    const costRatio = data.cost_ratio ?? 0
+    if (
+      !Number.isFinite(costRatio) ||
+      costRatio < 0 ||
+      costRatio > MAX_CHANNEL_COST_RATIO
+    ) {
+      addRequiredIssue(
+        ctx,
+        'cost_ratio',
+        ERROR_MESSAGES.INVALID_CHANNEL_COST_RATIO
+      )
+    }
+    const quotaLimitAmount = data.quota_limit_amount ?? 0
+    if (
+      !Number.isFinite(quotaLimitAmount) ||
+      quotaLimitAmount < 0 ||
+      parseQuotaFromDollars(quotaLimitAmount) > MAX_CHANNEL_QUOTA_LIMIT_UNITS
+    ) {
+      addRequiredIssue(
+        ctx,
+        'quota_limit_amount',
+        ERROR_MESSAGES.INVALID_CHANNEL_QUOTA_LIMIT
+      )
+    }
     if (parseResponseHeaderMode(data.response_header_mode) !== 'off') {
       const names = parseResponseHeaderNames(data.response_headers)
       const lowerCaseNames = new Set(names.map((name) => name.toLowerCase()))
@@ -615,6 +648,8 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   tpm_limit: 0,
   response_header_mode: 'off',
   response_headers: '',
+  cost_ratio: 0,
+  quota_limit_amount: 0,
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -792,6 +827,10 @@ export function transformChannelToFormDefaults(
     ),
     response_headers: (channel.extend_config?.response_headers ?? []).join(
       '\n'
+    ),
+    cost_ratio: channel.extend_config?.cost_ratio || 0,
+    quota_limit_amount: quotaUnitsToEditableAmount(
+      channel.extend_config?.quota_limit || 0
     ),
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
@@ -1043,6 +1082,9 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
       responseHeaderMode === 'off'
         ? undefined
         : parseResponseHeaderNames(formData.response_headers),
+    cost_ratio: formData.cost_ratio || 0,
+    // The form edits the limit in the display currency; persist quota units.
+    quota_limit: parseQuotaFromDollars(formData.quota_limit_amount || 0),
   }
 }
 

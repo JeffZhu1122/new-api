@@ -3193,6 +3193,9 @@
     "Include Group": "Include Group",
     "Include Model": "Include Model",
     "Invalid parameters": "Invalid parameters",
+    "Channel not found": "Channel not found",
+    "This channel has reached its quota limit. Raise the limit before enabling it": "This channel has reached its quota limit. Raise the limit before enabling it",
+    "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} channel(s) stayed disabled because they reached their quota limit",
     "Include name": "Include name",
     "Invalid Passkey login state": "Invalid Passkey login state",
     "Include quota": "Include quota",
@@ -7367,6 +7370,16 @@
     "List at least one header name for the response header filter": "List at least one header name for the response header filter",
     "Response header filter supports at most 64 header names": "Response header filter supports at most 64 header names",
     "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters",
-    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)"
+    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)",
+    "Channel Cost Ratio": "Channel Cost Ratio",
+    "Channel Quota Limit ({{currency}})": "Channel Quota Limit ({{currency}})",
+    "Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.": "Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.",
+    "Estimated cost so far: {{cost}}": "Estimated cost so far: {{cost}}",
+    "Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.": "Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.",
+    "Used so far: {{used}}": "Used so far: {{used}}",
+    "Quota limit:": "Quota limit:",
+    "Estimated cost:": "Estimated cost:",
+    "Channel cost ratio must be between 0 and 1000": "Channel cost ratio must be between 0 and 1000",
+    "Channel quota limit must be 0 or a positive amount": "Channel quota limit must be 0 or a positive amount"
   }
 }

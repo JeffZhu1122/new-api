@@ -84,6 +84,24 @@ func channelIDsFromChannels(channels []*model.Channel) []int {
 	return ids
 }
 
+// attachChannelExtendConfigs fills ExtendConfig for listed channels with one
+// query so the table can show per-channel quota limits and cost ratios.
+func attachChannelExtendConfigs(channels []*model.Channel) {
+	extends, err := model.GetChannelExtendsByIds(channelIDsFromChannels(channels))
+	if err != nil {
+		common.SysError("failed to load channel extend configs: " + err.Error())
+		return
+	}
+	for _, channel := range channels {
+		if channel == nil {
+			continue
+		}
+		if settings, ok := extends[channel.Id]; ok && !settings.IsZero() {
+			channel.ExtendConfig = &settings
+		}
+	}
+}
+
 func closeActiveChannelWebSockets(channelIDs []int) {
 	service.CloseActiveWebSocketsForChannels(channelIDs, service.ChannelDisabledCloseReason)
 }
@@ -257,6 +275,7 @@ func GetAllChannels(c *gin.Context) {
 		}
 	}
 
+	attachChannelExtendConfigs(channelData)
 	for _, datum := range channelData {
 		clearChannelInfo(datum)
 	}
@@ -470,6 +489,7 @@ func SearchChannels(c *gin.Context) {
 
 	pagedData := channelData[startIdx:endIdx]
 
+	attachChannelExtendConfigs(pagedData)
 	for _, datum := range pagedData {
 		clearChannelInfo(datum)
 	}
@@ -980,15 +1000,20 @@ func EnableTagChannels(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	err = model.EnableChannelByTag(channelTag.Tag)
+	skipped, err := model.EnableChannelByTag(channelTag.Tag)
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
 	model.InitChannelCache()
 	recordManageAudit(c, "channel.tag_enable", map[string]any{
-		"tag": channelTag.Tag,
+		"tag":                 channelTag.Tag,
+		"quota_limit_skipped": len(skipped),
 	})
+	if len(skipped) > 0 {
+		common.ApiSuccessT(c, "{{count}} channel(s) stayed disabled because they reached their quota limit", nil, map[string]any{"count": len(skipped)})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -1327,6 +1352,19 @@ func UpdateChannelStatus(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if req.Status == common.ChannelStatusEnabled {
+		channel, err := model.GetChannelById(id, false)
+		if err != nil {
+			common.ApiErrorT(c, "Channel not found")
+			return
+		}
+		// An exhausted channel would be disabled again by its next settlement;
+		// refuse up front so the administrator raises the limit first.
+		if channel.QuotaLimitReached() {
+			common.ApiErrorT(c, "This channel has reached its quota limit. Raise the limit before enabling it")
+			return
+		}
+	}
 	changed := model.UpdateChannelStatus(id, "", req.Status, "manual operation")
 	if changed {
 		model.InitChannelCache()
@@ -1353,8 +1391,16 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 		return
 	}
 	changedCount := 0
+	skippedQuotaLimit := 0
 	var disabledIDs []int
 	for _, id := range req.Ids {
+		if req.Status == common.ChannelStatusEnabled {
+			channel, err := model.GetChannelById(id, false)
+			if err == nil && channel.QuotaLimitReached() {
+				skippedQuotaLimit++
+				continue
+			}
+		}
 		if model.UpdateChannelStatus(id, "", req.Status, "manual batch operation") {
 			changedCount++
 			if req.Status != common.ChannelStatusEnabled {
@@ -1369,10 +1415,15 @@ func BatchUpdateChannelStatus(c *gin.Context) {
 		closeActiveChannelWebSockets(disabledIDs)
 	}
 	recordManageAudit(c, "channel.status_update_batch", map[string]any{
-		"count":  changedCount,
-		"total":  len(req.Ids),
-		"status": req.Status,
+		"count":               changedCount,
+		"total":               len(req.Ids),
+		"status":              req.Status,
+		"quota_limit_skipped": skippedQuotaLimit,
 	})
+	if skippedQuotaLimit > 0 {
+		common.ApiSuccessT(c, "{{count}} channel(s) stayed disabled because they reached their quota limit", changedCount, map[string]any{"count": skippedQuotaLimit})
+		return
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",

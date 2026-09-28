@@ -3193,6 +3193,9 @@
     "Include Group": "グループを含む",
     "Include Model": "モデルを含む",
     "Invalid parameters": "パラメーターが無効です",
+    "Channel not found": "チャネルが見つかりません",
+    "This channel has reached its quota limit. Raise the limit before enabling it": "このチャネルはクォータ上限に達しています。有効にする前に上限を引き上げてください",
+    "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} 件のチャネルはクォータ上限に達したため無効のままです",
     "Include name": "名前を含める",
     "Invalid Passkey login state": "Passkey のログイン状態が無効です",
     "Include quota": "クォータを含める",
@@ -7367,6 +7370,16 @@
     "List at least one header name for the response header filter": "List at least one header name for the response header filter",
     "Response header filter supports at most 64 header names": "Response header filter supports at most 64 header names",
     "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters",
-    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)"
+    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)",
+    "Channel Cost Ratio": "チャンネルコスト倍率",
+    "Channel Quota Limit ({{currency}})": "チャンネル額度上限（{{currency}}）",
+    "Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.": "このチャンネルで課金される額度 1 単位あたりに実際に上流へ支払う金額。例えば 2 割価格のリセラーなら 0.2。コスト集計にのみ使用します。0 は未設定です。",
+    "Estimated cost so far: {{cost}}": "これまでの推定コスト：{{cost}}",
+    "Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.": "このチャンネルの累計使用額度がこの金額に達すると自動的に無効化します。上流アカウントへ入金したら上限を引き上げてください。引き上げるまで、使い切ったチャンネルは有効化できません。0 は無制限です。",
+    "Used so far: {{used}}": "これまでの使用量：{{used}}",
+    "Quota limit:": "額度上限：",
+    "Estimated cost:": "推定コスト：",
+    "Channel cost ratio must be between 0 and 1000": "チャンネルコスト倍率は 0 から 1000 の範囲で指定してください",
+    "Channel quota limit must be 0 or a positive amount": "チャンネル額度上限は 0 または正の金額を指定してください"
   }
 }

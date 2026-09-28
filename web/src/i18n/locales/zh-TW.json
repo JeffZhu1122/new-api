@@ -3193,6 +3193,9 @@
     "Include Group": "包含分組",
     "Include Model": "包含模型",
     "Invalid parameters": "無效的參數",
+    "Channel not found": "管道不存在",
+    "This channel has reached its quota limit. Raise the limit before enabling it": "該管道已達額度上限，請先調高額度上限再啟用",
+    "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} 個管道已達額度上限，保持停用",
     "Include name": "包含名稱",
     "Invalid Passkey login state": "Passkey 登入狀態異常",
     "Include quota": "包含額度",
@@ -7367,6 +7370,16 @@
     "List at least one header name for the response header filter": "回應標頭過濾至少需要列出一個回應標頭名稱",
     "Response header filter supports at most 64 header names": "回應標頭過濾最多支援 64 個回應標頭名稱",
     "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "回應標頭名稱只能包含字母、數字、連字號等 RFC 7230 token 字元，且不超過 128 個字元",
-    "Response header names must be unique (case-insensitive)": "回應標頭名稱不能重複（不區分大小寫）"
+    "Response header names must be unique (case-insensitive)": "回應標頭名稱不能重複（不區分大小寫）",
+    "Channel Cost Ratio": "管道成本倍率",
+    "Channel Quota Limit ({{currency}})": "管道額度上限（{{currency}}）",
+    "Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.": "本管道每計費 1 單位額度實際付給上游的金額，例如兩折管道填 0.2。僅用於成本統計。0 表示未設定。",
+    "Estimated cost so far: {{cost}}": "按倍率折算的累計成本：{{cost}}",
+    "Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.": "本管道累計已用額度達到該金額時自動停用。上游續費後請調高此上限，未調高前已耗盡的管道無法啟用。0 表示不限制。",
+    "Used so far: {{used}}": "目前累計已用：{{used}}",
+    "Quota limit:": "額度上限：",
+    "Estimated cost:": "折算成本：",
+    "Channel cost ratio must be between 0 and 1000": "管道成本倍率必須在 0 到 1000 之間",
+    "Channel quota limit must be 0 or a positive amount": "管道額度上限必須為 0 或正數"
   }
 }

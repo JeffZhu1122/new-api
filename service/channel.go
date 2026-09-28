@@ -12,8 +12,30 @@ import (
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 )
 
+func init() {
+	model.ChannelQuotaLimitReachedHandler = notifyChannelQuotaLimitReached
+}
+
 func formatNotifyType(channelId int, status int) string {
 	return fmt.Sprintf("%s_%d_%d", dto.NotifyTypeChannelUpdate, channelId, status)
+}
+
+// notifyChannelQuotaLimitReached finishes a quota-limit auto-disable the same
+// way DisableChannel does: close the channel's live WebSockets and tell the
+// root user, including the figures needed to decide on a top-up.
+func notifyChannelQuotaLimitReached(channel *model.Channel, settings dto.ChannelExtendSettings) {
+	if shouldCloseActiveWebSocketsAfterDisable(channel.Id) {
+		CloseActiveWebSocketsForChannel(channel.Id, ChannelDisabledCloseReason)
+	}
+	usedUSD := float64(channel.UsedQuota) / common.QuotaPerUnit
+	limitUSD := float64(settings.QuotaLimit) / common.QuotaPerUnit
+	subject := fmt.Sprintf("通道「%s」（#%d）已达额度上限，已被禁用", channel.Name, channel.Id)
+	content := fmt.Sprintf("通道「%s」（#%d）累计消耗 $%.4f，已达到额度上限 $%.4f，已自动禁用。", channel.Name, channel.Id, usedUSD, limitUSD)
+	if settings.CostRatio > 0 {
+		content += fmt.Sprintf("按成本倍率 %g 折算成本 $%.4f。", settings.CostRatio, usedUSD*settings.CostRatio)
+	}
+	content += "调高该渠道的额度上限后可重新启用。"
+	NotifyRootUser(formatNotifyType(channel.Id, common.ChannelStatusAutoDisabled), subject, content)
 }
 
 func shouldCloseActiveWebSocketsAfterDisable(channelId int) bool {
@@ -91,15 +113,18 @@ func ShouldDisableChannel(err *types.NewAPIError) bool {
 	return search
 }
 
-func ShouldEnableChannel(newAPIError *types.NewAPIError, status int) bool {
+// ShouldEnableChannel reports whether an automatically disabled channel may be
+// re-enabled after a successful test. A channel that exhausted its quota limit
+// stays disabled until an administrator raises the limit.
+func ShouldEnableChannel(newAPIError *types.NewAPIError, channel *model.Channel) bool {
 	if !common.AutomaticEnableChannelEnabled {
 		return false
 	}
 	if newAPIError != nil {
 		return false
 	}
-	if status != common.ChannelStatusAutoDisabled {
+	if channel == nil || channel.Status != common.ChannelStatusAutoDisabled {
 		return false
 	}
-	return true
+	return !channel.QuotaLimitReached()
 }

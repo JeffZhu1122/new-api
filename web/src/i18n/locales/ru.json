@@ -3193,6 +3193,9 @@
     "Include Group": "Включить группу",
     "Include Model": "Включить модель",
     "Invalid parameters": "Недопустимые параметры",
+    "Channel not found": "Канал не найден",
+    "This channel has reached its quota limit. Raise the limit before enabling it": "Канал достиг лимита квоты. Увеличьте лимит перед включением",
+    "{{count}} channel(s) stayed disabled because they reached their quota limit": "Каналов, оставшихся отключёнными из-за лимита квоты: {{count}}",
     "Include name": "Включить название",
     "Invalid Passkey login state": "Недопустимое состояние входа по Passkey",
     "Include quota": "Включить квоту",
@@ -7367,6 +7370,16 @@
     "List at least one header name for the response header filter": "List at least one header name for the response header filter",
     "Response header filter supports at most 64 header names": "Response header filter supports at most 64 header names",
     "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters": "Response header names may only contain letters, digits, hyphens and other RFC 7230 token characters, up to 128 characters",
-    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)"
+    "Response header names must be unique (case-insensitive)": "Response header names must be unique (case-insensitive)",
+    "Channel Cost Ratio": "Коэффициент стоимости канала",
+    "Channel Quota Limit ({{currency}})": "Лимит квоты канала ({{currency}})",
+    "Amount actually paid upstream for every 1 unit of quota billed through this channel, for example 0.2 for a 20% reseller price. Used for cost reporting only. 0 means not set.": "Сумма, фактически выплачиваемая поставщику за каждую единицу квоты, списанную через этот канал, например 0.2 при цене реселлера 20 %. Используется только для учёта затрат. 0 означает не задано.",
+    "Estimated cost so far: {{cost}}": "Расчётные затраты на данный момент: {{cost}}",
+    "Automatically disables this channel once its cumulative used quota reaches this amount. Raise it after topping up the upstream account; an exhausted channel cannot be enabled until then. 0 means no limit.": "Автоматически отключает канал, когда его суммарно использованная квота достигает этой суммы. Увеличьте её после пополнения счёта у поставщика; до этого исчерпанный канал включить нельзя. 0 означает без ограничения.",
+    "Used so far: {{used}}": "Использовано на данный момент: {{used}}",
+    "Quota limit:": "Лимит квоты:",
+    "Estimated cost:": "Расчётные затраты:",
+    "Channel cost ratio must be between 0 and 1000": "Коэффициент стоимости канала должен быть от 0 до 1000",
+    "Channel quota limit must be 0 or a positive amount": "Лимит квоты канала должен быть 0 или положительной суммой"
   }
 }

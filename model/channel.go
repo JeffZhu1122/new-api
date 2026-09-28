@@ -64,6 +64,16 @@ type Channel struct {
 
 const ChannelStatusReasonAllKeysDisabled = "All keys are disabled"
 
+// ChannelStatusReasonQuotaLimitReached prefixes the status reason written when
+// a channel is auto-disabled by its per-channel quota limit.
+const ChannelStatusReasonQuotaLimitReached = "额度已达上限"
+
+// ChannelQuotaLimitReachedHandler runs after a channel has been auto-disabled
+// because its cumulative used quota reached the per-channel quota limit. The
+// service layer registers it to notify administrators; model only flips the
+// status so the check can live next to the used_quota write.
+var ChannelQuotaLimitReachedHandler func(channel *Channel, settings dto.ChannelExtendSettings)
+
 type ChannelInfo struct {
 	IsMultiKey             bool                  `json:"is_multi_key"`                        // 是否多Key模式
 	MultiKeySize           int                   `json:"multi_key_size"`                      // 多Key模式下的Key数量
@@ -350,6 +360,17 @@ func (channel *Channel) GetAutoBan() bool {
 		return false
 	}
 	return *channel.AutoBan == 1
+}
+
+// QuotaLimitReached reports whether the channel's cumulative used quota has
+// hit its per-channel quota limit. Such a channel stays disabled until an
+// administrator raises the limit, so every enable path must consult it.
+func (channel *Channel) QuotaLimitReached() bool {
+	if channel == nil {
+		return false
+	}
+	settings := GetChannelExtendSettings(channel.Id)
+	return settings.QuotaLimitReached(channel.UsedQuota)
 }
 
 func (channel *Channel) Save() error {
@@ -833,13 +854,35 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	return true
 }
 
-func EnableChannelByTag(tag string) error {
-	err := DB.Model(&Channel{}).Where("tag = ?", tag).Update("status", common.ChannelStatusEnabled).Error
-	if err != nil {
-		return err
+// EnableChannelByTag enables every channel under the tag except those that
+// exhausted their quota limit; it returns the ids that stayed disabled.
+func EnableChannelByTag(tag string) ([]int, error) {
+	var channels []Channel
+	if err := DB.Select("id", "used_quota").Where("tag = ?", tag).Find(&channels).Error; err != nil {
+		return nil, err
 	}
-	err = UpdateAbilityStatusByTag(tag, true)
-	return err
+	var exhausted []int
+	for i := range channels {
+		if channels[i].QuotaLimitReached() {
+			exhausted = append(exhausted, channels[i].Id)
+		}
+	}
+	query := DB.Model(&Channel{}).Where("tag = ?", tag)
+	if len(exhausted) > 0 {
+		query = query.Where("id not in (?)", exhausted)
+	}
+	if err := query.Update("status", common.ChannelStatusEnabled).Error; err != nil {
+		return nil, err
+	}
+	if err := UpdateAbilityStatusByTag(tag, true); err != nil {
+		return nil, err
+	}
+	for _, id := range exhausted {
+		if err := UpdateAbilityStatus(id, false); err != nil {
+			return nil, err
+		}
+	}
+	return exhausted, nil
 }
 
 func DisableChannelByTag(tag string) error {
@@ -932,6 +975,39 @@ func updateChannelUsedQuota(id int, quota int) {
 	err := DB.Model(&Channel{}).Where("id = ?", id).Update("used_quota", gorm.Expr("used_quota + ?", quota)).Error
 	if err != nil {
 		common.SysLog(common.LogText("failed to update channel used quota: channel_id=%d, delta_quota=%d, error=%v", id, quota, err))
+		return
+	}
+	if quota > 0 {
+		enforceChannelQuotaLimit(id)
+	}
+}
+
+// enforceChannelQuotaLimit auto-disables a channel whose cumulative used quota
+// has reached its per-channel limit. Channels without a limit return before
+// touching the database. The used quota is read back after the write so every
+// replica and the batch updater judge the same persisted value.
+func enforceChannelQuotaLimit(channelId int) {
+	settings := GetChannelExtendSettings(channelId)
+	if settings.QuotaLimit <= 0 {
+		return
+	}
+	var channel Channel
+	if err := DB.Select("id", "name", "status", "used_quota").Where("id = ?", channelId).Take(&channel).Error; err != nil {
+		common.SysLog(fmt.Sprintf("failed to read channel used quota for quota limit: channel_id=%d, error=%v", channelId, err))
+		return
+	}
+	if channel.Status != common.ChannelStatusEnabled || !settings.QuotaLimitReached(channel.UsedQuota) {
+		return
+	}
+	usedUSD := float64(channel.UsedQuota) / common.QuotaPerUnit
+	limitUSD := float64(settings.QuotaLimit) / common.QuotaPerUnit
+	reason := fmt.Sprintf("%s：已用 $%.4f，上限 $%.4f", ChannelStatusReasonQuotaLimitReached, usedUSD, limitUSD)
+	if !UpdateChannelStatus(channelId, "", common.ChannelStatusAutoDisabled, reason) {
+		return
+	}
+	common.SysLog(fmt.Sprintf("channel %d (%s) auto-disabled: %s", channel.Id, channel.Name, reason))
+	if ChannelQuotaLimitReachedHandler != nil {
+		ChannelQuotaLimitReachedHandler(&channel, settings)
 	}
 }
 
