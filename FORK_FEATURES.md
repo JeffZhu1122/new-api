@@ -31,10 +31,11 @@
 13. [API Key 主分组 + 有序备用分组](#13-api-key-主分组--有序备用分组)
 14. [渠道响应头过滤（黑名单 / 白名单）](#14-渠道响应头过滤黑名单--白名单)
 15. [渠道额度上限与成本倍率（达上限自动禁用）](#15-渠道额度上限与成本倍率达上限自动禁用)
-16. [仓库维护类变更](#16-仓库维护类变更)
-17. [与上游同步的注意事项](#17-与上游同步的注意事项)
-18. [已知限制与测试缺口汇总](#18-已知限制与测试缺口汇总)
-19. [附录](#19-附录)
+16. [渠道可用时段（时段外不参与选路）](#16-渠道可用时段时段外不参与选路)
+17. [仓库维护类变更](#17-仓库维护类变更)
+18. [与上游同步的注意事项](#18-与上游同步的注意事项)
+19. [已知限制与测试缺口汇总](#19-已知限制与测试缺口汇总)
+20. [附录](#20-附录)
 
 ---
 
@@ -55,7 +56,8 @@
 | 13 | Key 主分组 + 备用分组 | `f69683a02` | 无变化 | tokens 表既有列 | 鉴权、路由、计费 |
 | 14 | 渠道响应头过滤（黑 / 白名单） | `b0a715551` | 关闭 = 复制全部 | `channel_extend` | 上游响应头回传 |
 | 15 | 渠道额度上限 + 成本倍率（达上限自动禁用） | 与本文档同一提交 | 0 = 不限 | `channel_extend` | 结算后置状态、渠道启用路径、渠道列表 |
-| 16 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
+| 16 | 渠道可用时段（时段外不参与选路） | 与本文档同一提交 | 空 = 全天可用 | `channel_extend` | 渠道选择（HTTP + Responses WebSocket）、渠道列表 |
+| 17 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作）。
 
@@ -85,11 +87,12 @@ fork 的原则是**不修改上游 `channels` / `users` 表结构**，所有 for
 | `response_headers` | text | 无 | JSON 字符串数组，过滤涉及的响应头名称 | §14 |
 | `cost_ratio` | double | 0 | 成本倍率：每计费 $1 站内额度实际付给上游的美元数，仅用于成本展示 | §15 |
 | `quota_limit` | bigint | 0 | 额度上限（quota 单位，`QuotaPerUnit` = $1），累计 `used_quota` 达到即自动禁用，0 = 不限 | §15 |
+| `schedule` | text | 无 | JSON `dto.ChannelSchedule`，每周可用时段规则；空 = 全天可用 | §16 |
 
 关键方法与行为：
 
-- `ChannelExtendSettings.Validate()`：超时 `[0, 86400]`，RPM/TPM `[0, MaxInt32]`，输入 token `[0, 10_000_000]` 且两者都 >0 时要求 `max > min`，auth mode 必须是枚举值，成本倍率为 `[0, 1000]` 内的有限数，额度上限 `[0, 2^53 − 1]`（quota 单位）。`controller/channel.go` `validateChannel()` 调用它，Add/Update/批量接口共用。
-- `ChannelExtendSettings.IsZero()`：所有数值为 0（含成本倍率、额度上限）、响应头过滤为空且 auth mode 为 `""` 或 `api_key` 时为真。
+- `ChannelExtendSettings.Validate()`：超时 `[0, 86400]`，RPM/TPM `[0, MaxInt32]`，输入 token `[0, 10_000_000]` 且两者都 >0 时要求 `max > min`，auth mode 必须是枚举值，成本倍率为 `[0, 1000]` 内的有限数，额度上限 `[0, 2^53 − 1]`（quota 单位），可用时段规则见 §16。`controller/channel.go` `validateChannel()` 调用它，Add/Update/批量接口共用。
+- `ChannelExtendSettings.IsZero()`：所有数值为 0（含成本倍率、额度上限）、响应头过滤为空、无时段规则且 auth mode 为 `""` 或 `api_key` 时为真。
 - `UpsertChannelExtend(tx, channelId, settings)`：`IsZero()` → 删除该行；否则 `ON CONFLICT(channel_id) DO UPDATE` 全列。`Channel.SaveExtendConfig(tx)` 在 `Channel.Insert()` 和 `BatchInsertChannels` 中调用；`ExtendConfig == nil` 时不动已有行。
 - 级联删除：`DeleteChannelExtendByIds` 在 `Channel.Delete()`、`BatchDeleteChannels`、以及新增的 `deleteChannelsWhere`（供 `DeleteChannelByStatus` / `DeleteDisabledChannel` 使用）中调用。
 - 读取：`GetChannelExtend(id)` 无行返回零值且 `err == nil`；`GetChannelExtendsByIds(ids)` 按 id 批量读取，供渠道列表 / 搜索接口附带 `extend_config`。
@@ -676,13 +679,54 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 
 ---
 
-## 16. 仓库维护类变更
+## 16. 渠道可用时段（时段外不参与选路）
 
-### 16.1 移除 GitHub workflows（`a034e98b3`）
+### 动机
+
+某些渠道只在特定时段可用或划算（供应商优惠时段、账号限制、备用线路只在夜间兜底）。上游选路只看分组、模型、状态、优先级和权重，没有任何读取时间的逻辑。本功能为渠道配置一组按周几加时分的可用窗口：**时段外的渠道不参与选路**，流量自动转到其他渠道；渠道状态不变，不发通知，窗口一到自动恢复参与。已确认的三个决策：粒度为周几 + HH:MM；指定渠道在时段外视同渠道不可用；时段外完全不可用，不做降级兜底。
+
+### 存储与校验
+
+- 列：`channel_extend.schedule text`，JSON 形如 `{"timezone":"Asia/Shanghai","windows":[{"days":[1,2,3,4,5],"start":"09:00","end":"18:00"},{"start":"22:00","end":"06:00"}]}`；空 = 全天可用。
+- DTO：`extend_config.schedule`，类型 `dto.ChannelSchedule{Timezone, Windows []ChannelScheduleWindow{Days, Start, End}}`（`relaykit/dto/channel_extend_settings.go`），常量 `MaxChannelScheduleWindows = 16`。`Days` 用 0（周日）到 6（周六），空 = 每天。
+- `Validate()`：时区必填且可通过 `time.LoadLocation` 加载（进程内 `sync.Map` 缓存，避免每次选路重新解析 tzdata）；窗口 1 到 16 个；`Start` / `End` 必须是严格的 `HH:MM`；开始不能等于结束；星期在 0 到 6 且不重复。`IsZero()` 纳入该字段，敏感变更判定沿用现有的 JSON 比较。
+- `ChannelSchedule.Contains(at)`：把时刻换算到规则时区后按分钟比较。开始含、结束不含；`End <= Start` 表示跨午夜，归属开始的那一天（周五 22:00 到 06:00 覆盖周六 05:59，不覆盖周六 23:00）；多个窗口取并集。时区在运行时加载失败按"规则不生效、全天可用"处理（校验阶段已拒绝未知时区，这只在缺 tzdata 的镜像里发生）。`ChannelExtendSettings.AvailableAt(at)` 是选路谓词的入口。
+
+### 选路接入
+
+- 新过滤种类 `dto.FilterChannelSchedule`（`dto/channel_constraints.go`），携带 `At time.Time`。`model/channel_constraint.go` `channelMatchesFilter`：`ExtendConfig == nil` 放行，否则 `AvailableAt(filter.At)`；评估顺序排在 `input_tokens` 之后。新增 `model.FiltersReadExtendConfig(filters)`，DB 模式的 `filterAbilitiesByConstraints` 与指定 / 亲和渠道的 `fillExtendConfigForFilters`（原 `fillExtendConfigForInputFilter`）都用它决定是否回填 `channel_extend`。
+- 挂载点在 `service/channel_select.go` `SelectChannelForRequest` 开头：`HasAnyChannelSchedule()` 为真且本请求尚未挂载时附加过滤器，`At` 取 `ContextKeyRequestStartTime`（缺省 `time.Now()`），同一请求的所有重试复用同一时刻。HTTP distributor 与 Responses WebSocket 都经由该函数，两条路径同时生效（顺带补上了 §10 输入 token 边界未覆盖 WebSocket 的缺口，但仅限时段过滤）。
+- `HasAnyChannelSchedule()`（`model/channel_cache.go`）：内存模式由 `InitChannelCache` 维护 `anyChannelSchedule`；DB 模式按 `schedule <> ''` 计数并缓存一分钟，`InitChannelCache` 使其立即失效。无渠道配置时段时零开销。
+- 指定渠道（token pin）在时段外：视同渠道不可用，返回 403 `distributor.channel_disabled`，规则本身只进日志（`pinned channel N is outside its availability schedule`）。`origin_task` pin（任务轮询 / 取结果必须回到创建任务的渠道）**豁免**时段过滤。亲和渠道在时段外：放弃亲和走常规选择。候选全部时段外：503 通用"无可用渠道"，distributor 记 `no available channel with channel_schedule filter active`。
+- 渠道状态不变、不通知；健康检查与手动测试直接指定渠道不经选路，时段外仍会照常测试；时段过滤在候选集阶段剔除，不进入 RPM/TPM 循环，不消耗 RPM 槽位。
+
+### 前端
+
+- 渠道编辑抽屉 → 渠道额外设置末尾：**可用时段** Switch；开启后显示 **时段时区**（`Combobox`，候选来自 `@/lib/timezones` 的 `COMMON_TIMEZONES`，该列表自 pricing 迁出并在 `billing-expr.ts` 保留 re-export；允许输入其他 IANA 名称）与 **可用时间窗口** 列表（每行星期 `MultiSelect` + 开始 / 结束 `Input type="time"` + 删除按钮；"添加时段"最多 16 条）。表单字段 `schedule_enabled` / `schedule_timezone` / `schedule_windows`，列入敏感字段与已配置标记；`buildExtendConfig` 关闭时不发送 `schedule`。
+- 校验文案：需要指定时区；至少一个时段或关闭；最多 16 个；HH:MM 格式；开始结束不能相同。
+- 渠道列表：状态列对"启用但当前时段外"的渠道追加中性徽标 **时段外**，悬浮显示时区与各窗口（星期名按界面语言本地化）。卡片视图原本对启用渠道隐藏状态徽标，时段外时改为显示。浏览器端判定 `isInsideChannelSchedule`（`lib/channel-utils.ts`）用 `Intl.DateTimeFormat` 按规则时区换算，与后端同规则。
+
+### 兼容性
+
+无行或 `schedule` 为空时行为与上游完全一致。新列由 AutoMigrate 添加，text 无默认值，旧行 NULL 视为无规则。多副本各自以本机时钟判定，依赖 NTP；内存缓存模式下管理端保存立即刷新本副本，其他副本最长 `SYNC_FREQUENCY` 后生效。
+
+### 测试
+
+`relaykit/dto/channel_extend_settings_test.go`（Validate 新增 11 例、IsZero、`TestChannelScheduleContains` 覆盖边界含 / 不含、周末、跨午夜归属、多窗口、时区换算、时区加载失败）、`model/channel_extend_test.go` `TestUpsertChannelExtendPersistsSchedule`、新文件 `model/channel_schedule_filter_test.go`（内存缓存 / DB 双模式窗口过滤、跨午夜次日凌晨、无合格渠道、`HasAnyChannelSchedule` 及 DB 模式 TTL 失效）、`service/channel_select_exclude_test.go`（时段外渠道被剔除、时段内两渠道都参与、同一请求过滤器只挂一次、token pin 时段外 403、origin_task pin 豁免、时段内 pin 正常）、前端 `lib/__tests__/channel-schedule.test.ts`（时段判定、校验、payload、编辑回填）。本地端到端：DB 模式与 `MEMORY_CACHE_ENABLED=true` 各一轮（两渠道分流 → 一个设为时段外后 20 次请求全部转移 → 改回时段内恢复分流 → 两个都时段外返回 503 且状态仍为启用）；Chrome 界面检查抽屉编辑器与"时段外"徽标。
+
+### 数据库验证
+
+SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigrate。**MySQL 与 PostgreSQL 本机没有实例，尚未验证**，部署前需确认 AutoMigrate 新增 `schedule` text 列且重复启动无重复 ALTER。
+
+---
+
+## 17. 仓库维护类变更
+
+### 17.1 移除 GitHub workflows（`a034e98b3`）
 
 删除 `.github/workflows/` 下全部 6 个文件：`ci.yml`、`docker-build.yml`、`docker-image-branch.yml`、`electron-build.yml`、`release.yml`、`sync-release-to-gitcode.yml`。目的是避免 fork 在 GitHub 上触发上游的构建、发版和镜像同步流水线。`.github/` 下的 issue / PR 模板、`CODE_OF_CONDUCT.md`、`FUNDING.yml`、`SECURITY.md` 保留。
 
-### 16.2 移植提交（`5f22a93b0`）
+### 17.2 移植提交（`5f22a93b0`）
 
 上游在基线之前重构了四个接缝（seam）：重试判定抽到 `service.DecideRelayRetry`；渠道选择抽到 `service.SelectChannelForRequest`（HTTP distributor 与 Responses WebSocket 共用）；计费准备抽到 `relay.PrepareRequestBilling`；重试设置 UI 迁到 request-policies 页并经 `/api/option/request_policy` 整体校验。该提交把 fork 功能 re-home 到这些接缝上：
 
@@ -695,16 +739,16 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 
 ---
 
-## 17. 与上游同步的注意事项
+## 18. 与上游同步的注意事项
 
-### 17.1 流程
+### 18.1 流程
 
 1. `git fetch https://github.com/QuantumNous/new-api.git main`
 2. `git rebase FETCH_HEAD`（fork 提交线性重放）
 3. 解决冲突后跑 Go 与前端测试，重点是下面列出的热点文件。
 4. 如上游再次重构接缝，参照 `5f22a93b0` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
 
-### 17.2 高频冲突文件
+### 18.2 高频冲突文件
 
 | 文件 | 原因 |
 |---|---|
@@ -728,14 +772,14 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `web/src/features/channels/lib/channel-form.ts` | extend_config 与 count_tokens 映射 |
 | `web/src/i18n/locales/*.json` | 新增文案 |
 
-### 17.3 上游签名变化的传染点
+### 18.3 上游签名变化的传染点
 
 - `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`。
 - `relaykit/` 必须独立可编译：改动 `relaykit/dto/*` 后运行 `cd relaykit && GOWORK=off go build ./...`。
 
 ---
 
-## 18. 已知限制与测试缺口汇总
+## 19. 已知限制与测试缺口汇总
 
 ### 功能限制
 
@@ -750,6 +794,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 - **新建默认禁用**：只影响前端表单默认值，直接调 API 仍可创建启用状态的渠道；复制则由后端强制禁用。
 - **响应头过滤**：只作用于会复制上游头的路径（非流式透传、Codex 流式两个头、audio / minimax tts）；流式 SSE 其他头本来不复制，白名单也无法让它们回传；`Content-Type`、`Content-Encoding` 不可被黑名单丢弃。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道额度上限**：判定在结算之后，禁用前已在飞的请求仍会结算，`BATCH_UPDATE_ENABLED` 下还会多出一个刷盘间隔（默认 5 秒）的流量；多副本各自以数据库值判定，其他副本的内存缓存最长 `SYNC_FREQUENCY`（默认 60 秒）后感知禁用；预扣费不参与判定。折算成本 = 站内计费额度 × 成本倍率，是估算值而非上游账单。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
+- **渠道可用时段**：判定基于各副本本机时钟；窗口边界处进行中的流式响应与 WebSocket 会话不会被中断，只影响新请求；会话亲和在时段外会被放弃，该会话可能换渠道；全部渠道时段外时客户端只看到通用 503；时区运行时加载失败按全天可用处理；粒度只到周几 + 分钟，没有日期范围。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 
 ### 测试缺口
 
@@ -759,12 +804,13 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 - `countTokensPassthrough`、`PostCountTokensLog`、`PrepareRequestBilling` 的跳过分支。
 - 渠道 RPM/TPM 与输入 token 边界的前端字段测试；distributor 端到端。
 - 控制器层"启用已耗尽渠道被拒绝 / 跳过"（单个 / 批量 / 标签）只有本地端到端验证，没有 Go 单测；前端无渠道成本倍率 / 额度上限字段的组件测试。
+- 渠道可用时段：Responses WebSocket 路径只有共用 `SelectChannelForRequest` 的单元覆盖，没有 WS 端到端；前端无时段编辑器的组件测试。
 
 ---
 
-## 19. 附录
+## 20. 附录
 
-### 19.1 新增 option key 一览
+### 20.1 新增 option key 一览
 
 | key | 类型 | 默认 | 所属 |
 |---|---|---|---|
@@ -779,25 +825,26 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 
 以上 8 个 key 都通过 `GET/PUT /api/option/` 读写；前 5 个另可经 `GET/PATCH /api/option/request_policy` 读写。
 
-### 19.2 新增 HTTP 端点
+### 20.2 新增 HTTP 端点
 
 | 端点 | 说明 |
 |---|---|
 | `POST /v1/messages/count_tokens` | Anthropic token 计数透传，免费 |
 | `POST /v1/responses/input_tokens` | OpenAI Responses 输入 token 计数透传，免费 |
 
-### 19.3 管理 API 新增字段
+### 20.3 管理 API 新增字段
 
 | 资源 | 字段 | 说明 |
 |---|---|---|
-| Channel | `extend_config.{relay_timeout, streaming_timeout, min_input_tokens, max_input_tokens, rpm_limit, tpm_limit, claude_auth_mode, response_header_mode, response_headers, cost_ratio, quota_limit}` | §2.1，PUT 缺键不改、`null` 清除；列表 / 搜索接口每行也附带非零值（§15） |
+| Channel | `extend_config.{relay_timeout, streaming_timeout, min_input_tokens, max_input_tokens, rpm_limit, tpm_limit, claude_auth_mode, response_header_mode, response_headers, cost_ratio, quota_limit, schedule}` | §2.1，PUT 缺键不改、`null` 清除；列表 / 搜索接口每行也附带非零值（§15） |
+| Channel | 指定渠道在可用时段外 | §16，返回 403 `distributor.channel_disabled`；`origin_task` 固定路由豁免 |
 | Channel | 启用接口（`UpdateChannelStatus` / `BatchUpdateChannelStatus` / `EnableTagChannels`） | §15，已耗尽渠道：单个返回 `channel.quota_limit_reached`，批量 / 标签跳过并以 `channel.quota_limit_skipped` 作为 `message` |
 | Channel | `settings.count_tokens_enabled` | §6 |
 | User | `rate_limit` | §7，`nil` 不改、`{}` 清除 |
 | User | `model_discount` | §9，同上 |
 | Token | `auto_groups`（普通分组下） | §13，作为备用分组 |
 
-### 19.4 Redis key 一览
+### 20.4 Redis key 一览
 
 | key | 用途 |
 |---|---|
@@ -808,7 +855,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `user_extend_rl:<userId>` | 用户限流覆盖缓存 |
 | `user_extend_md:<userId>` | 用户模型折扣缓存 |
 
-### 19.5 消费日志 `other` 新增键
+### 20.5 消费日志 `other` 新增键
 
 | 键 | 含义 |
 |---|---|
@@ -816,7 +863,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `user_model_discount` | 用户模型折扣（≠ 1 时写入） |
 | `endpoint` | `count_tokens` / `input_tokens`，标记零额计数日志 |
 
-### 19.6 fork 提交列表（按时间）
+### 20.6 fork 提交列表（按时间）
 
 | 提交 | 日期 | 标题 |
 |---|---|---|

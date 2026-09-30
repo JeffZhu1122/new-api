@@ -51,7 +51,11 @@ import {
   useCallback,
   useRef,
 } from 'react'
-import { type SubmitErrorHandler, useForm } from 'react-hook-form'
+import {
+  type SubmitErrorHandler,
+  useFieldArray,
+  useForm,
+} from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -72,6 +76,7 @@ import { MultiSelect } from '@/components/multi-select'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
+import { Combobox } from '@/components/ui/combobox'
 import {
   Form,
   FormControl,
@@ -111,6 +116,7 @@ import type { PluginIconInput } from '@/features/task-plugins/lib/plugin-icon'
 import { fromRequestPluginConfigDraft } from '@/features/task-plugins/lib/request-plugins'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { useHiddenClickUnlock } from '@/hooks/use-hidden-click-unlock'
+import { toIntlLocale } from '@/i18n/languages'
 import {
   ADMIN_PERMISSION_ACTIONS,
   ADMIN_PERMISSION_RESOURCES,
@@ -129,6 +135,7 @@ import {
   createServerError,
   getServerErrorMessage,
 } from '@/lib/server-error-message'
+import { COMMON_TIMEZONES } from '@/lib/timezones'
 import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/stores/auth-store'
 
@@ -188,6 +195,8 @@ import {
   hasModelConfigChanged,
   findMissingModelsInMapping,
   validateModelMappingJson,
+  MAX_CHANNEL_SCHEDULE_WINDOWS,
+  createChannelScheduleWindow,
 } from '../../lib'
 import {
   getChannelConfigurationSection,
@@ -369,6 +378,9 @@ const SENSITIVE_FORM_FIELDS = [
   'response_headers',
   'cost_ratio',
   'quota_limit_amount',
+  'schedule_enabled',
+  'schedule_timezone',
+  'schedule_windows',
   'pass_through_body_enabled',
   'responses_websocket_enabled',
   'system_prompt',
@@ -665,6 +677,35 @@ export function ChannelMutateDrawer({
 
   // Watch values once for conditional fields and configuration indicators.
   const formValues = form.watch()
+  const scheduleWindows = useFieldArray({
+    control: form.control,
+    name: 'schedule_windows',
+  })
+  const scheduleWeekdayOptions = useMemo(() => {
+    const formatter = new Intl.DateTimeFormat(
+      toIntlLocale(i18n.resolvedLanguage || i18n.language),
+      { weekday: 'short', timeZone: 'UTC' }
+    )
+    // 2026-01-04 is a Sunday, matching the backend's 0 = Sunday numbering.
+    return [1, 2, 3, 4, 5, 6, 0].map((day) => ({
+      value: String(day),
+      label: formatter.format(new Date(Date.UTC(2026, 0, 4 + day))),
+    }))
+  }, [i18n.resolvedLanguage, i18n.language])
+  const scheduleTimezone = formValues.schedule_timezone
+  const scheduleTimezoneOptions = useMemo(() => {
+    const zones = COMMON_TIMEZONES.map((zone) => ({
+      value: zone.value,
+      label: zone.label,
+    }))
+    if (
+      scheduleTimezone &&
+      !zones.some((zone) => zone.value === scheduleTimezone)
+    ) {
+      zones.push({ value: scheduleTimezone, label: scheduleTimezone })
+    }
+    return zones
+  }, [scheduleTimezone])
   const multiKeyMode = formValues.multi_key_mode
   const multiKeyType = formValues.multi_key_type
   const keyMode = formValues.key_mode
@@ -2665,6 +2706,155 @@ export function ChannelMutateDrawer({
             </FormItem>
           )}
         />
+      )}
+      <FormField
+        control={form.control}
+        name='schedule_enabled'
+        render={({ field }) => (
+          <FormItem className='flex items-center justify-between gap-3'>
+            <div className='space-y-0.5'>
+              <FormLabel>{t('Availability Schedule')}</FormLabel>
+              <FormDescription>
+                {t(
+                  'Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.'
+                )}
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                disabled={sensitiveLocked}
+                checked={field.value ?? false}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+      {formValues.schedule_enabled && (
+        <>
+          <FormField
+            control={form.control}
+            name='schedule_timezone'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Schedule Timezone')}</FormLabel>
+                <FormControl>
+                  <Combobox
+                    aria-label={t('Schedule Timezone')}
+                    options={scheduleTimezoneOptions}
+                    value={field.value ?? ''}
+                    allowCustomValue
+                    disabled={sensitiveLocked}
+                    onValueChange={(timezone) =>
+                      timezone !== null && field.onChange(timezone)
+                    }
+                    className='w-full'
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'IANA timezone the windows are expressed in, independent of the server clock.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='schedule_windows'
+            render={() => (
+              <FormItem>
+                <FormLabel>{t('Availability Windows')}</FormLabel>
+                <div className='space-y-2'>
+                  {scheduleWindows.fields.map((window, index) => (
+                    <div
+                      key={window.id}
+                      className='flex flex-wrap items-center gap-2'
+                    >
+                      <FormField
+                        control={form.control}
+                        name={`schedule_windows.${index}.days`}
+                        render={({ field }) => (
+                          <MultiSelect
+                            options={scheduleWeekdayOptions}
+                            selected={(field.value ?? []).map(String)}
+                            onChange={(values) =>
+                              field.onChange(values.map(Number))
+                            }
+                            placeholder={t('Every day')}
+                            className='min-w-44 flex-1'
+                            disabled={sensitiveLocked}
+                          />
+                        )}
+                      />
+                      <FormField
+                        control={form.control}
+                        name={`schedule_windows.${index}.start`}
+                        render={({ field }) => (
+                          <Input
+                            type='time'
+                            aria-label={t('Start time')}
+                            className='w-28'
+                            disabled={sensitiveLocked}
+                            {...field}
+                            value={field.value ?? ''}
+                          />
+                        )}
+                      />
+                      <span className='text-muted-foreground text-sm'>–</span>
+                      <FormField
+                        control={form.control}
+                        name={`schedule_windows.${index}.end`}
+                        render={({ field }) => (
+                          <Input
+                            type='time'
+                            aria-label={t('End time')}
+                            className='w-28'
+                            disabled={sensitiveLocked}
+                            {...field}
+                            value={field.value ?? ''}
+                          />
+                        )}
+                      />
+                      <Button
+                        type='button'
+                        variant='ghost'
+                        size='icon'
+                        aria-label={t('Remove window')}
+                        disabled={sensitiveLocked}
+                        onClick={() => scheduleWindows.remove(index)}
+                      >
+                        <Trash2 className='h-4 w-4' />
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+                <Button
+                  type='button'
+                  variant='outline'
+                  size='sm'
+                  disabled={
+                    sensitiveLocked ||
+                    scheduleWindows.fields.length >=
+                      MAX_CHANNEL_SCHEDULE_WINDOWS
+                  }
+                  onClick={() =>
+                    scheduleWindows.append(createChannelScheduleWindow())
+                  }
+                >
+                  {t('Add window')}
+                </Button>
+                <FormDescription>
+                  {t(
+                    'Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+        </>
       )}
     </>
   )
