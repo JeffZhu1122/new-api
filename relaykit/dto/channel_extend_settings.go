@@ -1,10 +1,13 @@
 package dto
 
 import (
+	"errors"
 	"fmt"
 	"math"
 	"slices"
 	"strings"
+	"sync"
+	"time"
 )
 
 // MaxChannelTimeoutSeconds bounds per-channel timeout overrides (24h).
@@ -57,6 +60,155 @@ const MaxChannelCostRatio = 1000
 // MaxChannelQuotaLimit bounds the per-channel quota limit in quota units. It
 // is the JavaScript-safe integer boundary so the value survives the web UI.
 const MaxChannelQuotaLimit = 1<<53 - 1
+
+// MaxChannelScheduleWindows bounds the number of weekly windows in a
+// per-channel availability schedule.
+const MaxChannelScheduleWindows = 16
+
+// ChannelScheduleWindow is one weekly availability window. Start is
+// inclusive and End exclusive, both "HH:MM" in the schedule's timezone. An
+// End at or before Start crosses midnight and belongs to the day it starts on.
+type ChannelScheduleWindow struct {
+	// Days lists the weekdays the window starts on (0 = Sunday … 6 =
+	// Saturday). Empty means every day.
+	Days  []int  `json:"days,omitempty"`
+	Start string `json:"start"`
+	End   string `json:"end"`
+}
+
+// ChannelSchedule restricts when a channel takes part in channel selection.
+// Outside every window the channel is skipped as if it did not serve the
+// model; its status is left untouched and it rejoins once a window opens.
+type ChannelSchedule struct {
+	// Timezone is the IANA zone the windows are expressed in.
+	Timezone string                  `json:"timezone"`
+	Windows  []ChannelScheduleWindow `json:"windows"`
+}
+
+var scheduleLocations sync.Map // timezone name -> *time.Location
+
+// loadScheduleLocation resolves an IANA timezone once per process; selection
+// evaluates schedules per candidate channel, so re-parsing tzdata on every
+// call would be wasteful.
+func loadScheduleLocation(name string) (*time.Location, error) {
+	name = strings.TrimSpace(name)
+	if cached, ok := scheduleLocations.Load(name); ok {
+		return cached.(*time.Location), nil
+	}
+	loc, err := time.LoadLocation(name)
+	if err != nil {
+		return nil, err
+	}
+	scheduleLocations.Store(name, loc)
+	return loc, nil
+}
+
+// parseClockMinutes converts a strict "HH:MM" clock value to minutes since
+// midnight.
+func parseClockMinutes(value string) (int, bool) {
+	hourText, minuteText, ok := strings.Cut(strings.TrimSpace(value), ":")
+	if !ok || len(hourText) != 2 || len(minuteText) != 2 {
+		return 0, false
+	}
+	for _, r := range hourText + minuteText {
+		if r < '0' || r > '9' {
+			return 0, false
+		}
+	}
+	hour := int(hourText[0]-'0')*10 + int(hourText[1]-'0')
+	minute := int(minuteText[0]-'0')*10 + int(minuteText[1]-'0')
+	if hour > 23 || minute > 59 {
+		return 0, false
+	}
+	return hour*60 + minute, true
+}
+
+func (s *ChannelSchedule) Validate() error {
+	if s == nil {
+		return nil
+	}
+	if strings.TrimSpace(s.Timezone) == "" {
+		return errors.New("schedule timezone is required")
+	}
+	if _, err := loadScheduleLocation(s.Timezone); err != nil {
+		return fmt.Errorf("invalid schedule timezone %q", s.Timezone)
+	}
+	if len(s.Windows) == 0 {
+		return errors.New("schedule must list at least one window")
+	}
+	if len(s.Windows) > MaxChannelScheduleWindows {
+		return fmt.Errorf("too many schedule windows: %d, at most %d", len(s.Windows), MaxChannelScheduleWindows)
+	}
+	for i, window := range s.Windows {
+		start, ok := parseClockMinutes(window.Start)
+		if !ok {
+			return fmt.Errorf("invalid schedule window %d start %q: expected HH:MM", i+1, window.Start)
+		}
+		end, ok := parseClockMinutes(window.End)
+		if !ok {
+			return fmt.Errorf("invalid schedule window %d end %q: expected HH:MM", i+1, window.End)
+		}
+		if start == end {
+			return fmt.Errorf("schedule window %d start and end must differ", i+1)
+		}
+		seen := make(map[int]struct{}, len(window.Days))
+		for _, day := range window.Days {
+			if day < 0 || day > 6 {
+				return fmt.Errorf("invalid schedule window %d weekday %d: must be within [0, 6]", i+1, day)
+			}
+			if _, dup := seen[day]; dup {
+				return fmt.Errorf("duplicate schedule window %d weekday %d", i+1, day)
+			}
+			seen[day] = struct{}{}
+		}
+	}
+	return nil
+}
+
+func (w ChannelScheduleWindow) startsOn(weekday int) bool {
+	return len(w.Days) == 0 || slices.Contains(w.Days, weekday)
+}
+
+// Contains reports whether the instant falls inside any window, evaluated in
+// the schedule's timezone. A nil schedule or one without windows never
+// restricts. An unloadable timezone also fails open: Validate rejects unknown
+// zones on save, so this only happens when tzdata is missing at runtime, and
+// silently hiding a channel would be the worse failure.
+func (s *ChannelSchedule) Contains(at time.Time) bool {
+	if s == nil || len(s.Windows) == 0 {
+		return true
+	}
+	loc, err := loadScheduleLocation(s.Timezone)
+	if err != nil {
+		return true
+	}
+	local := at.In(loc)
+	minutes := local.Hour()*60 + local.Minute()
+	weekday := int(local.Weekday())
+	previousWeekday := (weekday + 6) % 7
+	for _, window := range s.Windows {
+		start, okStart := parseClockMinutes(window.Start)
+		end, okEnd := parseClockMinutes(window.End)
+		if !okStart || !okEnd {
+			continue
+		}
+		if start < end {
+			if window.startsOn(weekday) && minutes >= start && minutes < end {
+				return true
+			}
+			continue
+		}
+		// Crosses midnight: the part after Start belongs to the weekday it
+		// starts on, the part before End to the following day.
+		if window.startsOn(weekday) && minutes >= start {
+			return true
+		}
+		if window.startsOn(previousWeekday) && minutes < end {
+			return true
+		}
+	}
+	return false
+}
 
 // ResolveClaudeAuthMode returns the concrete scheme (api_key or oauth) for a
 // key under the configured mode. Auto mode decides per key, so a multi-key
@@ -123,6 +275,9 @@ type ChannelExtendSettings struct {
 	// used quota reaches this value, in quota units (QuotaPerUnit = $1).
 	// 0 = no limit.
 	QuotaLimit int64 `json:"quota_limit,omitempty"`
+	// Schedule limits channel selection to weekly availability windows.
+	// nil = always available.
+	Schedule *ChannelSchedule `json:"schedule,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -196,6 +351,9 @@ func (s *ChannelExtendSettings) Validate() error {
 	if s.QuotaLimit < 0 || s.QuotaLimit > MaxChannelQuotaLimit {
 		return fmt.Errorf("invalid quota_limit: %d, must be within [0, %d]", s.QuotaLimit, MaxChannelQuotaLimit)
 	}
+	if err := s.Schedule.Validate(); err != nil {
+		return fmt.Errorf("invalid schedule: %w", err)
+	}
 	return nil
 }
 
@@ -206,7 +364,14 @@ func (s *ChannelExtendSettings) IsZero() bool {
 		s.RpmLimit == 0 && s.TpmLimit == 0 &&
 		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey) &&
 		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0 &&
-		s.CostRatio == 0 && s.QuotaLimit == 0)
+		s.CostRatio == 0 && s.QuotaLimit == 0 && s.Schedule == nil)
+}
+
+// AvailableAt reports whether the channel may be selected at the given
+// instant under its availability schedule. Channels without a schedule are
+// always available.
+func (s *ChannelExtendSettings) AvailableAt(at time.Time) bool {
+	return s == nil || s.Schedule.Contains(at)
 }
 
 // QuotaLimitReached reports whether a channel's cumulative used quota has hit

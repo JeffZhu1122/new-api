@@ -272,3 +272,35 @@ func TestEnableChannelByTagKeepsExhaustedChannelsDisabled(t *testing.T) {
 	assert.False(t, abilities[0].Enabled, "exhausted channel abilities must stay disabled")
 	assert.True(t, abilities[1].Enabled)
 }
+
+func TestUpsertChannelExtendPersistsSchedule(t *testing.T) {
+	db := useChannelExtendDB(t)
+	// 新列上重复 AutoMigrate 必须幂等
+	require.NoError(t, db.AutoMigrate(&ChannelExtend{}))
+
+	schedule := &dto.ChannelSchedule{Timezone: "Asia/Shanghai", Windows: []dto.ChannelScheduleWindow{
+		{Days: []int{1, 2, 3, 4, 5}, Start: "09:00", End: "18:00"},
+		{Start: "22:00", End: "06:00"},
+	}}
+	require.NoError(t, UpsertChannelExtend(nil, 51, dto.ChannelExtendSettings{Schedule: schedule}))
+	settings, err := GetChannelExtend(51)
+	require.NoError(t, err)
+	assert.Equal(t, dto.ChannelExtendSettings{Schedule: schedule}, settings)
+	assert.False(t, settings.IsZero())
+
+	// 去掉时段但保留其他覆盖：列清空，行仍存在
+	require.NoError(t, UpsertChannelExtend(nil, 51, dto.ChannelExtendSettings{RelayTimeout: 5}))
+	var row ChannelExtend
+	require.NoError(t, DB.Where("channel_id = ?", 51).Take(&row).Error)
+	assert.Equal(t, "", row.Schedule)
+	settings, err = GetChannelExtend(51)
+	require.NoError(t, err)
+	assert.Nil(t, settings.Schedule)
+
+	// 只配置了时段的行在清空后整行删除
+	require.NoError(t, UpsertChannelExtend(nil, 52, dto.ChannelExtendSettings{Schedule: schedule}))
+	require.NoError(t, UpsertChannelExtend(nil, 52, dto.ChannelExtendSettings{}))
+	var count int64
+	require.NoError(t, DB.Model(&ChannelExtend{}).Where("channel_id = ?", 52).Count(&count).Error)
+	assert.Equal(t, int64(0), count)
+}

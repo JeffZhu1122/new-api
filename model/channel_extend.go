@@ -32,6 +32,8 @@ type ChannelExtend struct {
 	CostRatio float64 `json:"cost_ratio" gorm:"default:0"`
 	// Auto-disable once channels.used_quota reaches this many quota units, 0 = no limit
 	QuotaLimit int64 `json:"quota_limit" gorm:"default:0"`
+	// JSON dto.ChannelSchedule restricting when the channel is selectable, "" = always
+	Schedule string `json:"schedule" gorm:"type:text"`
 }
 
 func (ChannelExtend) TableName() string {
@@ -59,6 +61,14 @@ func (ce *ChannelExtend) ToSettings() dto.ChannelExtendSettings {
 			common.SysError(fmt.Sprintf("channel %d has invalid response_headers json: %s", ce.ChannelId, err.Error()))
 		}
 	}
+	if ce.Schedule != "" {
+		var schedule dto.ChannelSchedule
+		if err := common.Unmarshal([]byte(ce.Schedule), &schedule); err != nil {
+			common.SysError(fmt.Sprintf("channel %d has invalid schedule json: %s", ce.ChannelId, err.Error()))
+		} else {
+			settings.Schedule = &schedule
+		}
+	}
 	return settings
 }
 
@@ -82,6 +92,14 @@ func UpsertChannelExtend(tx *gorm.DB, channelId int, settings dto.ChannelExtendS
 		}
 		responseHeaders = string(encoded)
 	}
+	schedule := ""
+	if settings.Schedule != nil {
+		encoded, err := common.Marshal(settings.Schedule)
+		if err != nil {
+			return err
+		}
+		schedule = string(encoded)
+	}
 	extend := ChannelExtend{
 		ChannelId:          channelId,
 		RelayTimeout:       settings.RelayTimeout,
@@ -95,10 +113,11 @@ func UpsertChannelExtend(tx *gorm.DB, channelId int, settings dto.ChannelExtendS
 		ResponseHeaders:    responseHeaders,
 		CostRatio:          settings.CostRatio,
 		QuotaLimit:         settings.QuotaLimit,
+		Schedule:           schedule,
 	}
 	return tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "channel_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode", "response_header_mode", "response_headers", "cost_ratio", "quota_limit"}),
+		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode", "response_header_mode", "response_headers", "cost_ratio", "quota_limit", "schedule"}),
 	}).Create(&extend).Error
 }
 
