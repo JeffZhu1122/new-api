@@ -11,7 +11,17 @@ var filterEvalOrder = []dto.ChannelFilterKind{
 	dto.FilterRequestPath,
 	dto.FilterTaskPluginIdentity,
 	dto.FilterInputTokens,
+	dto.FilterChannelSchedule,
 	dto.FilterResponsesWebSocket,
+}
+
+// FiltersReadExtendConfig reports whether any filter evaluates channel_extend
+// settings, which the DB-direct selection path and pinned/affinity lookups
+// must backfill onto channels before ChannelSatisfiesFilters runs.
+func FiltersReadExtendConfig(filters []dto.ChannelFilter) bool {
+	return slices.ContainsFunc(filters, func(filter dto.ChannelFilter) bool {
+		return filter.Kind == dto.FilterInputTokens || filter.Kind == dto.FilterChannelSchedule
+	})
 }
 
 // ChannelSatisfiesFilters reports whether ch passes every filter.
@@ -163,6 +173,13 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 			return false
 		}
 		return true
+	case dto.FilterChannelSchedule:
+		// 与 FilterInputTokens 相同：只读预填的 ExtendConfig，持锁路径禁止查库。
+		// 无扩展配置或无时段规则的渠道全天可用。
+		if ch.ExtendConfig == nil {
+			return true
+		}
+		return ch.ExtendConfig.AvailableAt(filter.At)
 	default:
 		return true
 	}

@@ -128,6 +128,8 @@ func Distribute() func(c *gin.Context) {
 					logger.LogWarn(c, fmt.Sprintf("channel %d rejected by input_tokens filter: estimated_input_tokens=%d", selectErr.Channel.Id, inputTokensEstimate))
 				} else if selectErr.NoAvailableChannel && inputTokensEstimate >= 0 {
 					logger.LogWarn(c, fmt.Sprintf("no available channel with input_tokens filter active: model=%s, group=%s, estimated_input_tokens=%d", modelRequest.Model, usingGroup, inputTokensEstimate))
+				} else if selectErr.NoAvailableChannel && service.ChannelScheduleFilterActive(c) {
+					logger.LogWarn(c, fmt.Sprintf("no available channel with channel_schedule filter active: model=%s, group=%s", modelRequest.Model, usingGroup))
 				}
 				message := selectErr.Message
 				if selectErr.NoAvailableChannel {

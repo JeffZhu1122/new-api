@@ -7380,6 +7380,24 @@
     "Quota limit:": "Лимит квоты:",
     "Estimated cost:": "Расчётные затраты:",
     "Channel cost ratio must be between 0 and 1000": "Коэффициент стоимости канала должен быть от 0 до 1000",
-    "Channel quota limit must be 0 or a positive amount": "Лимит квоты канала должен быть 0 или положительной суммой"
+    "Channel quota limit must be 0 or a positive amount": "Лимит квоты канала должен быть 0 или положительной суммой",
+    "Availability Schedule": "Расписание доступности",
+    "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.": "Направлять запросы в этот канал только в указанные ниже окна. Вне их канал пропускается, а трафик переключается на другие каналы; статус канала не меняется.",
+    "Schedule Timezone": "Часовой пояс расписания",
+    "IANA timezone the windows are expressed in, independent of the server clock.": "Часовой пояс IANA, в котором заданы окна, независимо от часов сервера.",
+    "Availability Windows": "Окна доступности",
+    "Every day": "Ежедневно",
+    "Start time": "Время начала",
+    "End time": "Время окончания",
+    "Remove window": "Удалить окно",
+    "Add window": "Добавить окно",
+    "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.": "Начало включается, окончание не включается. Окончание не позже начала означает переход через полночь и относится к дню начала. Оставьте дни пустыми, чтобы применять ежедневно.",
+    "Off schedule": "Вне расписания",
+    "Available windows ({{timezone}}):": "Окна доступности ({{timezone}}):",
+    "Availability schedule needs a timezone": "Для расписания доступности нужен часовой пояс",
+    "Add at least one availability window or turn the schedule off": "Добавьте хотя бы одно окно доступности или отключите расписание",
+    "Availability schedule supports at most 16 windows": "Расписание доступности поддерживает не более 16 окон",
+    "Availability windows need a start and end time in HH:MM": "Каждому окну нужны время начала и окончания в формате ЧЧ:ММ",
+    "An availability window cannot start and end at the same time": "Окно доступности не может начинаться и заканчиваться в одно и то же время"
   }
 }

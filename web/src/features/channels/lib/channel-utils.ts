@@ -27,7 +27,12 @@ import {
   RESPONSE_TIME_THRESHOLDS,
   TYPE_TO_KEY_PROMPT,
 } from '../constants'
-import type { Channel, ChannelSettings, ChannelOtherSettings } from '../types'
+import type {
+  Channel,
+  ChannelScheduleWindow,
+  ChannelSettings,
+  ChannelOtherSettings,
+} from '../types'
 
 // ============================================================================
 // Channel Type Utilities
@@ -552,6 +557,91 @@ export function validateModels(models: string): boolean {
  */
 export function validateGroups(groups: string): boolean {
   return parseGroupsList(groups).length > 0
+}
+
+// ============================================================================
+// Availability Schedule
+// ============================================================================
+
+const WEEKDAY_ABBREVIATIONS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat']
+
+/**
+ * Weekday (0 = Sunday) and minutes since midnight of `now` in an IANA
+ * timezone. Returns null when the timezone cannot be resolved so callers fail
+ * open, matching the backend evaluation.
+ */
+export function zonedWeekdayAndMinutes(
+  now: Date,
+  timezone: string
+): { weekday: number; minutes: number } | null {
+  try {
+    const parts = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      weekday: 'short',
+      hour: '2-digit',
+      minute: '2-digit',
+      hourCycle: 'h23',
+    }).formatToParts(now)
+    const read = (type: string) =>
+      parts.find((part) => part.type === type)?.value ?? ''
+    const weekday = WEEKDAY_ABBREVIATIONS.indexOf(read('weekday'))
+    const hour = Number(read('hour'))
+    const minute = Number(read('minute'))
+    if (weekday < 0 || Number.isNaN(hour) || Number.isNaN(minute)) {
+      return null
+    }
+    return { weekday, minutes: hour * 60 + minute }
+  } catch {
+    return null
+  }
+}
+
+function clockMinutes(value: string): number | null {
+  const match = /^(\d{2}):(\d{2})$/.exec(value)
+  if (!match) return null
+  const hour = Number(match[1])
+  const minute = Number(match[2])
+  if (hour > 23 || minute > 59) return null
+  return hour * 60 + minute
+}
+
+type ScheduleLike = {
+  timezone?: string
+  windows?: ChannelScheduleWindow[]
+} | null
+
+/**
+ * Mirror of the backend ChannelSchedule.Contains rule: start inclusive, end
+ * exclusive, an end at or before the start crosses midnight and belongs to
+ * the day it starts on, empty days mean every day. No schedule, no windows or
+ * an unresolvable timezone count as available.
+ */
+export function isInsideChannelSchedule(
+  schedule: ScheduleLike | undefined,
+  now: Date
+): boolean {
+  if (!schedule || !schedule.windows?.length) return true
+  const zoned = zonedWeekdayAndMinutes(now, schedule.timezone || 'UTC')
+  if (!zoned) return true
+  const previousWeekday = (zoned.weekday + 6) % 7
+  const startsOn = (window: ChannelScheduleWindow, weekday: number) =>
+    !window.days?.length || window.days.includes(weekday)
+  return schedule.windows.some((window) => {
+    const start = clockMinutes(window.start)
+    const end = clockMinutes(window.end)
+    if (start === null || end === null) return false
+    if (start < end) {
+      return (
+        startsOn(window, zoned.weekday) &&
+        zoned.minutes >= start &&
+        zoned.minutes < end
+      )
+    }
+    return (
+      (startsOn(window, zoned.weekday) && zoned.minutes >= start) ||
+      (startsOn(window, previousWeekday) && zoned.minutes < end)
+    )
+  })
 }
 
 /**

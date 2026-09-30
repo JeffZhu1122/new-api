@@ -36,6 +36,7 @@ import {
 import type {
   Channel,
   ChannelExtendSettings,
+  ChannelScheduleWindow,
   ClaudeAuthMode,
   ResponseHeaderMode,
 } from '../types'
@@ -97,6 +98,18 @@ export const MAX_CHANNEL_RESPONSE_HEADER_NAME_LENGTH = 128
 export const MAX_CHANNEL_COST_RATIO = 1000
 // Quota units; matches the JavaScript-safe integer boundary used by the backend
 export const MAX_CHANNEL_QUOTA_LIMIT_UNITS = Number.MAX_SAFE_INTEGER
+export const MAX_CHANNEL_SCHEDULE_WINDOWS = 16
+export const DEFAULT_CHANNEL_SCHEDULE_TIMEZONE = 'Asia/Shanghai'
+// Strict HH:MM, the only clock format the backend accepts
+const CLOCK_TIME_PATTERN = /^([01]\d|2[0-3]):[0-5]\d$/
+
+// Form shape of one availability window: days is always present while editing
+export type ChannelScheduleWindowDraft = Required<ChannelScheduleWindow>
+
+/** A fresh availability window covering office hours every day. */
+export function createChannelScheduleWindow(): ChannelScheduleWindowDraft {
+  return { days: [], start: '09:00', end: '18:00' }
+}
 // RFC 7230 token characters, the only ones legal in a header field name
 const HEADER_NAME_PATTERN = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/
 
@@ -322,6 +335,18 @@ export const channelFormSchema = z
     // the limit is edited in the display currency and stored as quota units
     cost_ratio: z.number().optional(),
     quota_limit_amount: z.number().optional(),
+    // Weekly availability schedule (channel_extend, off = always selectable)
+    schedule_enabled: z.boolean().optional(),
+    schedule_timezone: z.string().optional(),
+    schedule_windows: z
+      .array(
+        z.object({
+          days: z.array(z.number().int()),
+          start: z.string(),
+          end: z.string(),
+        })
+      )
+      .optional(),
     pass_through_body_enabled: z.boolean().optional(),
     responses_websocket_enabled: z.boolean().optional(),
     system_prompt: z.string().optional(),
@@ -561,6 +586,47 @@ export const channelFormSchema = z
         ERROR_MESSAGES.INVALID_CHANNEL_QUOTA_LIMIT
       )
     }
+    if (data.schedule_enabled) {
+      if (!data.schedule_timezone?.trim()) {
+        addRequiredIssue(
+          ctx,
+          'schedule_timezone',
+          ERROR_MESSAGES.INVALID_CHANNEL_SCHEDULE_TIMEZONE
+        )
+      }
+      const windows = data.schedule_windows ?? []
+      if (windows.length === 0) {
+        addRequiredIssue(
+          ctx,
+          'schedule_windows',
+          ERROR_MESSAGES.INVALID_CHANNEL_SCHEDULE_EMPTY
+        )
+      } else if (windows.length > MAX_CHANNEL_SCHEDULE_WINDOWS) {
+        addRequiredIssue(
+          ctx,
+          'schedule_windows',
+          ERROR_MESSAGES.INVALID_CHANNEL_SCHEDULE_TOO_MANY
+        )
+      } else if (
+        windows.some(
+          (window) =>
+            !CLOCK_TIME_PATTERN.test(window.start) ||
+            !CLOCK_TIME_PATTERN.test(window.end)
+        )
+      ) {
+        addRequiredIssue(
+          ctx,
+          'schedule_windows',
+          ERROR_MESSAGES.INVALID_CHANNEL_SCHEDULE_TIME
+        )
+      } else if (windows.some((window) => window.start === window.end)) {
+        addRequiredIssue(
+          ctx,
+          'schedule_windows',
+          ERROR_MESSAGES.INVALID_CHANNEL_SCHEDULE_SAME_TIME
+        )
+      }
+    }
     if (parseResponseHeaderMode(data.response_header_mode) !== 'off') {
       const names = parseResponseHeaderNames(data.response_headers)
       const lowerCaseNames = new Set(names.map((name) => name.toLowerCase()))
@@ -650,6 +716,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   response_headers: '',
   cost_ratio: 0,
   quota_limit_amount: 0,
+  schedule_enabled: false,
+  schedule_timezone: DEFAULT_CHANNEL_SCHEDULE_TIMEZONE,
+  schedule_windows: [],
   pass_through_body_enabled: false,
   responses_websocket_enabled: false,
   system_prompt: '',
@@ -831,6 +900,17 @@ export function transformChannelToFormDefaults(
     cost_ratio: channel.extend_config?.cost_ratio || 0,
     quota_limit_amount: quotaUnitsToEditableAmount(
       channel.extend_config?.quota_limit || 0
+    ),
+    schedule_enabled: Boolean(channel.extend_config?.schedule),
+    schedule_timezone:
+      channel.extend_config?.schedule?.timezone ||
+      DEFAULT_CHANNEL_SCHEDULE_TIMEZONE,
+    schedule_windows: (channel.extend_config?.schedule?.windows ?? []).map(
+      (window) => ({
+        days: [...(window.days ?? [])],
+        start: window.start,
+        end: window.end,
+      })
     ),
     // Type-specific settings
     is_enterprise_account: isEnterpriseAccount,
@@ -1085,6 +1165,19 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
     cost_ratio: formData.cost_ratio || 0,
     // The form edits the limit in the display currency; persist quota units.
     quota_limit: parseQuotaFromDollars(formData.quota_limit_amount || 0),
+    // The schedule only exists while enabled; undefined clears it.
+    schedule: formData.schedule_enabled
+      ? {
+          timezone:
+            formData.schedule_timezone?.trim() ||
+            DEFAULT_CHANNEL_SCHEDULE_TIMEZONE,
+          windows: (formData.schedule_windows ?? []).map((window) => ({
+            days: [...window.days].sort((a, b) => a - b),
+            start: window.start,
+            end: window.end,
+          })),
+        }
+      : undefined,
   }
 }
 

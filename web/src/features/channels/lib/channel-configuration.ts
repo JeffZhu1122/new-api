@@ -96,6 +96,9 @@ const CONFIGURATION_BLOCKS = {
       'response_headers',
       'cost_ratio',
       'quota_limit_amount',
+      'schedule_enabled',
+      'schedule_timezone',
+      'schedule_windows',
     ],
   },
   upstreamModelDetection: {
@@ -196,7 +199,8 @@ export function getChannelConfigurationState(
       (values.tpm_limit ?? 0) > 0 ||
       (values.response_header_mode ?? 'off') !== 'off' ||
       (values.cost_ratio ?? 0) > 0 ||
-      (values.quota_limit_amount ?? 0) > 0
+      (values.quota_limit_amount ?? 0) > 0 ||
+      Boolean(values.schedule_enabled)
     ),
     upstreamModelDetection:
       MODEL_FETCHABLE_TYPES.has(values.type) &&

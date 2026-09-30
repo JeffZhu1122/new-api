@@ -7380,6 +7380,24 @@
     "Quota limit:": "额度上限：",
     "Estimated cost:": "折算成本：",
     "Channel cost ratio must be between 0 and 1000": "渠道成本倍率必须在 0 到 1000 之间",
-    "Channel quota limit must be 0 or a positive amount": "渠道额度上限必须为 0 或正数"
+    "Channel quota limit must be 0 or a positive amount": "渠道额度上限必须为 0 或正数",
+    "Availability Schedule": "可用时段",
+    "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.": "只在下方时段内把请求路由到本渠道。时段外该渠道会被跳过，流量自动转移到其他渠道，渠道状态不会改变。",
+    "Schedule Timezone": "时段时区",
+    "IANA timezone the windows are expressed in, independent of the server clock.": "时段所使用的 IANA 时区，与服务器时钟无关。",
+    "Availability Windows": "可用时间窗口",
+    "Every day": "每天",
+    "Start time": "开始时间",
+    "End time": "结束时间",
+    "Remove window": "删除时段",
+    "Add window": "添加时段",
+    "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.": "开始时间包含、结束时间不包含。结束时间早于或等于开始时间表示跨午夜，归属开始的那一天。星期留空表示每天生效。",
+    "Off schedule": "时段外",
+    "Available windows ({{timezone}}):": "可用时段（{{timezone}}）：",
+    "Availability schedule needs a timezone": "可用时段需要指定时区",
+    "Add at least one availability window or turn the schedule off": "至少添加一个可用时段，或关闭可用时段",
+    "Availability schedule supports at most 16 windows": "可用时段最多支持 16 个时间窗口",
+    "Availability windows need a start and end time in HH:MM": "每个时间窗口都需要 HH:MM 格式的开始和结束时间",
+    "An availability window cannot start and end at the same time": "时间窗口的开始和结束时间不能相同"
   }
 }

@@ -7380,6 +7380,24 @@
     "Quota limit:": "額度上限：",
     "Estimated cost:": "推定コスト：",
     "Channel cost ratio must be between 0 and 1000": "チャンネルコスト倍率は 0 から 1000 の範囲で指定してください",
-    "Channel quota limit must be 0 or a positive amount": "チャンネル額度上限は 0 または正の金額を指定してください"
+    "Channel quota limit must be 0 or a positive amount": "チャンネル額度上限は 0 または正の金額を指定してください",
+    "Availability Schedule": "利用可能時間帯",
+    "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.": "以下の時間帯内でのみこのチャンネルにリクエストをルーティングします。時間帯外ではチャンネルはスキップされ、トラフィックは他のチャンネルへフェイルオーバーします。ステータスは変更されません。",
+    "Schedule Timezone": "時間帯のタイムゾーン",
+    "IANA timezone the windows are expressed in, independent of the server clock.": "時間帯を表す IANA タイムゾーン。サーバーの時計とは無関係です。",
+    "Availability Windows": "利用可能な時間枠",
+    "Every day": "毎日",
+    "Start time": "開始時刻",
+    "End time": "終了時刻",
+    "Remove window": "時間枠を削除",
+    "Add window": "時間枠を追加",
+    "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.": "開始時刻は含み、終了時刻は含みません。終了が開始以前の場合は深夜をまたぎ、開始した曜日に属します。曜日を空にすると毎日適用されます。",
+    "Off schedule": "時間帯外",
+    "Available windows ({{timezone}}):": "利用可能な時間枠（{{timezone}}）：",
+    "Availability schedule needs a timezone": "利用可能時間帯にはタイムゾーンが必要です",
+    "Add at least one availability window or turn the schedule off": "少なくとも 1 つの時間枠を追加するか、利用可能時間帯をオフにしてください",
+    "Availability schedule supports at most 16 windows": "利用可能時間帯は最大 16 個の時間枠まで対応します",
+    "Availability windows need a start and end time in HH:MM": "各時間枠には HH:MM 形式の開始時刻と終了時刻が必要です",
+    "An availability window cannot start and end at the same time": "時間枠の開始時刻と終了時刻を同じにはできません"
   }
 }

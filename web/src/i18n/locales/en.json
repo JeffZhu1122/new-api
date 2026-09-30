@@ -7380,6 +7380,24 @@
     "Quota limit:": "Quota limit:",
     "Estimated cost:": "Estimated cost:",
     "Channel cost ratio must be between 0 and 1000": "Channel cost ratio must be between 0 and 1000",
-    "Channel quota limit must be 0 or a positive amount": "Channel quota limit must be 0 or a positive amount"
+    "Channel quota limit must be 0 or a positive amount": "Channel quota limit must be 0 or a positive amount",
+    "Availability Schedule": "Availability Schedule",
+    "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.": "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.",
+    "Schedule Timezone": "Schedule Timezone",
+    "IANA timezone the windows are expressed in, independent of the server clock.": "IANA timezone the windows are expressed in, independent of the server clock.",
+    "Availability Windows": "Availability Windows",
+    "Every day": "Every day",
+    "Start time": "Start time",
+    "End time": "End time",
+    "Remove window": "Remove window",
+    "Add window": "Add window",
+    "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.": "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.",
+    "Off schedule": "Off schedule",
+    "Available windows ({{timezone}}):": "Available windows ({{timezone}}):",
+    "Availability schedule needs a timezone": "Availability schedule needs a timezone",
+    "Add at least one availability window or turn the schedule off": "Add at least one availability window or turn the schedule off",
+    "Availability schedule supports at most 16 windows": "Availability schedule supports at most 16 windows",
+    "Availability windows need a start and end time in HH:MM": "Availability windows need a start and end time in HH:MM",
+    "An availability window cannot start and end at the same time": "An availability window cannot start and end at the same time"
   }
 }

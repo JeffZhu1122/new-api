@@ -7380,6 +7380,24 @@
     "Quota limit:": "Limite de quota :",
     "Estimated cost:": "Coût estimé :",
     "Channel cost ratio must be between 0 and 1000": "Le ratio de coût du canal doit être compris entre 0 et 1000",
-    "Channel quota limit must be 0 or a positive amount": "La limite de quota du canal doit être 0 ou un montant positif"
+    "Channel quota limit must be 0 or a positive amount": "La limite de quota du canal doit être 0 ou un montant positif",
+    "Availability Schedule": "Plage de disponibilité",
+    "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.": "Ne router les requêtes vers ce canal que dans les créneaux ci-dessous. En dehors, le canal est ignoré et le trafic bascule vers d'autres canaux ; son statut n'est pas modifié.",
+    "Schedule Timezone": "Fuseau horaire des créneaux",
+    "IANA timezone the windows are expressed in, independent of the server clock.": "Fuseau horaire IANA dans lequel les créneaux sont exprimés, indépendant de l'horloge du serveur.",
+    "Availability Windows": "Créneaux de disponibilité",
+    "Every day": "Tous les jours",
+    "Start time": "Heure de début",
+    "End time": "Heure de fin",
+    "Remove window": "Supprimer le créneau",
+    "Add window": "Ajouter un créneau",
+    "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.": "Le début est inclus et la fin exclue. Une fin égale ou antérieure au début passe minuit et appartient au jour de début. Laissez les jours vides pour appliquer tous les jours.",
+    "Off schedule": "Hors créneau",
+    "Available windows ({{timezone}}):": "Créneaux disponibles ({{timezone}}) :",
+    "Availability schedule needs a timezone": "La plage de disponibilité nécessite un fuseau horaire",
+    "Add at least one availability window or turn the schedule off": "Ajoutez au moins un créneau de disponibilité ou désactivez la plage",
+    "Availability schedule supports at most 16 windows": "La plage de disponibilité accepte au plus 16 créneaux",
+    "Availability windows need a start and end time in HH:MM": "Chaque créneau nécessite une heure de début et de fin au format HH:MM",
+    "An availability window cannot start and end at the same time": "Un créneau ne peut pas commencer et finir à la même heure"
   }
 }

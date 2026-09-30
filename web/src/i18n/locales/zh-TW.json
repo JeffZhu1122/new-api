@@ -7380,6 +7380,24 @@
     "Quota limit:": "額度上限：",
     "Estimated cost:": "折算成本：",
     "Channel cost ratio must be between 0 and 1000": "管道成本倍率必須在 0 到 1000 之間",
-    "Channel quota limit must be 0 or a positive amount": "管道額度上限必須為 0 或正數"
+    "Channel quota limit must be 0 or a positive amount": "管道額度上限必須為 0 或正數",
+    "Availability Schedule": "可用時段",
+    "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.": "只在下方時段內把請求路由到本管道。時段外該管道會被跳過，流量自動轉移到其他管道，管道狀態不會改變。",
+    "Schedule Timezone": "時段時區",
+    "IANA timezone the windows are expressed in, independent of the server clock.": "時段所使用的 IANA 時區，與伺服器時鐘無關。",
+    "Availability Windows": "可用時間窗口",
+    "Every day": "每天",
+    "Start time": "開始時間",
+    "End time": "結束時間",
+    "Remove window": "刪除時段",
+    "Add window": "新增時段",
+    "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.": "開始時間包含、結束時間不包含。結束時間早於或等於開始時間表示跨午夜，歸屬開始的那一天。星期留空表示每天生效。",
+    "Off schedule": "時段外",
+    "Available windows ({{timezone}}):": "可用時段（{{timezone}}）：",
+    "Availability schedule needs a timezone": "可用時段需要指定時區",
+    "Add at least one availability window or turn the schedule off": "至少新增一個可用時段，或關閉可用時段",
+    "Availability schedule supports at most 16 windows": "可用時段最多支援 16 個時間窗口",
+    "Availability windows need a start and end time in HH:MM": "每個時間窗口都需要 HH:MM 格式的開始和結束時間",
+    "An availability window cannot start and end at the same time": "時間窗口的開始和結束時間不能相同"
   }
 }

@@ -84,6 +84,20 @@ export const channelSchema = z.object({
       response_headers: z.array(z.string()).optional(),
       cost_ratio: z.number().optional(),
       quota_limit: z.number().optional(),
+      schedule: z
+        .object({
+          timezone: z.string().optional(),
+          windows: z
+            .array(
+              z.object({
+                days: z.array(z.number()).optional(),
+                start: z.string(),
+                end: z.string(),
+              })
+            )
+            .optional(),
+        })
+        .nullish(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -125,6 +139,22 @@ export interface ChannelExtendSettings {
   cost_ratio?: number
   // Auto-disable once used_quota reaches this many quota units; 0 = no limit
   quota_limit?: number
+  // Weekly availability windows; undefined = always selectable
+  schedule?: ChannelSchedule
+}
+
+// One weekly availability window: start inclusive, end exclusive (HH:MM in
+// the schedule timezone); an end at or before the start crosses midnight.
+export interface ChannelScheduleWindow {
+  // 0 = Sunday … 6 = Saturday; empty = every day
+  days?: number[]
+  start: string
+  end: string
+}
+
+export interface ChannelSchedule {
+  timezone: string
+  windows: ChannelScheduleWindow[]
 }
 
 export type ClaudeAuthMode = 'api_key' | 'oauth' | 'auto'

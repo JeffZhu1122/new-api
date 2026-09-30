@@ -7380,6 +7380,24 @@
     "Quota limit:": "Giới hạn hạn mức:",
     "Estimated cost:": "Chi phí ước tính:",
     "Channel cost ratio must be between 0 and 1000": "Hệ số chi phí của kênh phải nằm trong khoảng 0 đến 1000",
-    "Channel quota limit must be 0 or a positive amount": "Giới hạn hạn mức của kênh phải là 0 hoặc một số dương"
+    "Channel quota limit must be 0 or a positive amount": "Giới hạn hạn mức của kênh phải là 0 hoặc một số dương",
+    "Availability Schedule": "Lịch khả dụng",
+    "Only route requests to this channel inside the windows below. Outside them the channel is skipped and traffic fails over to other channels; its status is not changed.": "Chỉ định tuyến yêu cầu tới kênh này trong các khung giờ bên dưới. Ngoài khung giờ, kênh bị bỏ qua và lưu lượng chuyển sang kênh khác; trạng thái kênh không thay đổi.",
+    "Schedule Timezone": "Múi giờ của lịch",
+    "IANA timezone the windows are expressed in, independent of the server clock.": "Múi giờ IANA dùng cho các khung giờ, không phụ thuộc đồng hồ máy chủ.",
+    "Availability Windows": "Khung giờ khả dụng",
+    "Every day": "Mỗi ngày",
+    "Start time": "Giờ bắt đầu",
+    "End time": "Giờ kết thúc",
+    "Remove window": "Xóa khung giờ",
+    "Add window": "Thêm khung giờ",
+    "Start is inclusive and end is exclusive. An end at or before the start crosses midnight and belongs to the day it starts on. Leave the days empty to apply every day.": "Giờ bắt đầu được tính, giờ kết thúc không được tính. Giờ kết thúc bằng hoặc trước giờ bắt đầu nghĩa là qua nửa đêm và thuộc về ngày bắt đầu. Để trống ngày để áp dụng mỗi ngày.",
+    "Off schedule": "Ngoài khung giờ",
+    "Available windows ({{timezone}}):": "Khung giờ khả dụng ({{timezone}}):",
+    "Availability schedule needs a timezone": "Lịch khả dụng cần có múi giờ",
+    "Add at least one availability window or turn the schedule off": "Thêm ít nhất một khung giờ khả dụng hoặc tắt lịch",
+    "Availability schedule supports at most 16 windows": "Lịch khả dụng hỗ trợ tối đa 16 khung giờ",
+    "Availability windows need a start and end time in HH:MM": "Mỗi khung giờ cần giờ bắt đầu và kết thúc theo định dạng HH:MM",
+    "An availability window cannot start and end at the same time": "Khung giờ không thể bắt đầu và kết thúc cùng một thời điểm"
   }
 }

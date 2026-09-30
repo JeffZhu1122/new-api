@@ -24,7 +24,11 @@ import { GroupBadge } from '@/components/group-badge'
 import { StatusBadgeTypeContext } from '@/components/status-badge'
 
 import { CHANNEL_STATUS } from '../constants'
-import { isTagAggregateRow, parseGroupsList } from '../lib'
+import {
+  isInsideChannelSchedule,
+  isTagAggregateRow,
+  parseGroupsList,
+} from '../lib'
 import type { Channel } from '../types'
 import { ChannelRowActionsLayoutContext } from './channel-row-actions-context'
 import { useChannels } from './channels-provider'
@@ -76,9 +80,16 @@ function ChannelCardComponent({
 
   // In card view the enable/disable state is already conveyed by the inline
   // power toggle, so the plain "Enabled"/"Disabled" badge is redundant. Keep
-  // only the informative states (e.g. auto-disabled, unknown) and tag rows.
+  // only the informative states (e.g. auto-disabled, unknown), tag rows, and
+  // enabled channels currently outside their availability schedule, whose
+  // "Off schedule" badge lives in the status cell.
+  const offSchedule =
+    !isTagRow &&
+    row.original.status === CHANNEL_STATUS.ENABLED &&
+    !isInsideChannelSchedule(row.original.extend_config?.schedule, new Date())
   const showStatusBadge =
     isTagRow ||
+    offSchedule ||
     (row.original.status !== CHANNEL_STATUS.ENABLED &&
       row.original.status !== CHANNEL_STATUS.MANUAL_DISABLED)
 

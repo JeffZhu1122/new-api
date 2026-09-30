@@ -375,6 +375,15 @@ export const ERROR_MESSAGES = {
   INVALID_CHANNEL_COST_RATIO: 'Channel cost ratio must be between 0 and 1000',
   INVALID_CHANNEL_QUOTA_LIMIT:
     'Channel quota limit must be 0 or a positive amount',
+  INVALID_CHANNEL_SCHEDULE_TIMEZONE: 'Availability schedule needs a timezone',
+  INVALID_CHANNEL_SCHEDULE_EMPTY:
+    'Add at least one availability window or turn the schedule off',
+  INVALID_CHANNEL_SCHEDULE_TOO_MANY:
+    'Availability schedule supports at most 16 windows',
+  INVALID_CHANNEL_SCHEDULE_TIME:
+    'Availability windows need a start and end time in HH:MM',
+  INVALID_CHANNEL_SCHEDULE_SAME_TIME:
+    'An availability window cannot start and end at the same time',
   INVALID_CHANNEL_RESPONSE_HEADERS_EMPTY:
     'List at least one header name for the response header filter',
   INVALID_CHANNEL_RESPONSE_HEADERS_TOO_MANY:
