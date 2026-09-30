@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"math"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -56,6 +57,17 @@ func TestChannelExtendSettingsValidate(t *testing.T) {
 		{name: "infinite cost ratio rejected", settings: &ChannelExtendSettings{CostRatio: math.Inf(1)}, wantErr: "cost_ratio"},
 		{name: "negative quota limit rejected", settings: &ChannelExtendSettings{QuotaLimit: -1}, wantErr: "quota_limit"},
 		{name: "oversized quota limit rejected", settings: &ChannelExtendSettings{QuotaLimit: MaxChannelQuotaLimit + 1}, wantErr: "quota_limit"},
+		{name: "schedule with weekday window valid", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "Asia/Shanghai", Windows: []ChannelScheduleWindow{{Days: []int{1, 2, 3, 4, 5}, Start: "09:00", End: "18:00"}}}}},
+		{name: "schedule crossing midnight every day valid", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Start: "22:00", End: "06:00"}}}}},
+		{name: "schedule without timezone rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Windows: []ChannelScheduleWindow{{Start: "09:00", End: "18:00"}}}}, wantErr: "timezone is required"},
+		{name: "schedule with unknown timezone rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "Mars/Olympus", Windows: []ChannelScheduleWindow{{Start: "09:00", End: "18:00"}}}}, wantErr: "invalid schedule timezone"},
+		{name: "schedule without windows rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC"}}, wantErr: "at least one window"},
+		{name: "schedule with too many windows rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: make([]ChannelScheduleWindow, MaxChannelScheduleWindows+1)}}, wantErr: "too many schedule windows"},
+		{name: "schedule window with bad start rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Start: "9:00", End: "18:00"}}}}, wantErr: "start"},
+		{name: "schedule window with out of range end rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Start: "09:00", End: "24:00"}}}}, wantErr: "end"},
+		{name: "schedule window with equal start and end rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Start: "09:00", End: "09:00"}}}}, wantErr: "must differ"},
+		{name: "schedule window with weekday out of range rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Days: []int{7}, Start: "09:00", End: "18:00"}}}}, wantErr: "weekday 7"},
+		{name: "schedule window with duplicate weekday rejected", settings: &ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Days: []int{1, 1}, Start: "09:00", End: "18:00"}}}}, wantErr: "duplicate"},
 	}
 
 	for _, tt := range tests {
@@ -88,6 +100,55 @@ func TestChannelExtendSettingsIsZero(t *testing.T) {
 	// 成本倍率 / 额度上限单独配置时同样不得被当作全零删除
 	assert.False(t, (&ChannelExtendSettings{CostRatio: 0.5}).IsZero())
 	assert.False(t, (&ChannelExtendSettings{QuotaLimit: 1}).IsZero())
+	// 可用时段单独配置时同样不得被当作全零删除
+	assert.False(t, (&ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Start: "09:00", End: "18:00"}}}}).IsZero())
+}
+
+// 2026-09-30 是周三；用 UTC 时刻输入，验证按规则时区换算后再比较
+func TestChannelScheduleContains(t *testing.T) {
+	shanghai := func(day, hour, minute int) time.Time {
+		// 上海 = UTC+8，无夏令时
+		return time.Date(2026, time.September, day, hour-8, minute, 0, 0, time.UTC)
+	}
+	workdays := &ChannelSchedule{Timezone: "Asia/Shanghai", Windows: []ChannelScheduleWindow{{Days: []int{1, 2, 3, 4, 5}, Start: "09:00", End: "18:00"}}}
+	fridayNight := &ChannelSchedule{Timezone: "Asia/Shanghai", Windows: []ChannelScheduleWindow{{Days: []int{5}, Start: "22:00", End: "06:00"}}}
+	everyNight := &ChannelSchedule{Timezone: "Asia/Shanghai", Windows: []ChannelScheduleWindow{{Start: "22:00", End: "06:00"}}}
+	twoWindows := &ChannelSchedule{Timezone: "Asia/Shanghai", Windows: []ChannelScheduleWindow{{Days: []int{3}, Start: "09:00", End: "12:00"}, {Days: []int{3}, Start: "14:00", End: "18:00"}}}
+
+	tests := []struct {
+		name     string
+		schedule *ChannelSchedule
+		at       time.Time
+		want     bool
+	}{
+		{name: "nil schedule always available", schedule: nil, at: shanghai(30, 3, 0), want: true},
+		{name: "workday inside window", schedule: workdays, at: shanghai(30, 10, 0), want: true},
+		{name: "workday start boundary inclusive", schedule: workdays, at: shanghai(30, 9, 0), want: true},
+		{name: "workday one minute before start", schedule: workdays, at: shanghai(30, 8, 59), want: false},
+		{name: "workday end boundary exclusive", schedule: workdays, at: shanghai(30, 18, 0), want: false},
+		{name: "saturday outside workday window", schedule: workdays, at: shanghai(26, 10, 0), want: false},
+		{name: "friday night after start", schedule: fridayNight, at: shanghai(25, 23, 0), want: true},
+		{name: "saturday early morning belongs to friday window", schedule: fridayNight, at: shanghai(26, 5, 59), want: true},
+		{name: "saturday morning after window end", schedule: fridayNight, at: shanghai(26, 6, 0), want: false},
+		{name: "saturday night not a friday start", schedule: fridayNight, at: shanghai(26, 23, 0), want: false},
+		{name: "thursday early morning not a friday window", schedule: fridayNight, at: shanghai(24, 3, 0), want: false},
+		{name: "every night covers wednesday early morning", schedule: everyNight, at: shanghai(30, 1, 30), want: true},
+		{name: "every night excludes daytime", schedule: everyNight, at: shanghai(30, 12, 0), want: false},
+		{name: "second window of the day", schedule: twoWindows, at: shanghai(30, 15, 0), want: true},
+		{name: "gap between two windows", schedule: twoWindows, at: shanghai(30, 13, 0), want: false},
+		{name: "unloadable timezone fails open", schedule: &ChannelSchedule{Timezone: "Mars/Olympus", Windows: []ChannelScheduleWindow{{Start: "09:00", End: "10:00"}}}, at: shanghai(30, 3, 0), want: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert.Equal(t, tt.want, tt.schedule.Contains(tt.at))
+		})
+	}
+
+	// AvailableAt 是选路谓词的入口：无设置或无规则全天可用
+	var nilSettings *ChannelExtendSettings
+	assert.True(t, nilSettings.AvailableAt(shanghai(30, 3, 0)))
+	assert.True(t, (&ChannelExtendSettings{}).AvailableAt(shanghai(30, 3, 0)))
+	assert.False(t, (&ChannelExtendSettings{Schedule: workdays}).AvailableAt(shanghai(30, 3, 0)))
 }
 
 func TestChannelExtendSettingsQuotaLimitReached(t *testing.T) {

@@ -75,6 +75,7 @@ import {
   getChannelTypeIcon,
   getChannelTypeLabel,
   getResponseTimeConfig,
+  isInsideChannelSchedule,
   isMultiKeyChannel,
   parseModelsList,
   parseGroupsList,
@@ -1079,7 +1080,7 @@ export function useChannelsColumns(
             }
           }
 
-          return (
+          const statusBadge = (
             <StatusBadge
               label={label}
               variant={config.variant}
@@ -1087,6 +1088,63 @@ export function useChannelsColumns(
               copyable={false}
             />
           )
+          // Enabled but outside its availability schedule: selection skips
+          // it right now, so flag that next to the status.
+          const schedule = channel.extend_config?.schedule
+          if (
+            status === 1 &&
+            schedule &&
+            !isInsideChannelSchedule(schedule, new Date())
+          ) {
+            const weekdayFormatter = new Intl.DateTimeFormat(locale, {
+              weekday: 'short',
+              timeZone: 'UTC',
+            })
+            const windowLines = (schedule.windows ?? []).map((window) => {
+              // 2026-01-04 is a Sunday, matching the backend's 0 = Sunday.
+              const days = window.days?.length
+                ? window.days
+                    .map((day) =>
+                      weekdayFormatter.format(
+                        new Date(Date.UTC(2026, 0, 4 + day))
+                      )
+                    )
+                    .join(', ')
+                : t('Every day')
+              return `${days} ${window.start}–${window.end}`
+            })
+            return (
+              <div className='flex flex-wrap items-center gap-1'>
+                {statusBadge}
+                <TooltipProvider delay={100}>
+                  <Tooltip>
+                    <TooltipTrigger render={<span />}>
+                      <StatusBadge
+                        label={t('Off schedule')}
+                        variant='neutral'
+                        size='sm'
+                        copyable={false}
+                        showDot={false}
+                      />
+                    </TooltipTrigger>
+                    <TooltipContent side='top' className='max-w-xs'>
+                      <div className='space-y-1 text-xs'>
+                        <div>
+                          {t('Available windows ({{timezone}}):', {
+                            timezone: schedule.timezone,
+                          })}
+                        </div>
+                        {windowLines.map((line) => (
+                          <div key={line}>{line}</div>
+                        ))}
+                      </div>
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </div>
+            )
+          }
+          return statusBadge
         },
         filterFn: (row, id, value) => {
           if (!value || value.length === 0 || value.includes('all')) {
