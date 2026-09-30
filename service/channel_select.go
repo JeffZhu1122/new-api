@@ -4,6 +4,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"slices"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -321,6 +323,16 @@ type ChannelSelectError struct {
 // callers. The caller still applies SetupContextForSelectedChannel.
 func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam) (*model.Channel, string, *ChannelSelectError) {
 	constraints := GetChannelConstraints(c)
+	// 渠道可用时段：仅当有渠道配置了时段才挂过滤器；整个请求（含重试）复用
+	// 首次进入的时刻，跨越窗口边界的重试判定保持一致。HTTP 与 Responses
+	// WebSocket 都经由本函数，因此两条路径同时生效。
+	if !ChannelScheduleFilterActive(c) && model.HasAnyChannelSchedule() {
+		at := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime)
+		if at.IsZero() {
+			at = time.Now()
+		}
+		constraints.AddFilter(dto.ChannelFilter{Kind: dto.FilterChannelSchedule, At: at})
+	}
 	if pin, found, overridden := constraints.ResolvedPin(); found {
 		for _, lost := range overridden {
 			logger.LogWarn(c, common.LogText(
@@ -339,8 +351,20 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 			return nil, "", &ChannelSelectError{StatusCode: http.StatusForbidden, Message: "token counting is only available on channels with count_tokens enabled (Anthropic for /v1/messages/count_tokens, OpenAI for /v1/responses/input_tokens)"}
 		}
 		inputTokensEstimate := InputTokensEstimate(c)
-		fillExtendConfigForInputFilter(channel, inputTokensEstimate)
-		if ok, kind := model.ChannelSatisfiesFilters(channel, modelName, constraints.Filters); !ok {
+		fillExtendConfigForFilters(channel, constraints.Filters)
+		pinFilters := constraints.Filters
+		if pin.Source == dto.PinSourceOriginTask {
+			// 任务轮询必须回到创建任务的渠道，可用时段只约束新请求
+			pinFilters = slices.DeleteFunc(slices.Clone(pinFilters), func(filter dto.ChannelFilter) bool {
+				return filter.Kind == dto.FilterChannelSchedule
+			})
+		}
+		if ok, kind := model.ChannelSatisfiesFilters(channel, modelName, pinFilters); !ok {
+			if kind == dto.FilterChannelSchedule {
+				// 时段外的指定渠道视同渠道不可用，规则本身只进日志
+				logger.LogWarn(c, fmt.Sprintf("pinned channel %d is outside its availability schedule", channel.Id))
+				return nil, "", pinnedChannelUnavailable(pin, http.StatusForbidden, i18n.MsgDistributorChannelDisabled)
+			}
 			// 输入范围规则属于运营方私有配置，对外只回通用错误码，归因进日志
 			errCode := types.ErrorCode(kind)
 			if kind == dto.FilterInputTokens {
@@ -372,7 +396,7 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 			preferred, err := model.CacheGetChannel(preferredChannelID)
 			affinitySatisfied := false
 			if err == nil && preferred != nil && preferred.Status == common.ChannelStatusEnabled {
-				fillExtendConfigForInputFilter(preferred, InputTokensEstimate(c))
+				fillExtendConfigForFilters(preferred, constraints.Filters)
 				affinitySatisfied, _ = model.ChannelSatisfiesFilters(preferred, modelName, constraints.Filters)
 			}
 			if affinitySatisfied {
@@ -463,13 +487,22 @@ func InputTokensEstimate(c *gin.Context) int {
 	return -1
 }
 
-// fillExtendConfigForInputFilter backfills extend settings on channels loaded
+// ChannelScheduleFilterActive reports whether this request evaluates channel
+// availability schedules, i.e. at least one channel configures one.
+func ChannelScheduleFilterActive(c *gin.Context) bool {
+	return slices.ContainsFunc(GetChannelConstraints(c).Filters, func(filter dto.ChannelFilter) bool {
+		return filter.Kind == dto.FilterChannelSchedule
+	})
+}
+
+// fillExtendConfigForFilters backfills extend settings on channels loaded
 // straight from the DB (memory cache disabled), where ExtendConfig is nil, so
-// the input_tokens filter can evaluate pinned/affinity channels. Cached
-// channels are never mutated here: InitChannelCache populates them before
-// publishing, and writing to a shared cached object would race.
-func fillExtendConfigForInputFilter(channel *model.Channel, inputTokensEstimate int) {
-	if inputTokensEstimate < 0 || channel == nil || channel.ExtendConfig != nil || common.MemoryCacheEnabled {
+// the filters that read channel_extend (input_tokens, channel_schedule) can
+// evaluate pinned/affinity channels. Cached channels are never mutated here:
+// InitChannelCache populates them before publishing, and writing to a shared
+// cached object would race.
+func fillExtendConfigForFilters(channel *model.Channel, filters []dto.ChannelFilter) {
+	if channel == nil || channel.ExtendConfig != nil || common.MemoryCacheEnabled || !model.FiltersReadExtendConfig(filters) {
 		return
 	}
 	settings := model.GetChannelExtendSettings(channel.Id)

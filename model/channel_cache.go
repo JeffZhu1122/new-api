@@ -25,6 +25,7 @@ var channel2advancedCustomConfig map[int]*kitdto.AdvancedCustomConfig
 var channelExtendIDM map[int]kitdto.ChannelExtendSettings
 var anyInputTokensLimit bool // true when at least one channel configures min_input_tokens or max_input_tokens
 var anyChannelRateLimit bool // true when at least one channel configures rpm_limit or tpm_limit
+var anyChannelSchedule bool  // true when at least one channel configures an availability schedule
 var channelSyncLock sync.RWMutex
 
 func InitChannelCache() {
@@ -36,6 +37,9 @@ func InitChannelCache() {
 	channelRateLimitDBCheck.Lock()
 	channelRateLimitDBCheck.expiresAt = time.Time{}
 	channelRateLimitDBCheck.Unlock()
+	channelScheduleDBCheck.Lock()
+	channelScheduleDBCheck.expiresAt = time.Time{}
+	channelScheduleDBCheck.Unlock()
 	if !common.MemoryCacheEnabled {
 		InvalidatePricingCache()
 		rebuildTaskAliasView()
@@ -58,6 +62,7 @@ func InitChannelCache() {
 	newChannelExtendIDM := make(map[int]kitdto.ChannelExtendSettings, len(extends))
 	newAnyInputTokensLimit := false
 	newAnyChannelRateLimit := false
+	newAnyChannelSchedule := false
 	for _, extend := range extends {
 		settings := extend.ToSettings()
 		newChannelExtendIDM[extend.ChannelId] = settings
@@ -66,6 +71,9 @@ func InitChannelCache() {
 		}
 		if settings.RpmLimit > 0 || settings.TpmLimit > 0 {
 			newAnyChannelRateLimit = true
+		}
+		if settings.Schedule != nil {
+			newAnyChannelSchedule = true
 		}
 		// 预填 ExtendConfig，使 min/max_input_tokens 过滤在持锁的选择路径中
 		// 无需再查扩展配置（见 channelMatchesFilter 的死锁说明）
@@ -130,6 +138,7 @@ func InitChannelCache() {
 	channelExtendIDM = newChannelExtendIDM
 	anyInputTokensLimit = newAnyInputTokensLimit
 	anyChannelRateLimit = newAnyChannelRateLimit
+	anyChannelSchedule = newAnyChannelSchedule
 	channelSyncLock.Unlock()
 	// Lock ordering: InvalidatePricingCache acquires updatePricingLock, and
 	// GetPricing (holding updatePricingLock) nests channelSyncLock.RLock via
@@ -238,6 +247,42 @@ func HasAnyChannelRateLimit() bool {
 	channelRateLimitDBCheck.value = count > 0
 	channelRateLimitDBCheck.expiresAt = time.Now().Add(time.Minute)
 	return channelRateLimitDBCheck.value
+}
+
+var channelScheduleDBCheck struct {
+	sync.Mutex
+	expiresAt time.Time
+	value     bool
+}
+
+// HasAnyChannelSchedule reports whether any channel configures an
+// availability schedule, so channel selection can skip the schedule filter
+// entirely when the feature is unused. Memory-cache mode reads a flag
+// maintained by InitChannelCache; DB mode uses a short-TTL cached count
+// (failing open to true on query errors).
+func HasAnyChannelSchedule() bool {
+	if common.MemoryCacheEnabled {
+		channelSyncLock.RLock()
+		defer channelSyncLock.RUnlock()
+		return anyChannelSchedule
+	}
+	if DB == nil {
+		return false
+	}
+	channelScheduleDBCheck.Lock()
+	defer channelScheduleDBCheck.Unlock()
+	if time.Now().Before(channelScheduleDBCheck.expiresAt) {
+		return channelScheduleDBCheck.value
+	}
+	var count int64
+	err := DB.Model(&ChannelExtend{}).Where("schedule <> ''").Count(&count).Error
+	if err != nil {
+		common.SysError(fmt.Sprintf("failed to count channel schedule channels: %v", err))
+		return true
+	}
+	channelScheduleDBCheck.value = count > 0
+	channelScheduleDBCheck.expiresAt = time.Now().Add(time.Minute)
+	return channelScheduleDBCheck.value
 }
 
 func GetRandomSatisfiedChannel(

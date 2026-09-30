@@ -1,5 +1,7 @@
 package dto
 
+import "time"
+
 type ChannelPinSource string
 
 const (
@@ -40,6 +42,7 @@ const (
 	FilterTaskPluginIdentity ChannelFilterKind = "task_plugin_identity"
 	FilterInputTokens        ChannelFilterKind = "input_tokens"
 	FilterResponsesWebSocket ChannelFilterKind = "responses_websocket"
+	FilterChannelSchedule    ChannelFilterKind = "channel_schedule"
 )
 
 type ChannelFilter struct {
@@ -51,6 +54,10 @@ type ChannelFilter struct {
 	// InputTokens carries the request's estimated input token count for
 	// FilterInputTokens; the filter is only attached when an estimate exists.
 	InputTokens int
+	// At is the instant FilterChannelSchedule evaluates channel availability
+	// schedules against. Retries reuse the first attempt's instant so a
+	// request straddling a window boundary is judged consistently.
+	At time.Time
 }
 
 type ChannelConstraints struct {
