@@ -27,10 +27,12 @@ import { afterEach, expect, it, vi } from 'vitest'
 import {
   LiveRpmCell,
   LiveRpmContext,
+  LiveTpmCell,
   useLiveRpmTotals,
   type LiveRpmBreakdown,
   type LiveRpmBreakdownSource,
   type LiveRpmTotals,
+  type LiveTokenStats,
 } from '../live-rpm'
 
 const i18n = createInstance()
@@ -107,11 +109,27 @@ it('shows a dash when statistics are disabled or the row has no reading yet', ()
   expect(screen.getByText('-')).toBeInTheDocument()
 })
 
-it('opening the value loads the breakdown with name, id and RPM', async () => {
+function tokens(partial: Partial<LiveTokenStats>): LiveTokenStats {
+  return {
+    requests: 0,
+    input: 0,
+    cache_read: 0,
+    cache_write: 0,
+    output: 0,
+    ...partial,
+  }
+}
+
+it('opening the value loads the breakdown with name, id, RPM and TPM', async () => {
   const breakdown = breakdownSource({
     total: 5,
     items: [
-      { id: 7, name: 'alice', rpm: 3 },
+      {
+        id: 7,
+        name: 'alice',
+        rpm: 3,
+        tokens: tokens({ input: 1000, cache_read: 500 }),
+      },
       { id: 8, name: '', rpm: 2 },
     ],
   })
@@ -123,9 +141,38 @@ it('opening the value loads the breakdown with name, id and RPM', async () => {
   await userEvent.click(screen.getByRole('button', { name: 'RPM 5' }))
 
   expect(await screen.findByText('alice #7')).toBeInTheDocument()
+  expect(screen.getByText('RPM 3 · TPM 1.5K')).toBeInTheDocument()
   expect(screen.getByText('Unknown #8')).toBeInTheDocument()
-  expect(screen.getByText('3')).toBeInTheDocument()
+  expect(screen.getByText('RPM 2')).toBeInTheDocument()
   expect(breakdown.fetch).toHaveBeenCalledTimes(1)
+})
+
+it('sums the TPM of a tag row and opens its token split', async () => {
+  renderWithProviders(<LiveTpmCell ids={[1, 2]} />, {
+    ...totals({ 1: 1, 2: 1 }),
+    tokens: {
+      1: tokens({ requests: 1, input: 1000, cache_read: 200, output: 300 }),
+      2: tokens({ requests: 1, input: 500, cache_write: 100 }),
+    },
+  })
+
+  await userEvent.click(screen.getByRole('button', { name: 'TPM 2,100' }))
+
+  expect(await screen.findByText('Input (excluding cache)')).toBeInTheDocument()
+  expect(screen.getByText('1,500')).toBeInTheDocument()
+  expect(screen.getByText('200')).toBeInTheDocument()
+  expect(screen.getByText('100')).toBeInTheDocument()
+  expect(screen.getByText('300')).toBeInTheDocument()
+})
+
+it('shows a dash for TPM until every row has token data', () => {
+  renderWithProviders(<LiveTpmCell ids={[1, 2]} />, {
+    ...totals({ 1: 1, 2: 1 }),
+    tokens: { 1: tokens({ input: 10 }) },
+  })
+
+  expect(screen.getByText('-')).toBeInTheDocument()
+  expect(screen.queryByRole('button')).not.toBeInTheDocument()
 })
 
 it('keeps the table offset off the clickable badge so the trigger cannot clip digits', () => {
