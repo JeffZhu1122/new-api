@@ -23,6 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { ActivityTimeCell } from '@/components/activity-time-cell'
 import { BadgeCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
+import { LiveRpmCell } from '@/components/live-rpm'
 import { LongText } from '@/components/long-text'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
@@ -36,6 +37,7 @@ import { getCurrencyDisplay } from '@/lib/currency'
 import { formatQuota } from '@/lib/format'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
+import { getUserRpmChannels } from '../api'
 import {
   USER_STATUS,
   USER_STATUSES,
@@ -193,6 +195,30 @@ export function useUsersColumns(): ColumnDef<User>[] {
         size: 180,
         minSize: 160,
         meta: { mobileOrder: 40 },
+      },
+      {
+        // Live RPM: requests in the last settled minute; opens the per-channel split
+        id: 'rpm',
+        header: t('RPM'),
+        cell: ({ row }) => {
+          const userId = row.original.id
+          return (
+            <LiveRpmCell
+              ids={[userId]}
+              breakdown={{
+                title: t('RPM by channel'),
+                description: t(
+                  'Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.'
+                ),
+                queryKey: ['live-rpm', 'user-channels', userId],
+                fetch: () => getUserRpmChannels(userId),
+              }}
+            />
+          )
+        },
+        size: 90,
+        enableSorting: false,
+        meta: { mobileOrder: 45 },
       },
       {
         accessorKey: 'group',

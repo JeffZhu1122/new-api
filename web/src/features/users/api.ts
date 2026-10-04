@@ -18,6 +18,11 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import type { AxiosRequestConfig } from 'axios'
 
+import type {
+  LiveRpmBreakdown,
+  LiveRpmResponse,
+  LiveRpmTotals,
+} from '@/components/live-rpm'
 import type { PermissionCatalog } from '@/lib/admin-permissions'
 import { api } from '@/lib/api'
 import type { CustomOAuthBinding } from '@/lib/oauth'
@@ -198,6 +203,34 @@ export async function resetUserTwoFA(
     `/api/user/${id}/2fa`,
     securityProofConfig(proofToken)
   )
+  return res.data
+}
+
+/**
+ * Live RPM (requests in the last settled minute) of the given users
+ */
+export async function getUserRpm(
+  ids: number[]
+): Promise<LiveRpmResponse<LiveRpmTotals>> {
+  const res = await api.get('/api/user/rpm', {
+    params: { ids: ids.join(',') },
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
+  return res.data
+}
+
+/**
+ * One user's live RPM split by channel, busiest first
+ */
+export async function getUserRpmChannels(
+  userId: number
+): Promise<LiveRpmResponse<LiveRpmBreakdown>> {
+  const res = await api.get(`/api/user/${userId}/rpm/channels`, {
+    disableDuplicate: true,
+    skipBusinessError: true,
+    skipErrorHandler: true,
+  })
   return res.data
 }
 

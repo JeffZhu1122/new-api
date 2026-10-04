@@ -32,10 +32,11 @@
 14. [渠道响应头过滤（黑名单 / 白名单）](#14-渠道响应头过滤黑名单--白名单)
 15. [渠道额度上限与成本倍率（达上限自动禁用）](#15-渠道额度上限与成本倍率达上限自动禁用)
 16. [渠道可用时段（时段外不参与选路）](#16-渠道可用时段时段外不参与选路)
-17. [仓库维护类变更](#17-仓库维护类变更)
-18. [与上游同步的注意事项](#18-与上游同步的注意事项)
-19. [已知限制与测试缺口汇总](#19-已知限制与测试缺口汇总)
-20. [附录](#20-附录)
+17. [渠道 / 用户实时 RPM 统计](#17-渠道--用户实时-rpm-统计)
+18. [仓库维护类变更](#18-仓库维护类变更)
+19. [与上游同步的注意事项](#19-与上游同步的注意事项)
+20. [已知限制与测试缺口汇总](#20-已知限制与测试缺口汇总)
+21. [附录](#21-附录)
 
 ---
 
@@ -57,9 +58,10 @@
 | 14 | 渠道响应头过滤（黑 / 白名单） | `b0a715551` | 关闭 = 复制全部 | `channel_extend` | 上游响应头回传 |
 | 15 | 渠道额度上限 + 成本倍率（达上限自动禁用） | 与本文档同一提交 | 0 = 不限 | `channel_extend` | 结算后置状态、渠道启用路径、渠道列表 |
 | 16 | 渠道可用时段（时段外不参与选路） | 与本文档同一提交 | 空 = 全天可用 | `channel_extend` | 渠道选择（HTTP + Responses WebSocket）、渠道列表 |
-| 17 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
+| 17 | 渠道 / 用户实时 RPM 统计 | 与本文档同一提交 | 开启（`RPM_STATS_ENABLED`），只计数 | Redis（无 Redis 时进程内存） | 每次分发计数、渠道 / 用户列表 |
+| 18 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 
-所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作）。
+所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时 RPM 统计默认开启，但只计数，不改变请求的处理结果）。
 
 ---
 
@@ -720,13 +722,70 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 
 ---
 
-## 17. 仓库维护类变更
+## 17. 渠道 / 用户实时 RPM 统计
 
-### 17.1 移除 GitHub workflows（`a034e98b3`）
+### 动机
+
+上游只有使用日志页按渠道筛选后显示的 RPM（最近 60 秒的消费日志条数）：一次只能看一个渠道，只算扣费成功的请求，依赖消费日志，每次查看都查一次 logs 表。本功能在渠道列表和用户列表直接显示实时 RPM，并可点开查看渠道下的用户分布、用户在各渠道的分布。
+
+### 口径
+
+- 渠道 RPM：最近一个完整分钟内分发到该渠道的次数。重试时每个被尝试的渠道各计一次，失败也计，反映上游实际收到的请求量。
+- 用户 RPM：最近一个完整分钟内该用户被转发的请求数。每个请求只在首次分发时计一次，重试不重复计。
+- 明细（渠道 → 用户、用户 → 渠道）：按分发次数计，与渠道 RPM 同口径，因此用户在各渠道的明细之和可能大于其用户 RPM，多出的是重试。
+- 计数点：`RequestPolicyState.BeginAttempt`（`service/request_policy.go`）。普通转发、Responses WebSocket 每一轮、异步任务提交、Midjourney 都经过它。用户 ID 在请求策略状态创建时记录，此时已完成鉴权。
+- 不计入：渠道测试、自动健康检查、任务轮询，以及未选到渠道就被拒绝的请求。与使用日志页的 RPM 口径不同，两边数字不会一致。
+
+### 实现（`service/rpm_stats.go`）
+
+- 分发时只在进程内存累加（一次加锁加几次 map 自增），转发路径不访问 Redis。
+- 有 Redis 时，后台每 2 秒用一个 pipeline 把增量 `HINCRBY` 进 Redis，并给每个键设 120 秒过期，写完清空本地。Redis 写入次数只与实例数有关，与请求量无关；多个实例写同一组键，数字自然相加。写入失败直接丢弃该批（每分钟最多一条错误日志），不重试也不回灌。
+- 10 秒一个桶。读取时把结束时间早于"当前时间减 4 秒"的最近 6 个桶相加，正好一分钟。数字比当前时刻晚 4 到 14 秒，但不会读到写了一半的桶。
+- Redis 键（`bucket` = unix 秒 / 10）：`rpmstat:ch:<bucket>`（字段为渠道 ID）、`rpmstat:u:<bucket>`（字段为用户 ID）、`rpmstat:cu:<channelId>:<bucket>`（字段为用户 ID）、`rpmstat:uc:<userId>:<bucket>`（字段为渠道 ID）。
+- 无 Redis：桶留在进程内存中直接读取，只统计本实例，接口返回 `source: memory`。超出窗口的旧桶在创建新桶时清理。
+- 开关：环境变量 `RPM_STATS_ENABLED`，默认 `true`。关闭后不计数，接口返回 `source: disabled`。
+
+### 管理 API（`controller/rpm_stats.go`）
+
+| 端点 | 权限 | 返回 |
+|---|---|---|
+| `GET /api/channel/rpm?ids=1,2,3` | 管理员 + 渠道读权限 | 各渠道 RPM，一次最多 200 个 ID |
+| `GET /api/channel/:id/rpm/users?limit=20` | 管理员 + 渠道读权限 | 该渠道下 RPM 最高的用户（含用户名），`limit` 最大 100 |
+| `GET /api/user/rpm?ids=1,2,3` | 管理员 | 各用户 RPM，一次最多 200 个 ID |
+| `GET /api/user/:id/rpm/channels?limit=20` | 管理员 | 该用户在各渠道的 RPM（含渠道名），`limit` 最大 100 |
+
+所有接口都返回 `source`、`window_start`、`window_end`（unix 秒）；明细接口另返回 `total`，即全部条目之和，不受 `limit` 截断。用户名取自 `GetUserCache`，渠道名取自既有的 `GetChannelsByIds`，没有新增数据库查询写法。
+
+### 前端
+
+- 共享组件 `web/src/components/live-rpm.tsx`：`useLiveRpmTotals` 按当前页的 ID 每 10 秒轮询，页面不可见时暂停，失败时不弹提示并显示"-"而不是旧数字；`LiveRpmContext` 向单元格提供数据；`LiveRpmCell` 显示数值徽标，点击后用 `QuotaDetailsPopover` 懒加载明细，弹层打开期间每 10 秒刷新。`QuotaDetailsPopover` 兼容扩展了可选的 `onOpenChange`，原有调用不受影响。
+- 渠道列表：新增 RPM 列，卡片视图同步显示；点开为"各用户 RPM"。标签聚合行显示其下渠道之和，不可点开。隐藏敏感信息时，明细只隐藏用户名，保留用户 ID。
+- 用户列表：新增 RPM 列，点开为"各渠道 RPM"。
+- 7 种语言新增 7 条文案。
+
+### 兼容性
+
+不改表结构，不涉及计费。默认开启，但只计数，不改变任何请求的处理结果；`RPM_STATS_ENABLED=false` 可完全关闭。
+
+### 测试
+
+`service/rpm_stats_test.go`：经 `BeginAttempt` 的重试计数口径；miniredis 下两个实例写同一个 Redis 后数字相加，窗口只含已结算的完整一分钟，所有键都带过期；关闭时返回 `disabled`。前端 `components/__tests__/live-rpm.test.tsx`：标签行求和、无数据显示"-"、点开加载明细、隐藏用户名保留 ID、空明细与"仅本实例"提示、刷新失败后不显示旧数字、表格偏移不落在可点击徽标上（否则会截掉末位数字）。
+
+本地端到端：独立 miniredis，两个网关实例共用它；一个高优先级、恒返回 500 的故障渠道加一个正常渠道。root 经实例 A 发 10 次请求，user2 经实例 B 发 5 次：渠道 RPM 为 15 / 15，与两个模拟上游的命中数一致；用户 RPM 为 10 / 5；正常渠道下的用户分布为 root 10、user2 5；从任一实例读取结果相同；约 90 秒后归零。第三个实例不连 Redis 时返回 `source: memory`，只含本实例的 3 次请求。Chrome 检查了渠道表格视图、卡片视图、用户列表和两种明细弹层。
+
+### 数据库验证
+
+没有表结构变更，也没有新增 SQL，不涉及三库验证。miniredis 不等同于真实 Redis，集群模式与内存占用需在测试环境确认。
+
+---
+
+## 18. 仓库维护类变更
+
+### 18.1 移除 GitHub workflows（`a034e98b3`）
 
 删除 `.github/workflows/` 下全部 6 个文件：`ci.yml`、`docker-build.yml`、`docker-image-branch.yml`、`electron-build.yml`、`release.yml`、`sync-release-to-gitcode.yml`。目的是避免 fork 在 GitHub 上触发上游的构建、发版和镜像同步流水线。`.github/` 下的 issue / PR 模板、`CODE_OF_CONDUCT.md`、`FUNDING.yml`、`SECURITY.md` 保留。
 
-### 17.2 移植提交（`5f22a93b0`）
+### 18.2 移植提交（`5f22a93b0`）
 
 上游在基线之前重构了四个接缝（seam）：重试判定抽到 `service.DecideRelayRetry`；渠道选择抽到 `service.SelectChannelForRequest`（HTTP distributor 与 Responses WebSocket 共用）；计费准备抽到 `relay.PrepareRequestBilling`；重试设置 UI 迁到 request-policies 页并经 `/api/option/request_policy` 整体校验。该提交把 fork 功能 re-home 到这些接缝上：
 
@@ -739,16 +798,16 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 
 ---
 
-## 18. 与上游同步的注意事项
+## 19. 与上游同步的注意事项
 
-### 18.1 流程
+### 19.1 流程
 
 1. `git fetch https://github.com/QuantumNous/new-api.git main`
 2. `git rebase FETCH_HEAD`（fork 提交线性重放）
 3. 解决冲突后跑 Go 与前端测试，重点是下面列出的热点文件。
 4. 如上游再次重构接缝，参照 `5f22a93b0` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
 
-### 18.2 高频冲突文件
+### 19.2 高频冲突文件
 
 | 文件 | 原因 |
 |---|---|
@@ -770,16 +829,18 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `relaykit/dto/channel_extend_settings.go` / `channel_settings.go` / `user_settings.go` | DTO |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | 大量新增字段 |
 | `web/src/features/channels/lib/channel-form.ts` | extend_config 与 count_tokens 映射 |
+| `service/request_policy.go` | `BeginAttempt` 中的实时 RPM 计数、`userID` 字段 |
+| `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹 |
 | `web/src/i18n/locales/*.json` | 新增文案 |
 
-### 18.3 上游签名变化的传染点
+### 19.3 上游签名变化的传染点
 
 - `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`。
 - `relaykit/` 必须独立可编译：改动 `relaykit/dto/*` 后运行 `cd relaykit && GOWORK=off go build ./...`。
 
 ---
 
-## 19. 已知限制与测试缺口汇总
+## 20. 已知限制与测试缺口汇总
 
 ### 功能限制
 
@@ -795,6 +856,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 - **响应头过滤**：只作用于会复制上游头的路径（非流式透传、Codex 流式两个头、audio / minimax tts）；流式 SSE 其他头本来不复制，白名单也无法让它们回传；`Content-Type`、`Content-Encoding` 不可被黑名单丢弃。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道额度上限**：判定在结算之后，禁用前已在飞的请求仍会结算，`BATCH_UPDATE_ENABLED` 下还会多出一个刷盘间隔（默认 5 秒）的流量；多副本各自以数据库值判定，其他副本的内存缓存最长 `SYNC_FREQUENCY`（默认 60 秒）后感知禁用；预扣费不参与判定。折算成本 = 站内计费额度 × 成本倍率，是估算值而非上游账单。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道可用时段**：判定基于各副本本机时钟；窗口边界处进行中的流式响应与 WebSocket 会话不会被中断，只影响新请求；会话亲和在时段外会被放弃，该会话可能换渠道；全部渠道时段外时客户端只看到通用 503；时区运行时加载失败按全天可用处理；粒度只到周几 + 分钟，没有日期范围。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
+- **实时 RPM 统计**：数字比当前时刻晚 4 到 14 秒；Redis 故障期间少计，实例崩溃会丢失最近 2 秒的计数；各实例按本机时钟分桶，时钟偏差超过 10 秒会明显失真；没有 Redis 的多实例部署只能看到本实例；只能在当前页查看，不能按 RPM 给全部渠道或用户排序；与使用日志页的 RPM 口径不同。
 
 ### 测试缺口
 
@@ -805,12 +867,13 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 - 渠道 RPM/TPM 与输入 token 边界的前端字段测试；distributor 端到端。
 - 控制器层"启用已耗尽渠道被拒绝 / 跳过"（单个 / 批量 / 标签）只有本地端到端验证，没有 Go 单测；前端无渠道成本倍率 / 额度上限字段的组件测试。
 - 渠道可用时段：Responses WebSocket 路径只有共用 `SelectChannelForRequest` 的单元覆盖，没有 WS 端到端；前端无时段编辑器的组件测试。
+- 实时 RPM 统计：Midjourney、异步任务提交与 Responses WebSocket 路径的计数只靠共用 `BeginAttempt` 的单元覆盖，没有这几条路径的端到端；真实 Redis（含集群模式）未验证。
 
 ---
 
-## 20. 附录
+## 21. 附录
 
-### 20.1 新增 option key 一览
+### 21.1 新增 option key 一览
 
 | key | 类型 | 默认 | 所属 |
 |---|---|---|---|
@@ -825,14 +888,16 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 
 以上 8 个 key 都通过 `GET/PUT /api/option/` 读写；前 5 个另可经 `GET/PATCH /api/option/request_policy` 读写。
 
-### 20.2 新增 HTTP 端点
+### 21.2 新增 HTTP 端点
 
 | 端点 | 说明 |
 |---|---|
 | `POST /v1/messages/count_tokens` | Anthropic token 计数透传，免费 |
 | `POST /v1/responses/input_tokens` | OpenAI Responses 输入 token 计数透传，免费 |
+| `GET /api/channel/rpm`、`GET /api/channel/:id/rpm/users` | 渠道实时 RPM 与按用户明细（§17） |
+| `GET /api/user/rpm`、`GET /api/user/:id/rpm/channels` | 用户实时 RPM 与按渠道明细（§17） |
 
-### 20.3 管理 API 新增字段
+### 21.3 管理 API 新增字段
 
 | 资源 | 字段 | 说明 |
 |---|---|---|
@@ -844,7 +909,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | User | `model_discount` | §9，同上 |
 | Token | `auto_groups`（普通分组下） | §13，作为备用分组 |
 
-### 20.4 Redis key 一览
+### 21.4 Redis key 一览
 
 | key | 用途 |
 |---|---|
@@ -854,8 +919,10 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `rateLimit:v2:ctpm:<channelId>:<unixMinute>` | 渠道 TPM 分钟桶 |
 | `user_extend_rl:<userId>` | 用户限流覆盖缓存 |
 | `user_extend_md:<userId>` | 用户模型折扣缓存 |
+| `rpmstat:ch:<bucket>` / `rpmstat:u:<bucket>` | 实时 RPM：各渠道分发次数 / 各用户请求数，10 秒一桶，120 秒过期（§17） |
+| `rpmstat:cu:<channelId>:<bucket>` / `rpmstat:uc:<userId>:<bucket>` | 实时 RPM 明细：渠道下各用户 / 用户在各渠道 |
 
-### 20.5 消费日志 `other` 新增键
+### 21.5 消费日志 `other` 新增键
 
 | 键 | 含义 |
 |---|---|
@@ -863,7 +930,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `user_model_discount` | 用户模型折扣（≠ 1 时写入） |
 | `endpoint` | `count_tokens` / `input_tokens`，标记零额计数日志 |
 
-### 20.6 fork 提交列表（按时间）
+### 21.6 fork 提交列表（按时间）
 
 | 提交 | 日期 | 标题 |
 |---|---|---|
