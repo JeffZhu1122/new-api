@@ -7398,6 +7398,13 @@
     "Add at least one availability window or turn the schedule off": "Thêm ít nhất một khung giờ khả dụng hoặc tắt lịch",
     "Availability schedule supports at most 16 windows": "Lịch khả dụng hỗ trợ tối đa 16 khung giờ",
     "Availability windows need a start and end time in HH:MM": "Mỗi khung giờ cần giờ bắt đầu và kết thúc theo định dạng HH:MM",
-    "An availability window cannot start and end at the same time": "Khung giờ không thể bắt đầu và kết thúc cùng một thời điểm"
+    "An availability window cannot start and end at the same time": "Khung giờ không thể bắt đầu và kết thúc cùng một thời điểm",
+    "RPM by user": "RPM theo người dùng",
+    "RPM by channel": "RPM theo kênh",
+    "Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.": "Số lần điều phối trong phút đầy đủ gần nhất, bao gồm thử lại và lần thất bại. Làm mới mỗi 10 giây.",
+    "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "Số yêu cầu trong phút đầy đủ gần nhất. Phần chia theo kênh đếm mọi lần điều phối, bao gồm thử lại. Làm mới mỗi 10 giây.",
+    "No requests in the last minute": "Không có yêu cầu nào trong phút vừa qua",
+    "Failed to load RPM statistics": "Không thể tải thống kê RPM",
+    "Counted on this server instance only.": "Chỉ tính trên phiên bản máy chủ này."
   }
 }

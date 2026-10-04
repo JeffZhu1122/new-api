@@ -28,6 +28,7 @@ import {
   DataTablePage,
   useDataTable,
 } from '@/components/data-table'
+import { LiveRpmContext, useLiveRpmTotals } from '@/components/live-rpm'
 import { useMediaQuery } from '@/hooks'
 import { useTableUrlState } from '@/hooks/use-table-url-state'
 import {
@@ -35,7 +36,7 @@ import {
   requireServerSuccess,
 } from '@/lib/server-error-message'
 
-import { getGroups, getUsers, searchUsers } from '../api'
+import { getGroups, getUserRpm, getUsers, searchUsers } from '../api'
 import {
   USER_STATUS,
   getUserStatusOptions,
@@ -181,6 +182,11 @@ export function UsersTable() {
   })
 
   const users = data?.items || []
+  const userIds = useMemo(
+    () => (data?.items ?? []).map((user) => user.id),
+    [data]
+  )
+  const rpmTotals = useLiveRpmTotals('users', userIds, getUserRpm)
 
   const { table } = useDataTable({
     data: users,
@@ -214,7 +220,7 @@ export function UsersTable() {
     ensurePageInRange,
   })
 
-  return (
+  const page = (
     <DataTablePage
       table={table}
       columns={columns}
@@ -259,5 +265,9 @@ export function UsersTable() {
       }}
       bulkActions={<DataTableBulkActions table={table} />}
     />
+  )
+
+  return (
+    <LiveRpmContext.Provider value={rpmTotals}>{page}</LiveRpmContext.Provider>
   )
 }

@@ -7398,6 +7398,13 @@
     "Add at least one availability window or turn the schedule off": "至少新增一個可用時段，或關閉可用時段",
     "Availability schedule supports at most 16 windows": "可用時段最多支援 16 個時間窗口",
     "Availability windows need a start and end time in HH:MM": "每個時間窗口都需要 HH:MM 格式的開始和結束時間",
-    "An availability window cannot start and end at the same time": "時間窗口的開始和結束時間不能相同"
+    "An availability window cannot start and end at the same time": "時間窗口的開始和結束時間不能相同",
+    "RPM by user": "各使用者 RPM",
+    "RPM by channel": "各渠道 RPM",
+    "Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.": "最近一個完整分鐘內的分發次數，包含重試和失敗的請求。每 10 秒重新整理一次。",
+    "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "最近一個完整分鐘內的請求數。依渠道拆分時按每次分發計數，包含重試。每 10 秒重新整理一次。",
+    "No requests in the last minute": "最近一分鐘沒有請求",
+    "Failed to load RPM statistics": "載入 RPM 統計失敗",
+    "Counted on this server instance only.": "僅統計目前服務執行個體。"
   }
 }

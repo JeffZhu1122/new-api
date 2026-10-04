@@ -16,6 +16,11 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import type {
+  LiveRpmBreakdown,
+  LiveRpmResponse,
+  LiveRpmTotals,
+} from '@/components/live-rpm'
 import { getGroups as getUserGroups } from '@/features/users/api'
 import { api, type ApiRequestConfig } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
@@ -371,6 +376,28 @@ export async function refreshCodexCredential(
     `/api/channel/${channelId}/codex/refresh`,
     {},
     channelActionConfig()
+  )
+  return res.data
+}
+
+/** Live RPM (dispatches in the last settled minute) of the given channels. */
+export async function getChannelRpm(
+  ids: number[]
+): Promise<LiveRpmResponse<LiveRpmTotals>> {
+  const res = await api.get(
+    '/api/channel/rpm',
+    channelActionConfig({ params: { ids: ids.join(',') } })
+  )
+  return res.data
+}
+
+/** One channel's live RPM split by user, busiest first. */
+export async function getChannelRpmUsers(
+  channelId: number
+): Promise<LiveRpmResponse<LiveRpmBreakdown>> {
+  const res = await api.get(
+    `/api/channel/${channelId}/rpm/users`,
+    channelActionConfig({ disableDuplicate: true })
   )
   return res.data
 }

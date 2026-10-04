@@ -35,6 +35,7 @@ import {
   useDebouncedColumnFilter,
   useDataTable,
 } from '@/components/data-table'
+import { LiveRpmContext, useLiveRpmTotals } from '@/components/live-rpm'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import {
@@ -47,7 +48,7 @@ import { useTableUrlState } from '@/hooks/use-table-url-state'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
-import { getChannels, searchChannels, getGroups } from '../api'
+import { getChannels, searchChannels, getGroups, getChannelRpm } from '../api'
 import {
   DEFAULT_PAGE_SIZE,
   CHANNEL_STATUS,
@@ -306,6 +307,13 @@ export function ChannelsTable() {
     return rawChannels
   }, [data, enableTagMode])
 
+  // Tag rows aggregate the raw page items, so every channel on screen is here.
+  const channelIds = useMemo(
+    () => (data?.data?.items ?? []).map((channel) => channel.id),
+    [data]
+  )
+  const rpmTotals = useLiveRpmTotals('channels', channelIds, getChannelRpm)
+
   const totalCount = data?.data?.total || 0
   const typeCounts = data?.data?.type_counts
 
@@ -411,7 +419,7 @@ export function ChannelsTable() {
     })),
   ]
 
-  return (
+  const page = (
     <DataTablePage
       table={table}
       columns={columns}
@@ -517,5 +525,9 @@ export function ChannelsTable() {
       }}
       bulkActions={batchMode ? <DataTableBulkActions table={table} /> : null}
     />
+  )
+
+  return (
+    <LiveRpmContext.Provider value={rpmTotals}>{page}</LiveRpmContext.Provider>
   )
 }

@@ -7398,6 +7398,13 @@
     "Add at least one availability window or turn the schedule off": "Ajoutez au moins un créneau de disponibilité ou désactivez la plage",
     "Availability schedule supports at most 16 windows": "La plage de disponibilité accepte au plus 16 créneaux",
     "Availability windows need a start and end time in HH:MM": "Chaque créneau nécessite une heure de début et de fin au format HH:MM",
-    "An availability window cannot start and end at the same time": "Un créneau ne peut pas commencer et finir à la même heure"
+    "An availability window cannot start and end at the same time": "Un créneau ne peut pas commencer et finir à la même heure",
+    "RPM by user": "RPM par utilisateur",
+    "RPM by channel": "RPM par canal",
+    "Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.": "Envois au cours de la dernière minute complète, nouvelles tentatives et échecs compris. Actualisé toutes les 10 secondes.",
+    "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "Requêtes au cours de la dernière minute complète. La répartition par canal compte chaque envoi, nouvelles tentatives comprises. Actualisé toutes les 10 secondes.",
+    "No requests in the last minute": "Aucune requête au cours de la dernière minute",
+    "Failed to load RPM statistics": "Échec du chargement des statistiques RPM",
+    "Counted on this server instance only.": "Compté sur cette instance du serveur uniquement."
   }
 }

@@ -7398,6 +7398,13 @@
     "Add at least one availability window or turn the schedule off": "Add at least one availability window or turn the schedule off",
     "Availability schedule supports at most 16 windows": "Availability schedule supports at most 16 windows",
     "Availability windows need a start and end time in HH:MM": "Availability windows need a start and end time in HH:MM",
-    "An availability window cannot start and end at the same time": "An availability window cannot start and end at the same time"
+    "An availability window cannot start and end at the same time": "An availability window cannot start and end at the same time",
+    "RPM by user": "RPM by user",
+    "RPM by channel": "RPM by channel",
+    "Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.": "Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.",
+    "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.",
+    "No requests in the last minute": "No requests in the last minute",
+    "Failed to load RPM statistics": "Failed to load RPM statistics",
+    "Counted on this server instance only.": "Counted on this server instance only."
   }
 }

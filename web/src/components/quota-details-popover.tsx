@@ -36,11 +36,13 @@ type QuotaDetailsPopoverProps = {
   afterTrigger?: ReactNode
   className?: string
   triggerClassName?: string
+  /** Lets callers load details lazily when the popover opens. */
+  onOpenChange?: (open: boolean) => void
 }
 
 export function QuotaDetailsPopover(props: QuotaDetailsPopoverProps) {
   return (
-    <Popover>
+    <Popover onOpenChange={(open) => props.onOpenChange?.(open)}>
       <div className={cn('w-full min-w-0', props.className)}>
         <PopoverTrigger
           render={

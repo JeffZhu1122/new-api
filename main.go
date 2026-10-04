@@ -139,6 +139,9 @@ func main() {
 	// all currently alive nodes in multi-instance deployments.
 	service.StartSystemInstanceReporter()
 
+	// Live per-channel / per-user RPM statistics (flushed to Redis when enabled)
+	service.StartRpmStats()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle).
 	// Must run before the system task runner starts: the async_task_poll handler
 	// calls service.RunTaskPollingOnce, which needs this factory set.

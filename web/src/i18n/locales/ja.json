@@ -7398,6 +7398,13 @@
     "Add at least one availability window or turn the schedule off": "少なくとも 1 つの時間枠を追加するか、利用可能時間帯をオフにしてください",
     "Availability schedule supports at most 16 windows": "利用可能時間帯は最大 16 個の時間枠まで対応します",
     "Availability windows need a start and end time in HH:MM": "各時間枠には HH:MM 形式の開始時刻と終了時刻が必要です",
-    "An availability window cannot start and end at the same time": "時間枠の開始時刻と終了時刻を同じにはできません"
+    "An availability window cannot start and end at the same time": "時間枠の開始時刻と終了時刻を同じにはできません",
+    "RPM by user": "ユーザー別 RPM",
+    "RPM by channel": "チャネル別 RPM",
+    "Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.": "直近の確定した 1 分間の振り分け回数です。再試行と失敗したリクエストを含みます。10 秒ごとに更新されます。",
+    "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "直近の確定した 1 分間のリクエスト数です。チャネル別の内訳は再試行を含む振り分けごとに数えます。10 秒ごとに更新されます。",
+    "No requests in the last minute": "直近 1 分間のリクエストはありません",
+    "Failed to load RPM statistics": "RPM 統計の読み込みに失敗しました",
+    "Counted on this server instance only.": "このサーバーインスタンスのみを集計しています。"
   }
 }

@@ -7398,6 +7398,13 @@
     "Add at least one availability window or turn the schedule off": "Добавьте хотя бы одно окно доступности или отключите расписание",
     "Availability schedule supports at most 16 windows": "Расписание доступности поддерживает не более 16 окон",
     "Availability windows need a start and end time in HH:MM": "Каждому окну нужны время начала и окончания в формате ЧЧ:ММ",
-    "An availability window cannot start and end at the same time": "Окно доступности не может начинаться и заканчиваться в одно и то же время"
+    "An availability window cannot start and end at the same time": "Окно доступности не может начинаться и заканчиваться в одно и то же время",
+    "RPM by user": "RPM по пользователям",
+    "RPM by channel": "RPM по каналам",
+    "Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.": "Отправки за последнюю полную минуту, включая повторы и неудачные попытки. Обновляется каждые 10 секунд.",
+    "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "Запросы за последнюю полную минуту. Разбивка по каналам учитывает каждую отправку, включая повторы. Обновляется каждые 10 секунд.",
+    "No requests in the last minute": "За последнюю минуту запросов не было",
+    "Failed to load RPM statistics": "Не удалось загрузить статистику RPM",
+    "Counted on this server instance only.": "Учитывается только этот экземпляр сервера."
   }
 }
