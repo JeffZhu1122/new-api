@@ -51,6 +51,9 @@ type RequestPolicyState struct {
 	OutcomeRecorded   bool
 	mu                sync.Mutex
 	events            []PolicyEvent
+	// userID is captured when the state is created, after authentication, so
+	// BeginAttempt can feed the per-user RPM statistics.
+	userID int
 }
 
 func RequestPolicy(c *gin.Context) *RequestPolicyState {
@@ -61,6 +64,7 @@ func RequestPolicy(c *gin.Context) *RequestPolicyState {
 	}
 	state := &RequestPolicyState{StartedAt: time.Now()}
 	if c != nil {
+		state.userID = common.GetContextKeyInt(c, constant.ContextKeyUserId)
 		c.Set(requestPolicyContextKey, state)
 	}
 	return state
@@ -93,6 +97,8 @@ func (s *RequestPolicyState) BeginAttempt(channel *model.Channel, group string) 
 	s.OutcomeRecorded = false
 	s.SelectedGroup = group
 	s.AddEvent(PolicyEvent{ChannelID: channel.Id, Decision: PolicyDecision{Action: "attempt", Reason: "channel_selected", Source: "routing"}})
+	// 所有转发路径的每次分发都经过这里：渠道按分发次数计，用户只在首次分发时计一次请求
+	RecordRpmAttempt(channel.Id, s.userID, s.Attempts == 1)
 }
 
 // RelayErrorSource tells where a failed attempt went wrong: "channel" for the
