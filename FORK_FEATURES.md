@@ -745,6 +745,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 - 使用日志页的读取（`LogRate`）：无筛选、单一精确条件（渠道 / 用户名 / 模型 / 分组 / 令牌名）、渠道 + 用户名直接读汇总层；其余组合（含 `%` 模糊匹配）读匹配用户的明细层再过滤，普通用户查看自己的日志只读本人明细。筛选语义与原 SQL 一致：精确匹配，或最多 2 个 `%` 的模糊匹配（关键词至少 2 个字符，`_` 按字面），模糊匹配不区分大小写；不合法的模式返回与原查询相同的错误。
 - 无 Redis：桶留在进程内存直接读取，只统计本实例，返回 `source: memory`。Redis 读取失败时日志页返回 `rate_source: unavailable`，额度照常返回。
 - 开关：环境变量 `RPM_STATS_ENABLED`，默认 `true`；关闭后返回 `source: disabled`。
+- 专用 Redis：设置 `RPM_STATS_REDIS_CONN_STRING`（格式同 `REDIS_CONN_STRING`；连接池 `RPM_STATS_REDIS_POOL_SIZE`，默认 10）后，全部统计键改写到这个 Redis，主 Redis 不再承担统计的写入、内存和明细扫描；主 Redis 未开启时也能单独使用。启动时连不上只记日志并自动重连，期间统计少计、读取显示不可用，网关照常转发；连接串格式错误时退回本实例内存统计，绝不改用主 Redis。统计数据可丢，专用 Redis 不需要持久化，建议设置内存上限并使用 `allkeys-lru`。
 
 ### 接口
 
@@ -771,7 +772,9 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 
 ### 测试
 
-`service/rpm_stats_test.go`：经 `BeginAttempt` 的重试计数口径；miniredis 下两个实例写同一个 Redis 后相加（分发次数与结算 token），窗口只含已结算的完整一分钟，所有键都带过期；关闭时返回 `disabled`；四种用量格式的输入去缓存规则（OpenAI、重叠封底、Claude、Claude 拆分写入、旧版 Claude 转换）与实时语音；使用日志页 14 种筛选组合在内存与 Redis 两种模式下结果相同，非法模式返回错误。前端 `components/__tests__/live-rpm.test.tsx`（明细行 RPM 与 TPM、标签行 TPM 求和与细分弹层、缺数据显示"-"等）与 `features/usage-logs/components/__tests__/live-rate-stats.test.tsx`（细分徽标、`rate_only` 轮询带同样的筛选、不可用显示"-"、仅本实例提示）。
+`service/rpm_stats_test.go`：经 `BeginAttempt` 的重试计数口径；miniredis 下两个实例写同一个 Redis 后相加（分发次数与结算 token），窗口只含已结算的完整一分钟，所有键都带过期；关闭时返回 `disabled`；配置专用 Redis 后统计键只落在专用 Redis、主 Redis 不增加任何键，连接串错误时退回内存而不是主 Redis；四种用量格式的输入去缓存规则（OpenAI、重叠封底、Claude、Claude 拆分写入、旧版 Claude 转换）与实时语音；使用日志页 14 种筛选组合在内存与 Redis 两种模式下结果相同，非法模式返回错误。前端 `components/__tests__/live-rpm.test.tsx`（明细行 RPM 与 TPM、标签行 TPM 求和与细分弹层、缺数据显示"-"等）与 `features/usage-logs/components/__tests__/live-rate-stats.test.tsx`（细分徽标、`rate_only` 轮询带同样的筛选、不可用显示"-"、仅本实例提示）。
+
+本地端到端（专用 Redis）：主 Redis 与统计 Redis 分别是两个 miniredis，两个网关实例都配置 `RPM_STATS_REDIS_CONN_STRING`。上述 11 种日志页筛选组合全部与预期一致，主 Redis 上的 `rpmstat:*` 键数量不变，新键全部出现在统计 Redis。统计 Redis 停掉后重启网关：启动日志提示 ping 失败，转发正常，日志页额度照常、RPM / TPM 显示不可用；统计 Redis 恢复后无需重启即恢复。
 
 ### 数据库验证
 
@@ -926,6 +929,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `rpmstat:cu:<channelId>:<bucket>` / `rpmstat:uc:<userId>:<bucket>` | 实时 RPM 明细：渠道下各用户 / 用户在各渠道 |
 | `rpmstat:s:{all,ch,u,m,g,t}:<bucket>` / `rpmstat:s:cu:<channelId>:<bucket>` | 结算请求数与四项 token 的汇总（§17） |
 | `rpmstat:s:d:<userId>:<bucket>` / `rpmstat:s:users:<bucket>` | 每用户的结算明细（令牌、模型、渠道、分组）/ 用户 ID → 用户名 |
+
+`rpmstat:*` 在配置了 `RPM_STATS_REDIS_CONN_STRING` 时位于专用统计 Redis，否则位于主 Redis。
 
 ### 21.5 消费日志 `other` 新增键
 
