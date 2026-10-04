@@ -24,7 +24,7 @@ import { useTranslation } from 'react-i18next'
 import { QuotaDetailsPopover } from '@/components/quota-details-popover'
 import { StatusBadge } from '@/components/status-badge'
 import { toIntlLocale } from '@/i18n/languages'
-import { formatNumber } from '@/lib/format'
+import { formatCompactNumber, formatNumber } from '@/lib/format'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
@@ -34,15 +34,40 @@ import { cn } from '@/lib/utils'
  */
 export type LiveRpmSource = 'redis' | 'memory' | 'disabled'
 
-/** RPM per id over the last settled minute (`GET /api/{channel,user}/rpm`). */
+/**
+ * Settled usage within the window. `input` never contains cached tokens; TPM
+ * is the sum of the four token categories.
+ */
+export type LiveTokenStats = {
+  requests: number
+  input: number
+  cache_read: number
+  cache_write: number
+  output: number
+}
+
+export function liveTokenTotal(stats: LiveTokenStats): number {
+  return stats.input + stats.cache_read + stats.cache_write + stats.output
+}
+
+/**
+ * RPM (dispatch attempts) and settled token usage per id over the last
+ * settled minute (`GET /api/{channel,user}/rpm`).
+ */
 export type LiveRpmTotals = {
   source: LiveRpmSource
   window_start: number
   window_end: number
   items: Record<string, number>
+  tokens?: Record<string, LiveTokenStats>
 }
 
-export type LiveRpmBreakdownItem = { id: number; name: string; rpm: number }
+export type LiveRpmBreakdownItem = {
+  id: number
+  name: string
+  rpm: number
+  tokens?: LiveTokenStats
+}
 
 /** One row split by user or by channel, busiest first. */
 export type LiveRpmBreakdown = {
@@ -50,6 +75,7 @@ export type LiveRpmBreakdown = {
   window_start: number
   window_end: number
   total: number
+  total_tokens?: LiveTokenStats
   items: LiveRpmBreakdownItem[]
 }
 
@@ -126,7 +152,7 @@ export function LiveRpmCell(props: LiveRpmCellProps) {
   }
 
   if (!props.breakdown) {
-    return <LiveRpmBadge value={value} className='-ml-1.5' />
+    return <LiveStatBadge value={value} className='-ml-1.5' />
   }
   return (
     <LiveRpmBreakdownPopover
@@ -137,8 +163,10 @@ export function LiveRpmCell(props: LiveRpmCellProps) {
   )
 }
 
-function LiveRpmBadge(props: {
+function LiveStatBadge(props: {
   value: number | undefined
+  /** Compact notation for token counts (12.3K). */
+  compact?: boolean
   className?: string
 }) {
   const { i18n } = useTranslation()
@@ -148,7 +176,11 @@ function LiveRpmBadge(props: {
   }
   return (
     <StatusBadge
-      label={formatNumber(props.value, locale)}
+      label={
+        props.compact
+          ? formatCompactNumber(props.value, locale)
+          : formatNumber(props.value, locale)
+      }
       variant={props.value > 0 ? 'info' : 'neutral'}
       size='sm'
       copyable={false}
@@ -182,10 +214,11 @@ function LiveRpmBreakdownPopover(props: {
     const name = props.breakdown.maskNames
       ? SENSITIVE_MASK
       : item.name || t('Unknown')
-    return {
-      label: `${name} #${item.id}`,
-      value: formatNumber(item.rpm, locale),
-    }
+    const rpm = `${t('RPM')} ${formatNumber(item.rpm, locale)}`
+    const tpm = item.tokens
+      ? ` · ${t('TPM')} ${formatCompactNumber(liveTokenTotal(item.tokens), locale)}`
+      : ''
+    return { label: `${name} #${item.id}`, value: rpm + tpm }
   })
   const notes = [props.breakdown.description]
   if (query.isPending) {
@@ -213,7 +246,71 @@ function LiveRpmBreakdownPopover(props: {
       className='-ml-1.5 w-auto'
       triggerClassName='w-auto'
     >
-      <LiveRpmBadge value={props.value} />
+      <LiveStatBadge value={props.value} />
+    </QuotaDetailsPopover>
+  )
+}
+
+/**
+ * Live TPM of a row (or the channels of a tag row) from the shared totals;
+ * the value opens its split into input, cache read, cache write and output.
+ */
+export function LiveTpmCell(props: { ids: number[] }) {
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
+  const totals = useContext(LiveRpmContext)
+  let stats: LiveTokenStats | undefined
+  if (totals?.tokens && totals.source !== 'disabled') {
+    stats = { requests: 0, input: 0, cache_read: 0, cache_write: 0, output: 0 }
+    for (const id of props.ids) {
+      const row = totals.tokens[String(id)]
+      if (!row) {
+        stats = undefined
+        break
+      }
+      stats.requests += row.requests
+      stats.input += row.input
+      stats.cache_read += row.cache_read
+      stats.cache_write += row.cache_write
+      stats.output += row.output
+    }
+  }
+  if (!stats) {
+    return <LiveStatBadge value={undefined} />
+  }
+  const total = liveTokenTotal(stats)
+  const notes = [
+    t(
+      'Tokens settled in the last full minute. Input excludes cached tokens. Refreshes every 10 seconds.'
+    ),
+  ]
+  if (totals?.source === 'memory') {
+    notes.push(t('Counted on this server instance only.'))
+  }
+  return (
+    <QuotaDetailsPopover
+      title={t('TPM breakdown')}
+      triggerLabel={`${t('TPM')} ${formatNumber(total, locale)}`}
+      details={[
+        {
+          label: t('Input (excluding cache)'),
+          value: formatNumber(stats.input, locale),
+        },
+        {
+          label: t('Cache Read'),
+          value: formatNumber(stats.cache_read, locale),
+        },
+        {
+          label: t('Cache Write'),
+          value: formatNumber(stats.cache_write, locale),
+        },
+        { label: t('Output'), value: formatNumber(stats.output, locale) },
+      ]}
+      description={notes.join(' ')}
+      className='-ml-1.5 w-auto'
+      triggerClassName='w-auto'
+    >
+      <LiveStatBadge value={total} compact />
     </QuotaDetailsPopover>
   )
 }

@@ -23,7 +23,7 @@ import { useTranslation } from 'react-i18next'
 import { ActivityTimeCell } from '@/components/activity-time-cell'
 import { BadgeCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
-import { LiveRpmCell } from '@/components/live-rpm'
+import { LiveRpmCell, LiveTpmCell } from '@/components/live-rpm'
 import { LongText } from '@/components/long-text'
 import { StatusBadge } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
@@ -219,6 +219,15 @@ export function useUsersColumns(): ColumnDef<User>[] {
         size: 90,
         enableSorting: false,
         meta: { mobileOrder: 45 },
+      },
+      {
+        // Live TPM: settled tokens in the last minute, split on click
+        id: 'tpm',
+        header: t('TPM'),
+        cell: ({ row }) => <LiveTpmCell ids={[row.original.id]} />,
+        size: 90,
+        enableSorting: false,
+        meta: { mobileOrder: 46 },
       },
       {
         accessorKey: 'group',
