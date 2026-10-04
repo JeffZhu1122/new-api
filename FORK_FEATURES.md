@@ -32,7 +32,7 @@
 14. [渠道响应头过滤（黑名单 / 白名单）](#14-渠道响应头过滤黑名单--白名单)
 15. [渠道额度上限与成本倍率（达上限自动禁用）](#15-渠道额度上限与成本倍率达上限自动禁用)
 16. [渠道可用时段（时段外不参与选路）](#16-渠道可用时段时段外不参与选路)
-17. [渠道 / 用户实时 RPM 统计](#17-渠道--用户实时-rpm-统计)
+17. [实时 RPM 与 TPM 统计](#17-实时-rpm-与-tpm-统计)
 18. [仓库维护类变更](#18-仓库维护类变更)
 19. [与上游同步的注意事项](#19-与上游同步的注意事项)
 20. [已知限制与测试缺口汇总](#20-已知限制与测试缺口汇总)
@@ -58,10 +58,10 @@
 | 14 | 渠道响应头过滤（黑 / 白名单） | `b0a715551` | 关闭 = 复制全部 | `channel_extend` | 上游响应头回传 |
 | 15 | 渠道额度上限 + 成本倍率（达上限自动禁用） | 与本文档同一提交 | 0 = 不限 | `channel_extend` | 结算后置状态、渠道启用路径、渠道列表 |
 | 16 | 渠道可用时段（时段外不参与选路） | 与本文档同一提交 | 空 = 全天可用 | `channel_extend` | 渠道选择（HTTP + Responses WebSocket）、渠道列表 |
-| 17 | 渠道 / 用户实时 RPM 统计 | 与本文档同一提交 | 开启（`RPM_STATS_ENABLED`），只计数 | Redis（无 Redis 时进程内存） | 每次分发计数、渠道 / 用户列表 |
+| 17 | 实时 RPM 与 TPM 统计 | 与本文档同一提交 | 开启（`RPM_STATS_ENABLED`），只计数 | Redis（无 Redis 时进程内存） | 分发与结算计数、渠道 / 用户列表、使用日志页统计条 |
 | 18 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 
-所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时 RPM 统计默认开启，但只计数，不改变请求的处理结果）。
+所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"）。
 
 ---
 
@@ -722,60 +722,60 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 
 ---
 
-## 17. 渠道 / 用户实时 RPM 统计
+## 17. 实时 RPM 与 TPM 统计
 
 ### 动机
 
-上游只有使用日志页按渠道筛选后显示的 RPM（最近 60 秒的消费日志条数）：一次只能看一个渠道，只算扣费成功的请求，依赖消费日志，每次查看都查一次 logs 表。本功能在渠道列表和用户列表直接显示实时 RPM，并可点开查看渠道下的用户分布、用户在各渠道的分布。
+上游的 RPM / TPM 只在使用日志页显示，每次查看都对 logs 表执行"最近 60 秒消费日志的条数和 token 之和"：一次只能按当前筛选看一组数，依赖消费日志开关，而且 `prompt_tokens` 的口径随上游格式变化（OpenAI 格式含缓存，Claude 格式不含），缓存多的 Claude 流量 TPM 明显偏低，也无法细分缓存。本功能用 Redis 统计两类实时数据：渠道 / 用户列表上的 RPM、TPM 及其明细，以及使用日志页的 RPM、TPM 和四项细分。
 
 ### 口径
 
-- 渠道 RPM：最近一个完整分钟内分发到该渠道的次数。重试时每个被尝试的渠道各计一次，失败也计，反映上游实际收到的请求量。
-- 用户 RPM：最近一个完整分钟内该用户被转发的请求数。每个请求只在首次分发时计一次，重试不重复计。
-- 明细（渠道 → 用户、用户 → 渠道）：按分发次数计，与渠道 RPM 同口径，因此用户在各渠道的明细之和可能大于其用户 RPM，多出的是重试。
-- 计数点：`RequestPolicyState.BeginAttempt`（`service/request_policy.go`）。普通转发、Responses WebSocket 每一轮、异步任务提交、Midjourney 都经过它。用户 ID 在请求策略状态创建时记录，此时已完成鉴权。
-- 不计入：渠道测试、自动健康检查、任务轮询，以及未选到渠道就被拒绝的请求。与使用日志页的 RPM 口径不同，两边数字不会一致。
+- **分发次数**（渠道 / 用户列表的 RPM）：计数点是 `RequestPolicyState.BeginAttempt`（`service/request_policy.go`），普通转发、Responses WebSocket 每一轮、异步任务提交、Midjourney 都经过它。渠道 RPM 按每次分发计，重试与失败都计；用户 RPM 只在请求首次分发时计一次。用户 ID 在请求策略状态创建时记录，此时已完成鉴权。
+- **结算请求与 token**（TPM 与使用日志页的 RPM）：在写消费日志的同一处计数（`RecordSettledUsage`），记录的用户名、令牌名、模型名、渠道、分组与那条日志完全一致。覆盖文本（含 Responses）、音频、实时语音、异步任务、Midjourney；渠道测试、违规扣费、免费 count_tokens 不是真实流量，不计。
+- **四项 token**：输入（不含缓存）、缓存读取、缓存写入、输出；TPM 是四项之和。OpenAI 格式的输入数包含缓存读取与写入，减掉后按 0 封底（缓存写入上报的前缀计数可能重叠）；Claude 格式、旧版 Claude 转 OpenAI 用量、OpenRouter 的 Claude 计费，输入本来就不含缓存。判定规则与计费一致（`settledTextTokens`、`settledOpenAITokens`，`service/token_stats.go`）。只读取计费已算好的汇总，不改变扣费。
+- 不计入：渠道测试、自动健康检查、任务轮询，以及未选到渠道就被拒绝的请求。
 
-### 实现（`service/rpm_stats.go`）
+### 实现（`service/rpm_stats.go`、`service/token_stats.go`）
 
-- 分发时只在进程内存累加（一次加锁加几次 map 自增），转发路径不访问 Redis。
-- 有 Redis 时，后台每 2 秒用一个 pipeline 把增量 `HINCRBY` 进 Redis，并给每个键设 120 秒过期，写完清空本地。Redis 写入次数只与实例数有关，与请求量无关；多个实例写同一组键，数字自然相加。写入失败直接丢弃该批（每分钟最多一条错误日志），不重试也不回灌。
-- 10 秒一个桶。读取时把结束时间早于"当前时间减 4 秒"的最近 6 个桶相加，正好一分钟。数字比当前时刻晚 4 到 14 秒，但不会读到写了一半的桶。
-- Redis 键（`bucket` = unix 秒 / 10）：`rpmstat:ch:<bucket>`（字段为渠道 ID）、`rpmstat:u:<bucket>`（字段为用户 ID）、`rpmstat:cu:<channelId>:<bucket>`（字段为用户 ID）、`rpmstat:uc:<userId>:<bucket>`（字段为渠道 ID）。
-- 无 Redis：桶留在进程内存中直接读取，只统计本实例，接口返回 `source: memory`。超出窗口的旧桶在创建新桶时清理。
-- 开关：环境变量 `RPM_STATS_ENABLED`，默认 `true`。关闭后不计数，接口返回 `source: disabled`。
+- 事件只在进程内存累加；有 Redis 时后台每 2 秒用一个 pipeline 批量写入，所有键 120 秒过期。Redis 写入次数只与实例数有关，多个实例写同一组键自然相加；写入失败丢弃该批（每分钟最多一条错误日志），不重试。
+- 10 秒一个桶，读取时取结束时间早于"当前时间减 4 秒"的最近 6 个桶，正好一分钟；数字比当前时刻晚 4 到 14 秒，但不会读到写了一半的桶。
+- 键名 `rpmstat:<kind>[:<owner>]:<bucket>`（`bucket` = unix 秒 / 10）：
+  - 分发次数：`ch`（字段渠道 ID）、`u`（用户 ID）、`cu:<channelId>`（用户 ID）、`uc:<userId>`（渠道 ID）。
+  - 结算统计，字段为"指标 \x1f 值"，指标为 `req` / `in` / `cr` / `cw` / `out`：汇总层 `s:all`、`s:ch`、`s:u`、`s:m`（模型）、`s:g`（分组）、`s:t`（令牌名）、`s:cu:<channelId>`；明细层 `s:d:<userId>`，值为"令牌名 \x1f 模型 \x1f 渠道 \x1f 分组"；`s:users` 记录用户 ID → 用户名，供用户名筛选使用，不查用户表。
+- 使用日志页的读取（`LogRate`）：无筛选、单一精确条件（渠道 / 用户名 / 模型 / 分组 / 令牌名）、渠道 + 用户名直接读汇总层；其余组合（含 `%` 模糊匹配）读匹配用户的明细层再过滤，普通用户查看自己的日志只读本人明细。筛选语义与原 SQL 一致：精确匹配，或最多 2 个 `%` 的模糊匹配（关键词至少 2 个字符，`_` 按字面），模糊匹配不区分大小写；不合法的模式返回与原查询相同的错误。
+- 无 Redis：桶留在进程内存直接读取，只统计本实例，返回 `source: memory`。Redis 读取失败时日志页返回 `rate_source: unavailable`，额度照常返回。
+- 开关：环境变量 `RPM_STATS_ENABLED`，默认 `true`；关闭后返回 `source: disabled`。
 
-### 管理 API（`controller/rpm_stats.go`）
+### 接口
 
 | 端点 | 权限 | 返回 |
 |---|---|---|
-| `GET /api/channel/rpm?ids=1,2,3` | 管理员 + 渠道读权限 | 各渠道 RPM，一次最多 200 个 ID |
-| `GET /api/channel/:id/rpm/users?limit=20` | 管理员 + 渠道读权限 | 该渠道下 RPM 最高的用户（含用户名），`limit` 最大 100 |
-| `GET /api/user/rpm?ids=1,2,3` | 管理员 | 各用户 RPM，一次最多 200 个 ID |
-| `GET /api/user/:id/rpm/channels?limit=20` | 管理员 | 该用户在各渠道的 RPM（含渠道名），`limit` 最大 100 |
+| `GET /api/channel/rpm?ids=1,2,3` | 管理员 + 渠道读权限 | 各渠道 RPM（`items`）与 token 统计（`tokens`），一次最多 200 个 ID |
+| `GET /api/channel/:id/rpm/users?limit=20` | 管理员 + 渠道读权限 | 该渠道下的用户，每行含 RPM 与 token 统计；`limit` 最大 100 |
+| `GET /api/user/rpm?ids=1,2,3` | 管理员 | 各用户 RPM 与 token 统计 |
+| `GET /api/user/:id/rpm/channels?limit=20` | 管理员 | 该用户在各渠道的 RPM 与 token 统计（渠道拆分取自该用户的明细层） |
+| `GET /api/log/stat`、`GET /api/log/self/stat` | 原权限不变 | `quota` 仍按所选时间段查 logs 表；`rpm`、`tpm` 改为实时统计，新增 `tpm_input`、`tpm_cache_read`、`tpm_cache_write`、`tpm_output`、`rate_source`、`rate_window_start`、`rate_window_end`；带 `rate_only=true` 时跳过额度查询 |
 
-所有接口都返回 `source`、`window_start`、`window_end`（unix 秒）；明细接口另返回 `total`，即全部条目之和，不受 `limit` 截断。用户名取自 `GetUserCache`，渠道名取自既有的 `GetChannelsByIds`，没有新增数据库查询写法。
+token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`output`。明细接口另返回 `total`（RPM 之和）与 `total_tokens`，不受 `limit` 截断。`model.SumUsedQuota` 不再执行 RPM / TPM 的那条 SQL，只算额度。
 
 ### 前端
 
-- 共享组件 `web/src/components/live-rpm.tsx`：`useLiveRpmTotals` 按当前页的 ID 每 10 秒轮询，页面不可见时暂停，失败时不弹提示并显示"-"而不是旧数字；`LiveRpmContext` 向单元格提供数据；`LiveRpmCell` 显示数值徽标，点击后用 `QuotaDetailsPopover` 懒加载明细，弹层打开期间每 10 秒刷新。`QuotaDetailsPopover` 兼容扩展了可选的 `onOpenChange`，原有调用不受影响。
-- 渠道列表：新增 RPM 列，卡片视图同步显示；点开为"各用户 RPM"。标签聚合行显示其下渠道之和，不可点开。隐藏敏感信息时，明细只隐藏用户名，保留用户 ID。
-- 用户列表：新增 RPM 列，点开为"各渠道 RPM"。
-- 7 种语言新增 7 条文案。
+- 共享组件 `web/src/components/live-rpm.tsx`：`useLiveRpmTotals` 按当前页 ID 每 10 秒轮询（页面不可见时暂停，失败时显示"-"而不是旧数字）；`LiveRpmCell` 点开为懒加载的明细弹层，每行显示 RPM 与 TPM；`LiveTpmCell` 显示 TPM，点开为四项细分。`QuotaDetailsPopover` 兼容扩展了可选的 `onOpenChange`。
+- 渠道列表与卡片视图、用户列表：新增 RPM、TPM 两列；标签聚合行显示其下渠道之和；隐藏敏感信息时明细只隐藏用户名。
+- 使用日志页统计条：额度、RPM、TPM、输入 TPM、缓存读取 TPM、缓存写入 TPM、输出 TPM。RPM / TPM 用 `rate_only` 请求单独每 10 秒刷新，不重复执行额度 SQL；`memory` 时标注"仅统计当前服务实例"，不可用时显示"-"。
+- 7 种语言新增 14 条文案。
 
 ### 兼容性
 
-不改表结构，不涉及计费。默认开启，但只计数，不改变任何请求的处理结果；`RPM_STATS_ENABLED=false` 可完全关闭。
+不改表结构。默认开启，但只计数，不改变请求处理与扣费；`RPM_STATS_ENABLED=false` 可完全关闭。使用日志页 RPM / TPM 的口径有三处变化：窗口改为"最近一个完整分钟"（原为实时的最近 60 秒）；TPM 统一包含缓存（Claude 流量会变大）；不再计入渠道测试、违规扣费与 count_tokens。
 
 ### 测试
 
-`service/rpm_stats_test.go`：经 `BeginAttempt` 的重试计数口径；miniredis 下两个实例写同一个 Redis 后数字相加，窗口只含已结算的完整一分钟，所有键都带过期；关闭时返回 `disabled`。前端 `components/__tests__/live-rpm.test.tsx`：标签行求和、无数据显示"-"、点开加载明细、隐藏用户名保留 ID、空明细与"仅本实例"提示、刷新失败后不显示旧数字、表格偏移不落在可点击徽标上（否则会截掉末位数字）。
-
-本地端到端：独立 miniredis，两个网关实例共用它；一个高优先级、恒返回 500 的故障渠道加一个正常渠道。root 经实例 A 发 10 次请求，user2 经实例 B 发 5 次：渠道 RPM 为 15 / 15，与两个模拟上游的命中数一致；用户 RPM 为 10 / 5；正常渠道下的用户分布为 root 10、user2 5；从任一实例读取结果相同；约 90 秒后归零。第三个实例不连 Redis 时返回 `source: memory`，只含本实例的 3 次请求。Chrome 检查了渠道表格视图、卡片视图、用户列表和两种明细弹层。
+`service/rpm_stats_test.go`：经 `BeginAttempt` 的重试计数口径；miniredis 下两个实例写同一个 Redis 后相加（分发次数与结算 token），窗口只含已结算的完整一分钟，所有键都带过期；关闭时返回 `disabled`；四种用量格式的输入去缓存规则（OpenAI、重叠封底、Claude、Claude 拆分写入、旧版 Claude 转换）与实时语音；使用日志页 14 种筛选组合在内存与 Redis 两种模式下结果相同，非法模式返回错误。前端 `components/__tests__/live-rpm.test.tsx`（明细行 RPM 与 TPM、标签行 TPM 求和与细分弹层、缺数据显示"-"等）与 `features/usage-logs/components/__tests__/live-rate-stats.test.tsx`（细分徽标、`rate_only` 轮询带同样的筛选、不可用显示"-"、仅本实例提示）。
 
 ### 数据库验证
 
-没有表结构变更，也没有新增 SQL，不涉及三库验证。miniredis 不等同于真实 Redis，集群模式与内存占用需在测试环境确认。
+没有表结构变更，也没有新增 SQL；`SumUsedQuota` 只删除了 RPM / TPM 那条查询，额度查询不变，不涉及三库验证。miniredis 不等同于真实 Redis，集群模式与内存占用需在测试环境确认。
 
 ---
 
@@ -830,6 +830,8 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | 大量新增字段 |
 | `web/src/features/channels/lib/channel-form.ts` | extend_config 与 count_tokens 映射 |
 | `service/request_policy.go` | `BeginAttempt` 中的实时 RPM 计数、`userID` 字段 |
+| `service/text_quota.go` / `service/quota.go` / `service/task_billing.go` / `relay/mjproxy_handler.go` | 消费日志参数改为先赋给 `logParams`，再调用 `RecordSettledUsage` 与 `RecordConsumeLog` |
+| `model/log.go` / `controller/log.go` | `SumUsedQuota` 只算额度、`ValidateLogTextPattern`；日志统计接口改读 `service.LogRate` |
 | `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹 |
 | `web/src/i18n/locales/*.json` | 新增文案 |
 
@@ -856,7 +858,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 - **响应头过滤**：只作用于会复制上游头的路径（非流式透传、Codex 流式两个头、audio / minimax tts）；流式 SSE 其他头本来不复制，白名单也无法让它们回传；`Content-Type`、`Content-Encoding` 不可被黑名单丢弃。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道额度上限**：判定在结算之后，禁用前已在飞的请求仍会结算，`BATCH_UPDATE_ENABLED` 下还会多出一个刷盘间隔（默认 5 秒）的流量；多副本各自以数据库值判定，其他副本的内存缓存最长 `SYNC_FREQUENCY`（默认 60 秒）后感知禁用；预扣费不参与判定。折算成本 = 站内计费额度 × 成本倍率，是估算值而非上游账单。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道可用时段**：判定基于各副本本机时钟；窗口边界处进行中的流式响应与 WebSocket 会话不会被中断，只影响新请求；会话亲和在时段外会被放弃，该会话可能换渠道；全部渠道时段外时客户端只看到通用 503；时区运行时加载失败按全天可用处理；粒度只到周几 + 分钟，没有日期范围。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
-- **实时 RPM 统计**：数字比当前时刻晚 4 到 14 秒；Redis 故障期间少计，实例崩溃会丢失最近 2 秒的计数；各实例按本机时钟分桶，时钟偏差超过 10 秒会明显失真；没有 Redis 的多实例部署只能看到本实例；只能在当前页查看，不能按 RPM 给全部渠道或用户排序；与使用日志页的 RPM 口径不同。
+- **实时 RPM / TPM 统计**：数字比当前时刻晚 4 到 14 秒；token 在请求结算时一次性计入（长流式请求的 token 全部落在结束那一分钟）；Redis 故障期间少计，实例崩溃会丢失最近 2 秒的计数；各实例按本机时钟分桶，时钟偏差超过 10 秒会明显失真；没有 Redis 的多实例部署只能看到本实例；列表只能在当前页查看，不能按 RPM / TPM 给全部渠道或用户排序；列表 RPM 按分发次数、日志页 RPM 按结算请求，两者口径不同。使用日志页不指定用户、又用多个条件或模糊匹配时，要读窗口内所有活跃用户的明细，流量很大时较慢；精确匹配区分大小写，模糊匹配不区分。
 
 ### 测试缺口
 
@@ -867,7 +869,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 - 渠道 RPM/TPM 与输入 token 边界的前端字段测试；distributor 端到端。
 - 控制器层"启用已耗尽渠道被拒绝 / 跳过"（单个 / 批量 / 标签）只有本地端到端验证，没有 Go 单测；前端无渠道成本倍率 / 额度上限字段的组件测试。
 - 渠道可用时段：Responses WebSocket 路径只有共用 `SelectChannelForRequest` 的单元覆盖，没有 WS 端到端；前端无时段编辑器的组件测试。
-- 实时 RPM 统计：Midjourney、异步任务提交与 Responses WebSocket 路径的计数只靠共用 `BeginAttempt` 的单元覆盖，没有这几条路径的端到端；真实 Redis（含集群模式）未验证。
+- 实时 RPM / TPM 统计：Midjourney、异步任务提交、实时语音、音频与 Responses WebSocket 路径只靠共用计数点的单元覆盖，没有这几条路径的端到端；真实 Redis（含集群模式）未验证。
 
 ---
 
@@ -894,8 +896,8 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 |---|---|
 | `POST /v1/messages/count_tokens` | Anthropic token 计数透传，免费 |
 | `POST /v1/responses/input_tokens` | OpenAI Responses 输入 token 计数透传，免费 |
-| `GET /api/channel/rpm`、`GET /api/channel/:id/rpm/users` | 渠道实时 RPM 与按用户明细（§17） |
-| `GET /api/user/rpm`、`GET /api/user/:id/rpm/channels` | 用户实时 RPM 与按渠道明细（§17） |
+| `GET /api/channel/rpm`、`GET /api/channel/:id/rpm/users` | 渠道实时 RPM / TPM 与按用户明细（§17） |
+| `GET /api/user/rpm`、`GET /api/user/:id/rpm/channels` | 用户实时 RPM / TPM 与按渠道明细（§17） |
 
 ### 21.3 管理 API 新增字段
 
@@ -908,6 +910,7 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | User | `rate_limit` | §7，`nil` 不改、`{}` 清除 |
 | User | `model_discount` | §9，同上 |
 | Token | `auto_groups`（普通分组下） | §13，作为备用分组 |
+| 日志统计 | `/api/log/stat` 与 `/api/log/self/stat` 新增 `tpm_input`、`tpm_cache_read`、`tpm_cache_write`、`tpm_output`、`rate_source`、`rate_window_start`、`rate_window_end`，参数 `rate_only` | §17，`rpm` / `tpm` 改为实时统计 |
 
 ### 21.4 Redis key 一览
 
@@ -921,6 +924,8 @@ SQLite（glebarez/sqlite，GORM）通过模型测试验证，含二次 AutoMigra
 | `user_extend_md:<userId>` | 用户模型折扣缓存 |
 | `rpmstat:ch:<bucket>` / `rpmstat:u:<bucket>` | 实时 RPM：各渠道分发次数 / 各用户请求数，10 秒一桶，120 秒过期（§17） |
 | `rpmstat:cu:<channelId>:<bucket>` / `rpmstat:uc:<userId>:<bucket>` | 实时 RPM 明细：渠道下各用户 / 用户在各渠道 |
+| `rpmstat:s:{all,ch,u,m,g,t}:<bucket>` / `rpmstat:s:cu:<channelId>:<bucket>` | 结算请求数与四项 token 的汇总（§17） |
+| `rpmstat:s:d:<userId>:<bucket>` / `rpmstat:s:users:<bucket>` | 每用户的结算明细（令牌、模型、渠道、分组）/ 用户 ID → 用户名 |
 
 ### 21.5 消费日志 `other` 新增键
 
