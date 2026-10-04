@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"fmt"
+	"os"
 	"slices"
 	"strconv"
 	"sync"
@@ -26,6 +27,11 @@ import (
 // number of instances rather than with request volume, and the counts of all
 // instances add up. Without Redis the counters stay in memory and cover this
 // instance only.
+//
+// RPM_STATS_REDIS_CONN_STRING moves the statistics to a dedicated Redis so
+// their writes, memory and detail scans never compete with the main Redis
+// (auth caches, rate limits, sessions). Once set, the statistics never fall
+// back to the main Redis.
 //
 // Counters live in rpmStatsBucketSeconds buckets. A reading sums the
 // rpmStatsWindowBuckets most recent buckets that ended at least
@@ -99,6 +105,15 @@ type rpmStatsRecorder struct {
 	// in memory mode, keyed by unix seconds / rpmStatsBucketSeconds.
 	buckets         map[int64]*rpmStatsBucket
 	lastFlushErrLog time.Time
+	// rdb is the dedicated statistics Redis; nil uses the main Redis.
+	rdb *redis.Client
+}
+
+func (r *rpmStatsRecorder) client() *redis.Client {
+	if r.rdb != nil {
+		return r.rdb
+	}
+	return common.RDB
 }
 
 var rpmStats = &rpmStatsRecorder{enabled: true, buckets: map[int64]*rpmStatsBucket{}}
@@ -113,14 +128,26 @@ type RpmReading struct {
 	Tokens      map[int]TokenStats
 }
 
-// StartRpmStats applies RPM_STATS_ENABLED and starts the Redis flush loop when
-// Redis is available. Call it once after Redis has been initialised.
+// StartRpmStats applies RPM_STATS_ENABLED and RPM_STATS_REDIS_CONN_STRING and
+// starts the Redis flush loop when a Redis is available. Call it once after
+// the main Redis has been initialised.
 func StartRpmStats() {
 	enabled := common.GetEnvOrDefaultBool("RPM_STATS_ENABLED", true)
 	useRedis := enabled && common.RedisEnabled && common.RDB != nil
+	var dedicated *redis.Client
+	if conn := os.Getenv("RPM_STATS_REDIS_CONN_STRING"); enabled && conn != "" {
+		client, err := connectRpmStatsRedis(conn)
+		useRedis = err == nil
+		if err != nil {
+			// 专用统计 Redis 配置错误时退回本实例内存，绝不改用主 Redis
+			common.SysError("rpm stats: invalid RPM_STATS_REDIS_CONN_STRING, counting this instance only: " + err.Error())
+		}
+		dedicated = client
+	}
 	rpmStats.mu.Lock()
 	rpmStats.enabled = enabled
 	rpmStats.useRedis = useRedis
+	rpmStats.rdb = dedicated
 	rpmStats.mu.Unlock()
 	switch {
 	case !enabled:
@@ -129,6 +156,8 @@ func StartRpmStats() {
 	case !useRedis:
 		common.SysLog("rpm stats: Redis not enabled, counting this instance only")
 		return
+	case dedicated != nil:
+		common.SysLog("rpm stats: using the dedicated Redis from RPM_STATS_REDIS_CONN_STRING")
 	}
 	go func() {
 		ticker := time.NewTicker(rpmStatsFlushInterval)
@@ -137,6 +166,24 @@ func StartRpmStats() {
 			rpmStats.flush(context.Background(), time.Now())
 		}
 	}()
+}
+
+// connectRpmStatsRedis opens the dedicated statistics Redis. A refused ping is
+// only logged: the client reconnects by itself and statistics are optional,
+// so a statistics Redis outage must never stop the gateway.
+func connectRpmStatsRedis(conn string) (*redis.Client, error) {
+	opt, err := redis.ParseURL(conn)
+	if err != nil {
+		return nil, err
+	}
+	opt.PoolSize = common.GetEnvOrDefault("RPM_STATS_REDIS_POOL_SIZE", 10)
+	client := redis.NewClient(opt)
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+	if err := client.Ping(ctx).Err(); err != nil {
+		common.SysError("rpm stats: dedicated Redis ping failed, will keep retrying: " + err.Error())
+	}
+	return client, nil
 }
 
 // RecordRpmAttempt counts one dispatch attempt to a channel. firstAttempt
@@ -222,7 +269,7 @@ func (r *rpmStatsRecorder) flush(ctx context.Context, at time.Time) {
 	}
 	ctx, cancel := context.WithTimeout(ctx, rpmStatsRedisTimeout)
 	defer cancel()
-	pipe := common.RDB.Pipeline()
+	pipe := r.client().Pipeline()
 	for idx, bucket := range pending {
 		for hash, counts := range bucket.counts {
 			key := hash.redisKey(idx)
@@ -320,7 +367,7 @@ func (r *rpmStatsRecorder) sum(w rpmStatsWindow, queries []rpmStatsQuery) ([]map
 
 	ctx, cancel := context.WithTimeout(context.Background(), rpmStatsRedisTimeout)
 	defer cancel()
-	pipe := common.RDB.Pipeline()
+	pipe := r.client().Pipeline()
 	type pending struct {
 		query int
 		all   *redis.StringStringMapCmd
@@ -390,7 +437,7 @@ func (r *rpmStatsRecorder) windowUsers(w rpmStatsWindow) (map[int]string, error)
 
 	ctx, cancel := context.WithTimeout(context.Background(), rpmStatsRedisTimeout)
 	defer cancel()
-	pipe := common.RDB.Pipeline()
+	pipe := r.client().Pipeline()
 	cmds := make([]*redis.StringStringMapCmd, 0, rpmStatsWindowBuckets)
 	for idx := w.oldest; idx <= w.latest; idx++ {
 		cmds = append(cmds, pipe.HGetAll(ctx, rpmStatsHash{kind: statsKindUsers}.redisKey(idx)))

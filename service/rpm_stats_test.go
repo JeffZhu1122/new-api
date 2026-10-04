@@ -259,3 +259,47 @@ func TestLogRateMatchesUsageLogFilters(t *testing.T) {
 	_, err := LogRate(LogRateFilter{ModelName: "%%x"})
 	assert.Error(t, err, "patterns the log queries refuse are refused here too")
 }
+
+// With a dedicated statistics Redis every statistics key lands there and the
+// main Redis stays untouched.
+func TestRpmStatsDedicatedRedisKeepsMainRedisClean(t *testing.T) {
+	mainServer := useTestStatsRedis(t)
+	statsServer := miniredis.RunT(t)
+	statsClient, err := connectRpmStatsRedis("redis://" + statsServer.Addr())
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = statsClient.Close() })
+
+	base := time.Unix(3_000_000, 0)
+	at := base.Add(65 * time.Second)
+	recorder := newTestRpmStatsRecorder(true)
+	recorder.rdb = statsClient
+	recorder.recordAttempt(base, 1, 7, true)
+	recorder.recordSettled(base, 7, "alice", statsDetail{tokenName: "k1", modelName: "gpt-4o", channelID: 1, group: "default"}, TokenStats{Input: 10, Output: 2})
+	recorder.flush(context.Background(), at)
+
+	assert.Empty(t, mainServer.Keys())
+	assert.NotEmpty(t, statsServer.Keys())
+	channels, err := recorder.readTotals(at, rpmKindChannel, statsKindChannel, []int{1})
+	require.NoError(t, err)
+	assert.Equal(t, map[int]int64{1: 1}, channels.Counts)
+	reading, err := recorder.logRate(at, LogRateFilter{Username: "alice", ModelName: "gpt%"})
+	require.NoError(t, err)
+	assert.Equal(t, TokenStats{Requests: 1, Input: 10, Output: 2}, reading.Stats)
+}
+
+// A broken dedicated Redis setting counts in memory instead of quietly moving
+// the statistics load onto the main Redis.
+func TestRpmStatsInvalidDedicatedRedisNeverUsesMainRedis(t *testing.T) {
+	useTestStatsRedis(t)
+	previous := rpmStats
+	rpmStats = newTestRpmStatsRecorder(false)
+	t.Cleanup(func() { rpmStats = previous })
+	t.Setenv("RPM_STATS_REDIS_CONN_STRING", "not a redis url")
+
+	StartRpmStats()
+
+	reading, err := ChannelRpm([]int{1})
+	require.NoError(t, err)
+	assert.Equal(t, RpmStatsSourceMemory, reading.Source)
+	assert.Nil(t, rpmStats.rdb)
+}
