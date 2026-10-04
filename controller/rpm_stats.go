@@ -21,17 +21,21 @@ const (
 	rpmStatsMaxLimit     = 100
 )
 
+// rpmStatsTotals carries RPM (dispatch attempts) in items and the settled
+// token usage behind TPM in tokens, both keyed by id.
 type rpmStatsTotals struct {
-	Source      string        `json:"source"`
-	WindowStart int64         `json:"window_start"`
-	WindowEnd   int64         `json:"window_end"`
-	Items       map[int]int64 `json:"items"`
+	Source      string                     `json:"source"`
+	WindowStart int64                      `json:"window_start"`
+	WindowEnd   int64                      `json:"window_end"`
+	Items       map[int]int64              `json:"items"`
+	Tokens      map[int]service.TokenStats `json:"tokens"`
 }
 
 type rpmStatsBreakdownItem struct {
-	Id   int    `json:"id"`
-	Name string `json:"name"`
-	Rpm  int64  `json:"rpm"`
+	Id     int                `json:"id"`
+	Name   string             `json:"name"`
+	Rpm    int64              `json:"rpm"`
+	Tokens service.TokenStats `json:"tokens"`
 }
 
 type rpmStatsBreakdown struct {
@@ -39,6 +43,7 @@ type rpmStatsBreakdown struct {
 	WindowStart int64                   `json:"window_start"`
 	WindowEnd   int64                   `json:"window_end"`
 	Total       int64                   `json:"total"`
+	TotalTokens service.TokenStats      `json:"total_tokens"`
 	Items       []rpmStatsBreakdownItem `json:"items"`
 }
 
@@ -81,6 +86,7 @@ func respondRpmTotals(c *gin.Context, read func([]int) (service.RpmReading, erro
 		WindowStart: reading.WindowStart,
 		WindowEnd:   reading.WindowEnd,
 		Items:       reading.Counts,
+		Tokens:      reading.Tokens,
 	})
 }
 
@@ -158,8 +164,8 @@ func parseRpmBreakdownParams(c *gin.Context) (id int, limit int, ok bool) {
 	return id, limit, true
 }
 
-// newRpmStatsBreakdown keeps the limit busiest ids (ties by id) and the total
-// over all of them.
+// newRpmStatsBreakdown keeps the limit busiest ids (RPM, then TPM, ties by
+// id) and the totals over all of them.
 func newRpmStatsBreakdown(reading service.RpmReading, limit int) rpmStatsBreakdown {
 	breakdown := rpmStatsBreakdown{
 		Source:      reading.Source,
@@ -167,15 +173,28 @@ func newRpmStatsBreakdown(reading service.RpmReading, limit int) rpmStatsBreakdo
 		WindowEnd:   reading.WindowEnd,
 		Items:       make([]rpmStatsBreakdownItem, 0, len(reading.Counts)),
 	}
-	for id, rpm := range reading.Counts {
-		if rpm <= 0 {
+	ids := make(map[int]bool, len(reading.Counts)+len(reading.Tokens))
+	for id := range reading.Counts {
+		ids[id] = true
+	}
+	for id := range reading.Tokens {
+		ids[id] = true
+	}
+	for id := range ids {
+		rpm, tokens := reading.Counts[id], reading.Tokens[id]
+		if rpm <= 0 && tokens.Requests <= 0 && tokens.Total() <= 0 {
 			continue
 		}
 		breakdown.Total += rpm
-		breakdown.Items = append(breakdown.Items, rpmStatsBreakdownItem{Id: id, Rpm: rpm})
+		breakdown.TotalTokens.Requests += tokens.Requests
+		breakdown.TotalTokens.Input += tokens.Input
+		breakdown.TotalTokens.CacheRead += tokens.CacheRead
+		breakdown.TotalTokens.CacheWrite += tokens.CacheWrite
+		breakdown.TotalTokens.Output += tokens.Output
+		breakdown.Items = append(breakdown.Items, rpmStatsBreakdownItem{Id: id, Rpm: rpm, Tokens: tokens})
 	}
 	slices.SortFunc(breakdown.Items, func(a, b rpmStatsBreakdownItem) int {
-		return cmp.Or(cmp.Compare(b.Rpm, a.Rpm), cmp.Compare(a.Id, b.Id))
+		return cmp.Or(cmp.Compare(b.Rpm, a.Rpm), cmp.Compare(b.Tokens.Total(), a.Tokens.Total()), cmp.Compare(a.Id, b.Id))
 	})
 	if len(breakdown.Items) > limit {
 		breakdown.Items = breakdown.Items[:limit]
