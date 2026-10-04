@@ -34,6 +34,7 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeListCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
+import { LiveRpmCell } from '@/components/live-rpm'
 import { ProviderBadge } from '@/components/provider-badge'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
@@ -60,7 +61,7 @@ import {
 } from '@/lib/server-error-message'
 import { truncateText } from '@/lib/utils'
 
-import { getCodexUsage, updateChannelBalance } from '../api'
+import { getChannelRpmUsers, getCodexUsage, updateChannelBalance } from '../api'
 import {
   CHANNEL_STATUS_CONFIG,
   CHANNEL_TYPE_TASK_PLUGIN,
@@ -326,6 +327,33 @@ function TagWeightCell({ channel }: { channel: TagRow }) {
         }}
       />
     </>
+  )
+}
+
+/**
+ * Live RPM: dispatches to the channel in the last settled minute. A channel's
+ * value opens the users behind it; a tag row sums its channels.
+ */
+function ChannelRpmCell(props: { channel: Channel }) {
+  const { t } = useTranslation()
+  const { sensitiveVisible } = useChannels()
+  if (isTagAggregateRow(props.channel)) {
+    return <LiveRpmCell ids={props.channel.children.map((child) => child.id)} />
+  }
+  const channelId = props.channel.id
+  return (
+    <LiveRpmCell
+      ids={[channelId]}
+      breakdown={{
+        title: t('RPM by user'),
+        description: t(
+          'Dispatches in the last full minute, including retries and failed attempts. Refreshes every 10 seconds.'
+        ),
+        queryKey: ['live-rpm', 'channel-users', channelId],
+        fetch: () => getChannelRpmUsers(channelId),
+        maskNames: !sensitiveVisible,
+      }}
+    />
   )
 }
 
@@ -1271,6 +1299,15 @@ export function useChannelsColumns(
         header: t('Used / Remaining'),
         cell: ({ row }) => <BalanceCell channel={row.original} />,
         size: 180,
+      },
+
+      // Live RPM column
+      {
+        id: 'rpm',
+        header: t('RPM'),
+        cell: ({ row }) => <ChannelRpmCell channel={row.original} />,
+        size: 90,
+        enableSorting: false,
       },
 
       // Response Time column
