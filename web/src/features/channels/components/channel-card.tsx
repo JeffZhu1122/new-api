@@ -76,6 +76,7 @@ function ChannelCardComponent({
   const responseCell = renderCell('response_time')
   const testCell = renderCell('test_time')
   const rpmCell = renderCell('rpm')
+  const tpmCell = renderCell('tpm')
 
   const labelClass = 'text-muted-foreground text-[11px] font-medium select-none'
 
@@ -161,6 +162,12 @@ function ChannelCardComponent({
                 <dt className={labelClass}>{t('RPM')}</dt>
                 <dd className='min-w-0 text-sm tabular-nums [&_[data-slot=status-badge]]:!ml-0 [&>div]:!ml-0'>
                   {rpmCell ?? <span className='text-muted-foreground'>-</span>}
+                </dd>
+              </div>
+              <div className='row-span-2 grid min-w-0 grid-rows-subgrid'>
+                <dt className={labelClass}>{t('TPM')}</dt>
+                <dd className='min-w-0 text-sm tabular-nums [&_[data-slot=status-badge]]:!ml-0 [&>div]:!ml-0'>
+                  {tpmCell ?? <span className='text-muted-foreground'>-</span>}
                 </dd>
               </div>
             </dl>

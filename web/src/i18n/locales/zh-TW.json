@@ -7405,6 +7405,13 @@
     "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "最近一個完整分鐘內的請求數。依渠道拆分時按每次分發計數，包含重試。每 10 秒重新整理一次。",
     "No requests in the last minute": "最近一分鐘沒有請求",
     "Failed to load RPM statistics": "載入 RPM 統計失敗",
-    "Counted on this server instance only.": "僅統計目前服務執行個體。"
+    "Counted on this server instance only.": "僅統計目前服務執行個體。",
+    "TPM breakdown": "TPM 細分",
+    "Input (excluding cache)": "輸入（不含快取）",
+    "Tokens settled in the last full minute. Input excludes cached tokens. Refreshes every 10 seconds.": "最近一個完整分鐘內結算的 token 數，輸入不含快取。每 10 秒重新整理一次。",
+    "Input TPM": "輸入 TPM",
+    "Cache read TPM": "快取讀取 TPM",
+    "Cache write TPM": "快取寫入 TPM",
+    "Output TPM": "輸出 TPM"
   }
 }

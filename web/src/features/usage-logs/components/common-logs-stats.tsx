@@ -21,7 +21,8 @@ import { getRouteApi } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
 import { Skeleton } from '@/components/ui/skeleton'
-import { formatLogQuota } from '@/lib/format'
+import { toIntlLocale } from '@/i18n/languages'
+import { formatLogQuota, formatNumber } from '@/lib/format'
 import { requireServerSuccess } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
@@ -48,33 +49,54 @@ function StatBadge(props: {
   )
 }
 
+/** The live RPM / TPM are cheap Redis reads, so they poll on their own. */
+const LIVE_RATE_REFRESH_INTERVAL_MS = 10_000
+
 export function CommonLogsStats() {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
+  const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const { isAdminView: isAdmin } = useLogsViewScope()
   const searchParams = route.useSearch()
   const { sensitiveVisible } = useUsageLogsContext()
 
-  const { data: stats, isLoading } = useQuery({
-    queryKey: ['usage-logs-stats', isAdmin, searchParams],
-    queryFn: async () => {
-      const params = buildApiParams({
+  const fetchStats = async (rateOnly: boolean) => {
+    const params = {
+      ...buildApiParams({
         page: 1,
         pageSize: 1,
         searchParams,
         columnFilters: [],
         isAdmin,
-      })
+      }),
+      ...(rateOnly ? { rate_only: true } : {}),
+    }
+    const result = isAdmin
+      ? requireServerSuccess(await getLogStats(params))
+      : requireServerSuccess(await getUserLogStats(params))
+    return result.success ? result.data || DEFAULT_LOG_STATS : DEFAULT_LOG_STATS
+  }
 
-      const result = isAdmin
-        ? requireServerSuccess(await getLogStats(params))
-        : requireServerSuccess(await getUserLogStats(params))
-
-      return result.success
-        ? result.data || DEFAULT_LOG_STATS
-        : DEFAULT_LOG_STATS
-    },
+  // Quota of the selected time range: one logs-table query per filter change.
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['usage-logs-stats', isAdmin, searchParams],
+    queryFn: () => fetchStats(false),
     placeholderData: (previousData) => previousData,
   })
+
+  // RPM / TPM of the last settled minute, refreshed without touching the logs table.
+  const rateQuery = useQuery({
+    queryKey: ['usage-logs-rate', isAdmin, searchParams],
+    queryFn: () => fetchStats(true),
+    placeholderData: (previousData) => previousData,
+    refetchInterval: LIVE_RATE_REFRESH_INTERVAL_MS,
+    refetchIntervalInBackground: false,
+    meta: { errorToast: false },
+  })
+  const rate = rateQuery.isError ? undefined : rateQuery.data
+  const rateAvailable =
+    rate?.rate_source === 'redis' || rate?.rate_source === 'memory'
+  const rateValue = (value: number | undefined) =>
+    rateAvailable ? formatNumber(value ?? 0, locale) : '-'
 
   if (isLoading) {
     return (
@@ -95,14 +117,39 @@ export function CommonLogsStats() {
       />
       <StatBadge
         label={t('RPM')}
-        value={stats?.rpm || 0}
+        value={rateValue(rate?.rpm)}
         accent='bg-rose-500/65'
       />
       <StatBadge
         label={t('TPM')}
-        value={stats?.tpm || 0}
+        value={rateValue(rate?.tpm)}
         accent='bg-slate-400/70'
       />
+      <StatBadge
+        label={t('Input TPM')}
+        value={rateValue(rate?.tpm_input)}
+        accent='bg-emerald-500/60'
+      />
+      <StatBadge
+        label={t('Cache read TPM')}
+        value={rateValue(rate?.tpm_cache_read)}
+        accent='bg-amber-500/60'
+      />
+      <StatBadge
+        label={t('Cache write TPM')}
+        value={rateValue(rate?.tpm_cache_write)}
+        accent='bg-orange-500/60'
+      />
+      <StatBadge
+        label={t('Output TPM')}
+        value={rateValue(rate?.tpm_output)}
+        accent='bg-violet-500/60'
+      />
+      {rate?.rate_source === 'memory' && (
+        <span className='text-muted-foreground text-xs'>
+          {t('Counted on this server instance only.')}
+        </span>
+      )}
     </div>
   )
 }

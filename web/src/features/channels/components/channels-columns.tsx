@@ -34,7 +34,7 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeListCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
-import { LiveRpmCell } from '@/components/live-rpm'
+import { LiveRpmCell, LiveTpmCell } from '@/components/live-rpm'
 import { ProviderBadge } from '@/components/provider-badge'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
@@ -1306,6 +1306,23 @@ export function useChannelsColumns(
         id: 'rpm',
         header: t('RPM'),
         cell: ({ row }) => <ChannelRpmCell channel={row.original} />,
+        size: 90,
+        enableSorting: false,
+      },
+
+      // Live TPM column (settled tokens; a tag row sums its channels)
+      {
+        id: 'tpm',
+        header: t('TPM'),
+        cell: ({ row }) => (
+          <LiveTpmCell
+            ids={
+              isTagAggregateRow(row.original)
+                ? row.original.children.map((child) => child.id)
+                : [row.original.id]
+            }
+          />
+        ),
         size: 90,
         enableSorting: false,
       },

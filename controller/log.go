@@ -7,6 +7,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
+	"github.com/QuantumNous/new-api/service"
 
 	"github.com/gin-gonic/gin"
 )
@@ -101,22 +102,25 @@ func GetLogsStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	stat, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	var stat model.Stat
+	if c.Query("rate_only") != "true" {
+		var err error
+		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	rate, err := service.LogRate(service.LogRateFilter{Username: username, TokenName: tokenName, ModelName: modelName, ChannelID: channel, Group: group})
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	//tokenNum := model.SumUsedToken(logType, startTimestamp, endTimestamp, modelName, username, "")
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data": gin.H{
-			"quota": stat.Quota,
-			"rpm":   stat.Rpm,
-			"tpm":   stat.Tpm,
-		},
+		"data":    logStatData(stat.Quota, rate),
 	})
-	return
 }
 
 func GetLogsSelfStat(c *gin.Context) {
@@ -128,21 +132,41 @@ func GetLogsSelfStat(c *gin.Context) {
 	modelName := c.Query("model_name")
 	channel, _ := strconv.Atoi(c.Query("channel"))
 	group := c.Query("group")
-	quotaNum, err := model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+	var quotaNum model.Stat
+	if c.Query("rate_only") != "true" {
+		var err error
+		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+		if err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	rate, err := service.LogRate(service.LogRateFilter{UserID: c.GetInt("id"), TokenName: tokenName, ModelName: modelName, ChannelID: channel, Group: group})
 	if err != nil {
 		common.ApiError(c, err)
 		return
 	}
-	//tokenNum := model.SumUsedToken(logType, startTimestamp, endTimestamp, modelName, username, tokenName)
 	c.JSON(200, gin.H{
 		"success": true,
 		"message": "",
-		"data": gin.H{
-			"quota": quotaNum.Quota,
-			"rpm":   quotaNum.Rpm,
-			"tpm":   quotaNum.Tpm,
-			//"token": tokenNum,
-		},
+		"data":    logStatData(quotaNum.Quota, rate),
 	})
-	return
+}
+
+// logStatData combines the quota of the selected time range (logs table,
+// skipped by rate_only polls) with the live RPM / TPM of the last settled
+// minute.
+func logStatData(quota int, rate service.LogRateReading) gin.H {
+	return gin.H{
+		"quota":             quota,
+		"rpm":               rate.Stats.Requests,
+		"tpm":               rate.Stats.Total(),
+		"tpm_input":         rate.Stats.Input,
+		"tpm_cache_read":    rate.Stats.CacheRead,
+		"tpm_cache_write":   rate.Stats.CacheWrite,
+		"tpm_output":        rate.Stats.Output,
+		"rate_source":       rate.Source,
+		"rate_window_start": rate.WindowStart,
+		"rate_window_end":   rate.WindowEnd,
+	}
 }

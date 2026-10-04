@@ -7405,6 +7405,13 @@
     "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "Số yêu cầu trong phút đầy đủ gần nhất. Phần chia theo kênh đếm mọi lần điều phối, bao gồm thử lại. Làm mới mỗi 10 giây.",
     "No requests in the last minute": "Không có yêu cầu nào trong phút vừa qua",
     "Failed to load RPM statistics": "Không thể tải thống kê RPM",
-    "Counted on this server instance only.": "Chỉ tính trên phiên bản máy chủ này."
+    "Counted on this server instance only.": "Chỉ tính trên phiên bản máy chủ này.",
+    "TPM breakdown": "Chi tiết TPM",
+    "Input (excluding cache)": "Đầu vào (không gồm bộ nhớ đệm)",
+    "Tokens settled in the last full minute. Input excludes cached tokens. Refreshes every 10 seconds.": "Số token đã quyết toán trong phút đầy đủ gần nhất. Đầu vào không gồm token bộ nhớ đệm. Làm mới mỗi 10 giây.",
+    "Input TPM": "TPM đầu vào",
+    "Cache read TPM": "TPM đọc bộ nhớ đệm",
+    "Cache write TPM": "TPM ghi bộ nhớ đệm",
+    "Output TPM": "TPM đầu ra"
   }
 }

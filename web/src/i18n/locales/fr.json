@@ -7405,6 +7405,13 @@
     "Requests in the last full minute. The per-channel split counts every dispatch, including retries. Refreshes every 10 seconds.": "Requêtes au cours de la dernière minute complète. La répartition par canal compte chaque envoi, nouvelles tentatives comprises. Actualisé toutes les 10 secondes.",
     "No requests in the last minute": "Aucune requête au cours de la dernière minute",
     "Failed to load RPM statistics": "Échec du chargement des statistiques RPM",
-    "Counted on this server instance only.": "Compté sur cette instance du serveur uniquement."
+    "Counted on this server instance only.": "Compté sur cette instance du serveur uniquement.",
+    "TPM breakdown": "Détail du TPM",
+    "Input (excluding cache)": "Entrée (hors cache)",
+    "Tokens settled in the last full minute. Input excludes cached tokens. Refreshes every 10 seconds.": "Jetons réglés au cours de la dernière minute complète. L’entrée exclut les jetons en cache. Actualisé toutes les 10 secondes.",
+    "Input TPM": "TPM d’entrée",
+    "Cache read TPM": "TPM de lecture du cache",
+    "Cache write TPM": "TPM d’écriture du cache",
+    "Output TPM": "TPM de sortie"
   }
 }

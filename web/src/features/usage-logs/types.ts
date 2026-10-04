@@ -281,12 +281,21 @@ export interface LogOtherData {
 }
 
 /**
- * Log statistics data
+ * Log statistics data. `quota` covers the selected time range; RPM / TPM and
+ * the token split cover the last settled minute of the live statistics.
  */
 export interface LogStatistics {
   quota: number
   rpm: number
   tpm: number
+  /** Input tokens excluding every cached token. */
+  tpm_input?: number
+  tpm_cache_read?: number
+  tpm_cache_write?: number
+  tpm_output?: number
+  rate_source?: 'redis' | 'memory' | 'disabled' | 'unavailable'
+  rate_window_start?: number
+  rate_window_end?: number
 }
 
 // ============================================================================
@@ -453,6 +462,8 @@ export interface GetLogsResponse {
 }
 
 export interface GetLogStatsParams {
+  /** Skip the time-range quota query; used by the live RPM / TPM poll. */
+  rate_only?: boolean
   type?: number
   username?: string
   token_name?: string

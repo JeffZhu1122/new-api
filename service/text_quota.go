@@ -530,7 +530,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 
 	attachQuotaSaturation(ctx, relayInfo, other)
 
-	model.RecordConsumeLog(ctx, relayInfo.UserId, model.RecordConsumeLogParams{
+	logParams := model.RecordConsumeLogParams{
 		ChannelId:        relayInfo.ChannelId,
 		PromptTokens:     summary.PromptTokens,
 		CompletionTokens: summary.CompletionTokens,
@@ -543,7 +543,9 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		IsStream:         relayInfo.IsStream,
 		Group:            relayInfo.UsingGroup,
 		Other:            other,
-	})
+	}
+	RecordSettledUsage(ctx, relayInfo.UserId, logParams, settledTextTokens(summary, isLegacyClaudeDerivedOpenAIUsage(relayInfo, billingUsage)))
+	model.RecordConsumeLog(ctx, relayInfo.UserId, logParams)
 	relayInfo.PerformanceOutputTokens = int64(summary.CompletionTokens)
 }
 
