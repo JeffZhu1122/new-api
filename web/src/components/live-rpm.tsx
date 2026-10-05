@@ -139,7 +139,8 @@ type LiveRpmCellProps = {
 export function LiveRpmCell(props: LiveRpmCellProps) {
   const totals = useContext(LiveRpmContext)
   let value: number | undefined
-  if (totals && totals.source !== 'disabled') {
+  // A malformed payload must blank the cell, never break the whole table.
+  if (totals?.items && totals.source !== 'disabled') {
     value = 0
     for (const id of props.ids) {
       const count = totals.items[String(id)]
