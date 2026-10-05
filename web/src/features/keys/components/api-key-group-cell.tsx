@@ -48,9 +48,7 @@ export function ApiKeyGroupCell(props: ApiKeyGroupCellProps) {
     const ratio =
       group && typeof props.ratio === 'number' ? props.ratio : undefined
     const fallbackGroups = group
-      ? (props.fallbackGroups ?? []).filter(
-          (item) => item && item !== group
-        )
+      ? (props.fallbackGroups ?? []).filter((item) => item && item !== group)
       : []
     const badge = (
       <GroupBadge

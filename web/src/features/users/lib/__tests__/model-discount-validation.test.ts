@@ -45,11 +45,7 @@ describe('user model discount validation', () => {
   })
 
   test('rejects zero, negative, and above-10 discount values', () => {
-    for (const value of [
-      '{"gpt-4o": 0}',
-      '{"gpt-4o": -1}',
-      '{"gpt-4o": 80}',
-    ]) {
+    for (const value of ['{"gpt-4o": 0}', '{"gpt-4o": -1}', '{"gpt-4o": 80}']) {
       expect(validateModelDiscount(value).success).toBe(false)
     }
   })

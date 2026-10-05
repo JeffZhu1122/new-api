@@ -296,8 +296,9 @@ describe('API keys mutate drawer Auto group integration', () => {
     expect(
       document.body.textContent?.includes('0 / 2 fallback groups selected')
     ).toBe(true)
-    const addFallbackTrigger =
-      fallbackControl.querySelector<HTMLButtonElement>('button[role="combobox"]')
+    const addFallbackTrigger = fallbackControl.querySelector<HTMLButtonElement>(
+      'button[role="combobox"]'
+    )
     if (!addFallbackTrigger) {
       throw new Error('Expected fallback group combobox')
     }
@@ -308,9 +309,9 @@ describe('API keys mutate drawer Auto group integration', () => {
     expect(optionTexts.some((text) => text.includes('Standard access'))).toBe(
       false
     )
-    expect(
-      optionTexts.some((text) => text.includes('Automatic routing'))
-    ).toBe(false)
+    expect(optionTexts.some((text) => text.includes('Automatic routing'))).toBe(
+      false
+    )
     fireEvent.click(addFallbackTrigger)
 
     selectComboboxOption(addFallbackTrigger, 'Priority access')
