@@ -50,10 +50,16 @@ const modelRateLimitDialogSchema = z
     model: z.string(),
     rpm: z
       .string()
-      .refine(isEmptyOrLimitNumber, 'Must be an integer within [0, 2147483647]'),
+      .refine(
+        isEmptyOrLimitNumber,
+        'Must be an integer within [0, 2147483647]'
+      ),
     tpm: z
       .string()
-      .refine(isEmptyOrLimitNumber, 'Must be an integer within [0, 2147483647]'),
+      .refine(
+        isEmptyOrLimitNumber,
+        'Must be an integer within [0, 2147483647]'
+      ),
   })
   .refine((values) => values.rpm.trim() !== '' || values.tpm.trim() !== '', {
     message: 'At least one of RPM or TPM must be set',

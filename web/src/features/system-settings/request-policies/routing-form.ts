@@ -57,7 +57,7 @@ export function routingPolicyFormValues(
     AutomaticRetryKeywordsEnabled:
       options.AutomaticRetryKeywordsEnabled === 'true',
     AutomaticRetryKeywords: (options.AutomaticRetryKeywords ?? '').replaceAll(
-      /\r\n/g,
+      '\r\n',
       '\n'
     ),
     RetryAvoidFailedChannelsEnabled:
@@ -91,7 +91,7 @@ export function routingPolicyOptions(
     AutomaticRetryStatusCodes: values.AutomaticRetryStatusCodes,
     AutomaticRetryKeywordsEnabled: String(values.AutomaticRetryKeywordsEnabled),
     AutomaticRetryKeywords: values.AutomaticRetryKeywords.replaceAll(
-      /\r\n/g,
+      '\r\n',
       '\n'
     ),
     RetryAvoidFailedChannelsEnabled: String(

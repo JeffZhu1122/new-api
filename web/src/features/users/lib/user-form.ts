@@ -96,11 +96,7 @@ const isValidRateLimitModelsJSON = (value?: string) => {
       return false
     }
     for (const entry of Object.values(parsed)) {
-      if (
-        typeof entry !== 'object' ||
-        entry === null ||
-        Array.isArray(entry)
-      ) {
+      if (typeof entry !== 'object' || entry === null || Array.isArray(entry)) {
         return false
       }
       const { rpm, tpm, ...rest } = entry as Record<string, unknown>
