@@ -34,7 +34,10 @@ import {
 } from './model-rate-limit-dialog'
 
 type LimitValues = { rpm?: number; tpm?: number }
-type GroupRules = { default?: LimitValues; models?: Record<string, LimitValues> }
+type GroupRules = {
+  default?: LimitValues
+  models?: Record<string, LimitValues>
+}
 type RulesConfig = {
   default?: LimitValues
   models?: Record<string, LimitValues>
