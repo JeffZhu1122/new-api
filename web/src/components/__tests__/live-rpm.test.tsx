@@ -120,6 +120,19 @@ function tokens(partial: Partial<LiveTokenStats>): LiveTokenStats {
   }
 }
 
+it('shows dashes instead of crashing when the totals payload has no counts', () => {
+  const malformed = { source: 'redis' } as unknown as LiveRpmTotals
+  renderWithProviders(
+    <>
+      <LiveRpmCell ids={[1]} />
+      <LiveTpmCell ids={[1]} />
+    </>,
+    malformed
+  )
+
+  expect(screen.getAllByText('-')).toHaveLength(2)
+})
+
 it('opening the value loads the breakdown with name, id, RPM and TPM', async () => {
   const breakdown = breakdownSource({
     total: 5,
