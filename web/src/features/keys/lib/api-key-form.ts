@@ -228,7 +228,8 @@ export function transformApiKeyToFormDefaults(
         .filter((group) => availableSet.has(group))
         .slice(0, Math.max(0, maxAutoGroups))
     : []
-  const autoGroupsMode = isAuto && storedGroups.length > 0 ? 'custom' : 'inherit'
+  const autoGroupsMode =
+    isAuto && storedGroups.length > 0 ? 'custom' : 'inherit'
   const fallbackGroups = isAuto
     ? []
     : storedGroups
