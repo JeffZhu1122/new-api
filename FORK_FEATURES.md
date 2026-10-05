@@ -4,13 +4,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 文档覆盖的最后一个功能提交 | `f69683a02` — 2026-09-26 `feat(tokens): bind a key to a primary group plus ordered fallback groups` |
-| 上游基线（merge-base） | `c2b7a9a9e` — 2026-09-25 `fix(claude): preserve per-message output_config in Claude messages (#7561)` |
-| 最近一次同步 | 2026-09-27，rebase 到 `c2b7a9a9e`，无冲突 |
-| fork 专有提交数 | 19 个功能提交（不含本文档自身的提交） |
-| 变更规模 | 147 个文件，+9313 / −1216 行（不含本文档） |
+| 上游基线（merge-base） | `b48b74ab7` — 2026-10-05 `feat(jsplugin): decode hook results with moejs ToGoInto`（上游版本 `v1.0.0-rc.41` 之后） |
+| 最近一次同步 | 2026-10-06，rebase 到 `b48b74ab7`，2 处冲突（见 §19.4） |
+| fork 专有提交数 | 30 个（含本文档相关提交） |
+| 变更规模 | 180 个文件，+14440 / −1343 行（不含本文档） |
 
-同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log c2b7a9a9e..HEAD` 得到的提交（18 个功能提交加本文档的提交）就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
+同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log b48b74ab7..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
 ---
 
@@ -836,12 +835,24 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/text_quota.go` / `service/quota.go` / `service/task_billing.go` / `relay/mjproxy_handler.go` | 消费日志参数改为先赋给 `logParams`，再调用 `RecordSettledUsage` 与 `RecordConsumeLog` |
 | `model/log.go` / `controller/log.go` | `SumUsedQuota` 只算额度、`ValidateLogTextPattern`；日志统计接口改读 `service.LogRate` |
 | `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹 |
+| `controller/user.go` | `UpdateUser` 中 `rate_limit` / `model_discount` 写入紧挨上游的审计调用 |
+| `middleware/access_token_routes.go` | fork 新增的管理接口若不经 `RequirePermission`，必须在这里声明访问令牌权限，否则上游的覆盖测试失败、令牌被拒 |
+| `web/src/features/users/api.ts` | 文件头 import |
 | `web/src/i18n/locales/*.json` | 新增文案 |
 
 ### 19.3 上游签名变化的传染点
 
 - `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`。
 - `relaykit/` 必须独立可编译：改动 `relaykit/dto/*` 后运行 `cd relaykit && GOWORK=off go build ./...`。
+- 访问令牌按接口授权（上游 2026-09 起）：新增管理接口时，经 `channelPermissionRoutes` 等 `handlePermissionRoute` 注册的会自动声明；其余（如 `adminRoute.GET(...)`）要在 `accessTokenRouteRules` 里补规则，`router/access_token_scope_test.go` 会检查。
+
+### 19.4 同步记录
+
+- **2026-10-06，rebase 到 `b48b74ab7`**（上游 21 个提交：可授权访问令牌、管理员操作用户需二次验证、任务插件改用 moejs、Responses 自定义工具修复等）。
+  - 冲突：`controller/user.go`（保留 fork 的 `rate_limit` / `model_discount` 写入，审计改用上游的 `auditParams`）；`web/src/features/users/api.ts`（两侧 import 并存）。
+  - 合并后补充：`GET /api/user/rpm`、`GET /api/user/:id/rpm/channels` 声明 `user:read`；`LiveRpmCell` 在统计数据缺少 `items` 时显示"-"而不是让整张渠道表崩溃（上游新增的渠道表刷新测试暴露）；修正 fork 文件里遗留的 2 个 lint 错误与 8 处格式漂移。
+  - 验证：`go vet ./...` 与 `go test ./...` 全部通过，relaykit 独立构建与测试通过；前端类型检查、182 个测试文件 2237 个用例全部通过；本地端到端 38 项（覆盖 §2 到 §17 与上游访问令牌在 fork 接口上的授权）全部通过；Chrome 检查渠道表、渠道编辑抽屉各标签页、用户与令牌页、日志统计条、请求策略、模型限流、分组模型折扣与访问令牌页，无控制台错误。
+  - 部署注意：上游新表 `user_access_tokens` 由自动迁移创建；旧的管理令牌升级后只能再用 30 天，依赖它的脚本（如 channel-inspector）需改用带相应权限的新令牌；管理员编辑用户时若提交了 `admin_permissions` 或密码，需要先做二次验证。
 
 ---
 
