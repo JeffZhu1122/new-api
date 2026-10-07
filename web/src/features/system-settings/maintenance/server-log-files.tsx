@@ -16,7 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { useCallback, useEffect, useId, useState } from 'react'
+import { useCallback, useEffect, useId, useState, type ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
@@ -70,11 +70,16 @@ function formatBytes(bytes: number, decimals = 2): string {
   }`
 }
 
+type ServerLogFilesProps = {
+  /** Renders the scheduled cleanup fields under the manual cleanup. */
+  renderSchedule?: (formatSize: (bytes: number) => string) => ReactNode
+}
+
 /**
  * The server log module of the log maintenance page. It shows the log files
  * the server writes to disk and deletes old ones.
  */
-export function ServerLogFiles() {
+export function ServerLogFiles(props: ServerLogFilesProps) {
   const { t } = useTranslation()
   const titleId = useId()
   const [serverLogInfo, setServerLogInfo] = useState<ServerLogInfo | null>(null)
@@ -277,6 +282,8 @@ export function ServerLogFiles() {
                 </AlertDialogContent>
               </AlertDialog>
             </div>
+
+            {props.renderSchedule?.(formatBytes)}
           </div>
         ) : (
           <Alert>
