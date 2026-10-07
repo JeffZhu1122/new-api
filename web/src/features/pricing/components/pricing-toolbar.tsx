@@ -86,7 +86,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
   const sortLabels = getSortLabels(t)
 
   return (
-    <div className='bg-card rounded-xl border p-3'>
+    <div className='brand-surface rounded-2xl p-3'>
       <div className='flex flex-wrap items-center justify-between gap-3'>
         <div className='flex items-center gap-2'>
           <Button
@@ -112,7 +112,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
             <span>{props.filteredCount === 1 ? t('model') : t('models')}</span>
             {props.totalCount != null &&
               props.filteredCount !== props.totalCount && (
-                <span className='text-muted-foreground/60 text-xs'>
+                <span className='text-muted-foreground text-xs'>
                   / {props.totalCount.toLocaleString()}
                 </span>
               )}
@@ -131,8 +131,12 @@ export function PricingToolbar(props: PricingToolbarProps) {
             size='sm'
             aria-label={t('Price display mode')}
           >
-            <ToggleGroupItem value='standard'>{t('Standard')}</ToggleGroupItem>
-            <ToggleGroupItem value='recharge'>{t('Recharge')}</ToggleGroupItem>
+            <ToggleGroupItem value='standard' className='h-8'>
+              {t('Standard')}
+            </ToggleGroupItem>
+            <ToggleGroupItem value='recharge' className='h-8'>
+              {t('Recharge')}
+            </ToggleGroupItem>
           </ToggleGroup>
           <ToggleGroup
             value={[props.tokenUnit]}
@@ -145,8 +149,12 @@ export function PricingToolbar(props: PricingToolbarProps) {
             size='sm'
             aria-label={t('Token unit')}
           >
-            <ToggleGroupItem value='M'>/1M</ToggleGroupItem>
-            <ToggleGroupItem value='K'>/1K</ToggleGroupItem>
+            <ToggleGroupItem value='M' className='h-8'>
+              /1M
+            </ToggleGroupItem>
+            <ToggleGroupItem value='K' className='h-8'>
+              /1K
+            </ToggleGroupItem>
           </ToggleGroup>
 
           <DropdownMenu modal={false}>
@@ -194,6 +202,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
       <Sheet open={mobileFiltersOpen} onOpenChange={setMobileFiltersOpen}>
         <SheetContent
           side='left'
+          data-brand-page='pricing'
           className={sideDrawerContentClassName('sm:max-w-md')}
         >
           <SheetHeader className={sideDrawerHeaderClassName()}>
@@ -221,7 +230,7 @@ export function PricingToolbar(props: PricingToolbarProps) {
               models={props.models}
               hasActiveFilters={props.hasActiveFilters}
               onClearFilters={props.onClearFilters}
-              className='border-0 bg-transparent p-0 shadow-none'
+              className='border-0 bg-transparent bg-none p-0 shadow-none'
             />
           </div>
         </SheetContent>

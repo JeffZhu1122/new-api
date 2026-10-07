@@ -101,7 +101,7 @@ export function OAuthCallbackScreen({
     <AuthLayout>
       <div className='w-full space-y-8'>
         <div className='flex flex-col items-center space-y-4 text-center'>
-          <div className='bg-muted flex h-16 w-16 items-center justify-center rounded-2xl'>
+          <div className='brand-icon-tile size-16 rounded-2xl'>
             <Icon className='h-8 w-8' />
           </div>
           <div className='space-y-2'>
@@ -116,7 +116,7 @@ export function OAuthCallbackScreen({
 
         <div className='space-y-4 text-center'>
           <div className='flex items-center justify-center gap-2 text-sm font-medium'>
-            <Loader2 className='h-4 w-4 animate-spin' />
+            <Loader2 className='text-primary h-4 w-4 animate-spin' />
             <span>{t('Processing OAuth response...')}</span>
           </div>
           <p className='text-muted-foreground text-sm'>{secondaryNote}</p>

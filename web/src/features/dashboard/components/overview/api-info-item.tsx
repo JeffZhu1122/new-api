@@ -52,15 +52,15 @@ export function ApiInfoItemComponent(props: ApiInfoItemProps) {
         />
 
         <div className='flex min-w-0 flex-1 flex-col gap-0.5'>
-          <div className='flex items-baseline gap-2'>
-            <span className='font-mono text-sm font-semibold'>
+          <div className='flex min-w-0 items-baseline gap-2'>
+            <span className='max-w-full shrink-0 font-mono text-sm font-semibold wrap-break-word break-keep'>
               {item.route}
             </span>
-            <span className='text-muted-foreground/60 hidden truncate text-xs md:inline'>
+            <span className='text-muted-foreground hidden min-w-0 truncate text-xs md:inline'>
               {item.description}
             </span>
           </div>
-          <span className='text-muted-foreground/40 truncate font-mono text-xs'>
+          <span className='text-muted-foreground truncate font-mono text-xs'>
             {item.url}
           </span>
         </div>

@@ -170,6 +170,16 @@ describe('pricing controls', () => {
     )
   })
 
+  it('sizes the price mode and token unit toggles to the 32px sort trigger height', () => {
+    render(<PricingToolbar {...toolbarProps()} />)
+
+    for (const name of ['Standard', 'Recharge', '/1M', '/1K', 'Name']) {
+      const control = screen.getByRole('button', { name })
+      expect(control).toHaveClass('h-8')
+      expect(control).not.toHaveClass('h-7')
+    }
+  })
+
   it('switches to table view with the keyboard and exposes the selected view', async () => {
     const props = toolbarProps()
     const user = userEvent.setup()
@@ -195,6 +205,21 @@ describe('pricing controls', () => {
       screen.getByRole('menuitem', { name: 'Price: Low to High' })
     )
     expect(props.onSortChange).toHaveBeenCalledWith('price-low')
+  })
+
+  it('scopes the portalled mobile filter sheet to the pricing brand styles with a flat sidebar', async () => {
+    const user = userEvent.setup()
+    render(<PricingToolbar {...toolbarProps()} />)
+    await user.click(screen.getByRole('button', { name: 'Filter' }))
+
+    const dialog = await screen.findByRole('dialog', { name: 'Filter' })
+
+    expect(dialog).toHaveAttribute('data-brand-page', 'pricing')
+    expect(within(dialog).getByRole('complementary')).toHaveClass(
+      'bg-transparent',
+      'bg-none',
+      'shadow-none'
+    )
   })
 
   it('opens mobile filters from the left, selects a group, and restores focus on close', async () => {

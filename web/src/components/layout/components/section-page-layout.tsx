@@ -81,7 +81,10 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
   return (
     <PageFooterProvider container={footerContainer}>
       <Main>
-        <div className='shrink-0 px-3 pt-3 pb-2.5 sm:px-4 sm:pt-5 sm:pb-3'>
+        <div
+          data-slot='section-page-header'
+          className='shrink-0 px-3 pt-3 pb-2.5 sm:px-4 sm:pt-5 sm:pb-3'
+        >
           {breadcrumb != null && (
             <div className='mb-2 sm:mb-3'>{breadcrumb}</div>
           )}
@@ -93,12 +96,21 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
                   : 'min-w-0 flex-1'
               }
             >
-              <h2 className='truncate text-base font-bold tracking-tight sm:text-lg'>
+              {/* brand.css paints the title tick on ::before; keep it out of
+                  flow (start padding reserves its space) so block and
+                  inline-flex title children still fit the truncating h2. */}
+              <h2
+                data-slot='section-page-title'
+                className='font-display relative truncate ps-[calc(0.5rem+3px)] text-base font-semibold tracking-tight before:absolute before:start-0 before:top-1/2 before:-translate-y-1/2 sm:text-lg'
+              >
                 {title}
               </h2>
             </div>
             {actions != null && (
-              <div className='flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-x-4'>
+              <div
+                data-slot='section-page-actions'
+                className='flex shrink-0 flex-wrap items-center justify-end gap-2 sm:gap-x-4'
+              >
                 {actions}
               </div>
             )}
@@ -106,6 +118,7 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
         </div>
 
         <div
+          data-slot='section-page-content'
           className={
             props.fixedContent
               ? 'min-h-0 flex-1 overflow-hidden px-3 pt-1 pb-3 sm:px-4 sm:pt-1.5 sm:pb-4'
@@ -117,7 +130,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
 
         <div
           ref={setFooterContainer}
-          className='bg-background shrink-0 border-t px-3 py-2.5 empty:hidden sm:px-4 sm:py-3'
+          data-slot='section-page-footer'
+          className='bg-background border-hairline shrink-0 border-t px-3 py-2.5 empty:hidden sm:px-4 sm:py-3'
         />
       </Main>
     </PageFooterProvider>
