@@ -37,6 +37,7 @@
 20. [已知限制与测试缺口汇总](#20-已知限制与测试缺口汇总)
 21. [附录](#21-附录)
 22. [品牌主题层（Aurora Glass）](#22-品牌主题层aurora-glass)
+23. [定时清理服务器日志文件](#23-定时清理服务器日志文件)
 
 ---
 
@@ -61,6 +62,7 @@
 | 17 | 实时 RPM 与 TPM 统计 | 与本文档同一提交 | 开启（`RPM_STATS_ENABLED`），只计数 | Redis（无 Redis 时进程内存） | 分发与结算计数、渠道 / 用户列表、使用日志页统计条 |
 | 18 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 | 22 | 品牌主题层（Aurora Glass） | 与本文档同一提交 | 默认预设即生效，其他预设只叠加结构效果 | `web/src/styles/brand.css` + 前端组件 class | 首页、认证页、定价页、控制台、错误页的外观 |
+| 23 | 定时清理服务器日志文件 | 与本文档同一提交 | 关闭 | options 表（`log_file_cleanup_setting.*`，7 个 key） | 后台定时任务（每个节点）、日志维护设置页 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -855,6 +857,10 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/features/rankings/components/{rankings-hero,models-section,market-share-section,pulse-section,model-leaderboard,growth-text}.tsx` | 标题渐变字与标签下划线、区块改用 `brand-surface`、`text-muted-foreground/80` 去掉透明度 |
 | `web/src/components/layout/components/section-page-layout.tsx` | 控制台页面的 `data-slot='section-page-*'` 钩子与标题 class；标题容器 `flex-auto`（上游为 `flex-1`），右侧操作区放不下时换行而不是把标题挤没 |
 | `web/src/components/data-table/layout/data-table-page.tsx` | 固定高度的卡片网格与移动端列表滚动容器加 `data-slot='data-table-scroll'` 钩子（仅属性） |
+| `controller/performance.go` | 日志文件列表与清理逻辑移到 `service/log_file_cleanup.go`（`LogFileInfo` 改为类型别名），手动清理接口的参数校验与响应不变 |
+| `controller/option.go` | `log_file_cleanup_setting.*` 保存前的校验块 |
+| `web/src/features/system-settings/maintenance/log-settings-section.tsx` | 表单 schema / 默认值 / 保存逻辑加入定时清理字段，服务器日志区块下渲染定时清理组件 |
+| `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` / `api.ts` | 定时清理 option 默认值、传参、类型与状态接口 |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
 | `web/src/features/dashboard/components/{models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts},flow/flow-charts,users/user-charts}.tsx` | 数据看板各标签页外框改为 `brand-surface rounded-2xl` |
@@ -1153,3 +1159,54 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 图表（VChart）换成极光配色：需要改 `features/dashboard/lib/charts.ts`，并有意更新 `charts.test.ts`。
 - 可选的 `classic` 预设（需要在 7 种语言中新增 `preset.classic`）、玻璃 toast（`ui/sonner.tsx`）、指针聚光效果、`<html lang>` 联动的中日韩字距。
 - 控制台页面内使用真玻璃：要让 `lib/motion.ts` 的 `MOTION_VARIANTS.pageEnter` 动画结束后清除 `filter`（例如 `transitionEnd: { filter: 'none' }`），`AnimatedOutlet` 才不再是 backdrop root；`PageTransition` 共用该变体，会一并受影响。
+
+---
+
+## 23. 定时清理服务器日志文件
+
+### 背景
+
+上游在「设置 → 运维 → 日志维护 → 服务器日志管理」只提供手动清理日志文件（`DELETE /api/performance/logs`，按「保留最近 N 个文件 / 最近 N 天」）。本功能增加定时清理：管理员设定执行时间，到点按与手动清理相同的规则自动删除。
+
+### 配置
+
+在同一区块打开「定时清理日志文件」，然后设置：
+
+| 字段（option key） | 取值 | 默认 |
+|---|---|---|
+| `log_file_cleanup_setting.enabled` | 开 / 关 | 关 |
+| `log_file_cleanup_setting.frequency` | `daily` 每天 / `weekly` 每周 / `monthly` 每月 | `daily` |
+| `log_file_cleanup_setting.weekday` | 每周时的星期（0 = 周日 … 6 = 周六） | 1 |
+| `log_file_cleanup_setting.month_day` | 每月时的日期（1–28，保证每个月都有这一天） | 1 |
+| `log_file_cleanup_setting.time` | 执行时间 `HH:MM`（24 小时制，服务器时区） | `03:00` |
+| `log_file_cleanup_setting.mode` | `by_count` 保留最近 N 个文件 / `by_days` 保留最近 N 天 | `by_days` |
+| `log_file_cleanup_setting.value` | N（≥ 1） | 30 |
+
+保存走页面顶部的「保存日志设置」，只提交改动过的字段。服务端在 `controller/option.go` 校验每个字段（非法时间、模式、数值会被拒绝）。
+
+### 实现
+
+- `setting/log_file_cleanup_setting/config.go`：配置注册（`config.GlobalConfig`，随 options 表在各节点同步）、`ValidateOption`、`NextRun`（按服务器本地时区计算下一次执行时间，已过的时间点顺延到下一个周期）。
+- `service/log_file_cleanup.go`：
+  - `ListServerLogFiles` / `CleanupServerLogFiles`：从 `controller/performance.go` 原样移入的列表与删除逻辑（只处理 `oneapi-*.log`，按文件名倒序视为最新在前，**始终跳过当前正在写入的日志文件**），手动与定时清理共用，并用互斥锁串行执行。
+  - `StartLogFileCleanupScheduler`：每 30 秒检查一次；设置变化时从当前时间重新规划，到点执行一次后规划下一次。进程停机期间错过的时间点不补跑。
+  - 每个节点（master 与 slave）都运行，清理各自 `--log-dir` 下的文件；未配置日志目录时不执行。
+- `GET /api/performance/logs/schedule`（`RootAuth`，访问令牌 scope `ops:read`）：返回本节点的时区名称、UTC 偏移、下一次执行时间与上一次执行结果（删除数量、释放空间、错误）。上一次结果只保存在进程内存中，重启后清空。
+- 每次执行写一条系统日志：`scheduled log file cleanup (by_days=30): deleted N, freed M bytes`。
+
+### 测试
+
+- `service/log_file_cleanup_test.go`：`NextRun` 的每日 / 每周 / 每月 / 已过时间 / 关闭 / 非法值表格测试；`ValidateOption`；按数量、按天数清理；当前写入中的日志文件不会被删；定时执行后状态里记录上一次结果并把下一次顺延到明天。
+- `web/src/features/system-settings/maintenance/__tests__/log-file-cleanup-schedule.test.tsx`：关闭时只显示开关、打开后出现时间等字段且只保存改动的 key；每周显示星期、每月显示日期；非法时间阻止保存；显示服务器时区、下次执行与上次结果。
+- 本地端到端（`scratchpad/logclean_e2e.py`，17 项）：非法值被拒绝；设定两分钟后执行，到点删除 45 天前的文件、保留 2 天内的文件，状态接口记录结果且下一次顺延一天；手动清理接口响应结构不变。
+
+### 已知限制
+
+- 执行时间按**服务器时区**解释。Docker 镜像默认是 UTC，需要按本地时间执行时请为容器设置 `TZ`。页面会显示服务器时区与 UTC 偏移。
+- 多节点部署时，状态接口与页面显示的是处理该请求的节点的状态。
+- 保存定时规则时没有二次确认，服务端只要求保留数量 / 天数 ≥ 1。规则设得过小（例如保留 1 天）时，每次到点都会自动删除几乎全部历史日志，且不可恢复。
+- 多个节点共用同一个日志目录时，每个节点只跳过自己正在写入的文件。按「保留最近 N 个文件」且 N 较小时，可能删掉其他节点正在写入的文件（该节点继续写入已删除的文件，日志不可见，空间要等它换新文件才释放）；多个节点同时执行时，后执行的节点会把已被删除的文件记为失败。上游手动清理同样存在此问题，建议每个节点使用独立的日志目录。
+- 日志文件每写满约一百万行才换新文件，正在写入的文件不会被删除。访问量小的实例上，定时清理可能无法明显减少磁盘占用；本功能不按总大小清理。
+- 7 项设置逐项保存，中途失败会只保存一部分。其他节点在 `SYNC_FREQUENCY`（默认 60 秒）内同步新设置，执行时间设得离当前太近时，其他节点可能从下一个周期才开始执行。停机期间错过的执行不补跑。
+- 未测试：多节点与共享日志目录、Docker 中设置 `TZ`、MySQL / PostgreSQL（只新增 options 行，不改表结构）、夏令时切换。
+
