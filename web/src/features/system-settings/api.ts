@@ -22,6 +22,7 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  LogFileCleanupScheduleStatus,
   SystemOptionsResponse,
   SystemTaskListResponse,
   SystemTaskFilters,
@@ -84,6 +85,15 @@ export async function getCurrentLogCleanupTask() {
       params: { type: 'log_cleanup' },
     }
   )
+  return res.data
+}
+
+export async function getLogFileCleanupSchedule() {
+  const res = await api.get<{
+    success: boolean
+    message: string
+    data?: LogFileCleanupScheduleStatus
+  }>('/api/performance/logs/schedule')
   return res.data
 }
 

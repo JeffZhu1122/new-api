@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useId, useMemo } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -46,6 +47,14 @@ import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import { safeNumberFieldProps } from '../utils/numeric-field'
 import { HistoryLogCleanup } from './history-log-cleanup'
+import { LogFileCleanupScheduleFields } from './log-file-cleanup-schedule'
+import {
+  DEFAULT_LOG_FILE_CLEANUP_SCHEDULE,
+  LOG_FILE_CLEANUP_SCHEDULE_FIELDS,
+  LOG_FILE_CLEANUP_SCHEDULE_QUERY_KEY,
+  logFileCleanupScheduleSchema,
+  type LogFileCleanupScheduleValues,
+} from './log-file-cleanup-schedule-schema'
 import { ServerLogFiles } from './server-log-files'
 
 const logSettingsSchema = z.object({
@@ -54,6 +63,7 @@ const logSettingsSchema = z.object({
     user_export_enabled: z.boolean(),
     max_range_days: z.number().int().min(1),
   }),
+  log_file_cleanup_setting: logFileCleanupScheduleSchema,
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
@@ -64,13 +74,20 @@ type LogSettingsSectionProps = {
     'log_setting.user_export_enabled': boolean
     'log_setting.max_range_days': number
   }
+  scheduleDefaults?: LogFileCleanupScheduleValues
 }
 
 export function LogSettingsSection(props: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const queryClient = useQueryClient()
   const recordingTitleId = useId()
   const searchTitleId = useId()
+  const scheduleDefaults =
+    props.scheduleDefaults ?? DEFAULT_LOG_FILE_CLEANUP_SCHEDULE
+  // The registry rebuilds the defaults object on every render; reset only
+  // when its content changes.
+  const scheduleDefaultsKey = JSON.stringify(scheduleDefaults)
   const formDefaults = useMemo<LogSettingsFormValues>(
     () => ({
       LogConsumeEnabled: props.defaultValues.LogConsumeEnabled,
@@ -79,8 +96,11 @@ export function LogSettingsSection(props: LogSettingsSectionProps) {
           props.defaultValues['log_setting.user_export_enabled'],
         max_range_days: props.defaultValues['log_setting.max_range_days'],
       },
+      log_file_cleanup_setting: JSON.parse(
+        scheduleDefaultsKey
+      ) as LogFileCleanupScheduleValues,
     }),
-    [props.defaultValues]
+    [props.defaultValues, scheduleDefaultsKey]
   )
   const form = useForm<LogSettingsFormValues>({
     resolver: zodResolver(logSettingsSchema),
@@ -103,6 +123,22 @@ export function LogSettingsSection(props: LogSettingsSectionProps) {
     for (const [key, value] of changes) {
       if (value === props.defaultValues[key]) continue
       await updateOption.mutateAsync({ key, value })
+    }
+
+    const schedule = values.log_file_cleanup_setting
+    const changedScheduleFields = LOG_FILE_CLEANUP_SCHEDULE_FIELDS.filter(
+      (field) => schedule[field] !== scheduleDefaults[field]
+    )
+    for (const field of changedScheduleFields) {
+      await updateOption.mutateAsync({
+        key: `log_file_cleanup_setting.${field}`,
+        value: schedule[field],
+      })
+    }
+    if (changedScheduleFields.length > 0) {
+      queryClient.invalidateQueries({
+        queryKey: LOG_FILE_CLEANUP_SCHEDULE_QUERY_KEY,
+      })
     }
   }
 
@@ -216,7 +252,15 @@ export function LogSettingsSection(props: LogSettingsSectionProps) {
 
       <Separator />
 
-      <ServerLogFiles />
+      <ServerLogFiles
+        renderSchedule={(formatSize) => (
+          <Form {...form}>
+            <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
+              <LogFileCleanupScheduleFields formatSize={formatSize} />
+            </SettingsForm>
+          </Form>
+        )}
+      />
     </SettingsSection>
   )
 }
