@@ -143,7 +143,7 @@ export function LogStatCards(props: LogStatCardsProps) {
   })
 
   return (
-    <div className='overflow-hidden rounded-lg border'>
+    <div className='brand-surface overflow-hidden rounded-2xl'>
       <div className='divide-border/60 grid min-w-0 grid-cols-2 divide-x sm:grid-cols-3 lg:grid-cols-5'>
         {items.map((it, idx) => {
           const Icon = it.icon
@@ -161,7 +161,7 @@ export function LogStatCards(props: LogStatCardsProps) {
                 <div className='text-muted-foreground mt-1 font-mono text-base leading-tight font-bold tracking-tight tabular-nums sm:mt-2 sm:text-2xl sm:leading-normal'>
                   --
                 </div>
-                <div className='text-muted-foreground/40 mt-1 hidden text-xs md:block'>
+                <div className='text-muted-foreground mt-1 hidden text-xs md:block'>
                   {it.desc}
                 </div>
               </>
@@ -175,7 +175,7 @@ export function LogStatCards(props: LogStatCardsProps) {
                 >
                   {it.value}
                 </div>
-                <div className='text-muted-foreground/60 mt-1 hidden text-xs md:block'>
+                <div className='text-muted-foreground mt-1 hidden text-xs md:block'>
                   {it.desc}
                 </div>
               </>

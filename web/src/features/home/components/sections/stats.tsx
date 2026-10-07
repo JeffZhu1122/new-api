@@ -104,25 +104,23 @@ export function Stats(_props: StatsProps) {
     { end: 10, suffix: '+', label: t('scheduling controls') },
   ]
 
+  // Instrument readout that sits on the hero horizon: no card, hairline
+  // dividers between the figures.
   return (
-    <div className='border-border/40 bg-muted/10 relative z-10 border-y'>
-      <div className='mx-auto max-w-6xl px-6 py-10 md:py-12'>
-        <div className='grid grid-cols-2 gap-8 md:grid-cols-4 md:gap-12'>
-          {stats.map((s) => (
-            <div
-              key={s.label}
-              className='flex flex-col items-center text-center'
-            >
-              <span className='text-2xl font-bold tracking-tight md:text-3xl'>
-                <Counter end={s.end} suffix={s.suffix} decimals={s.decimals} />
-              </span>
-              <span className='text-muted-foreground mt-1.5 text-xs'>
-                {s.label}
-              </span>
-            </div>
-          ))}
+    <div className='mx-auto grid max-w-5xl grid-cols-2 gap-y-10 md:grid-cols-4'>
+      {stats.map((s) => (
+        <div
+          key={s.label}
+          className='border-hairline flex flex-col items-center px-4 text-center md:[&:not(:first-child)]:border-s max-md:[&:nth-child(even)]:border-s'
+        >
+          <span className='font-display text-4xl font-semibold tracking-tight md:text-5xl'>
+            <Counter end={s.end} suffix={s.suffix} decimals={s.decimals} />
+          </span>
+          <span className='text-muted-foreground mt-2 font-sans text-xs md:text-sm'>
+            {s.label}
+          </span>
         </div>
-      </div>
+      ))}
     </div>
   )
 }

@@ -41,6 +41,7 @@ import { useId, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { BrandBackdrop } from '@/components/brand'
 import { SectionPageLayout } from '@/components/layout'
 import {
   CardStaggerContainer,
@@ -186,14 +187,14 @@ function buildCurlCommand(args: {
 function SetupGuideBackdrop(props: { compact?: boolean }) {
   return (
     <>
-      <div
-        className={cn(
-          'pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_48%_120%_at_78%_0%,color-mix(in_oklch,var(--overview-accent-1)_14%,transparent)_0%,transparent_62%),linear-gradient(112deg,color-mix(in_oklch,var(--card)_94%,var(--overview-accent-2)_6%)_0%,color-mix(in_oklch,var(--card)_94%,var(--overview-accent-3)_6%)_48%,color-mix(in_oklch,var(--background)_90%,var(--overview-accent-1)_10%)_100%)] dark:opacity-60',
+      <BrandBackdrop
+        variant='panel'
+        rings={props.compact ? undefined : 'static'}
+        className={
           props.compact
-            ? '[mask-image:linear-gradient(90deg,black_0%,black_48%,transparent_74%)] opacity-55'
-            : 'opacity-85'
-        )}
-        aria-hidden='true'
+            ? '[mask-image:linear-gradient(90deg,black_0%,black_48%,transparent_74%)]'
+            : undefined
+        }
       />
       <div
         className={cn(
@@ -650,8 +651,8 @@ export function OverviewDashboard() {
           <div id={setupGuideId} hidden={!setupGuideExpanded}>
             {setupGuideExpanded && (
               <CardStaggerContainer className='grid items-stretch gap-4 xl:grid-cols-[minmax(0,1fr)_22rem]'>
-                <CardStaggerItem className='bg-card h-full overflow-hidden rounded-2xl border shadow-xs'>
-                  <div className='relative h-full overflow-hidden p-4 sm:p-5'>
+                <CardStaggerItem className='brand-surface h-full overflow-hidden rounded-2xl'>
+                  <div className='relative isolate h-full overflow-hidden p-4 sm:p-5'>
                     <SetupGuideBackdrop />
                     <div className='relative grid gap-5 lg:grid-cols-[minmax(0,1fr)_21rem]'>
                       <div className='flex min-w-0 flex-col gap-5'>
@@ -711,7 +712,7 @@ export function OverviewDashboard() {
                   </div>
                 </CardStaggerItem>
 
-                <CardStaggerItem className='bg-card h-full rounded-2xl border p-4 shadow-xs sm:p-5'>
+                <CardStaggerItem className='brand-surface h-full rounded-2xl p-4 sm:p-5'>
                   <div className='flex h-full flex-col gap-4'>
                     <div className='flex flex-col gap-1'>
                       <div className='text-muted-foreground text-xs font-medium tracking-wider uppercase'>
@@ -733,8 +734,8 @@ export function OverviewDashboard() {
           </div>
           {!setupGuideExpanded && !setupComplete && (
             <CardStaggerContainer>
-              <CardStaggerItem className='bg-card overflow-hidden rounded-2xl border shadow-xs'>
-                <div className='relative overflow-hidden px-4 py-3 sm:px-5'>
+              <CardStaggerItem className='brand-surface overflow-hidden rounded-2xl'>
+                <div className='relative isolate overflow-hidden px-4 py-3 sm:px-5'>
                   <SetupGuideBackdrop compact />
                   <div className='relative flex flex-wrap items-center justify-between gap-3'>
                     <div className='flex min-w-0 items-center gap-3'>
