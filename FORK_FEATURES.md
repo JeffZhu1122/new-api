@@ -36,6 +36,7 @@
 19. [与上游同步的注意事项](#19-与上游同步的注意事项)
 20. [已知限制与测试缺口汇总](#20-已知限制与测试缺口汇总)
 21. [附录](#21-附录)
+22. [品牌主题层（Aurora Glass）](#22-品牌主题层aurora-glass)
 
 ---
 
@@ -59,8 +60,9 @@
 | 16 | 渠道可用时段（时段外不参与选路） | 与本文档同一提交 | 空 = 全天可用 | `channel_extend` | 渠道选择（HTTP + Responses WebSocket）、渠道列表 |
 | 17 | 实时 RPM 与 TPM 统计 | 与本文档同一提交 | 开启（`RPM_STATS_ENABLED`），只计数 | Redis（无 Redis 时进程内存） | 分发与结算计数、渠道 / 用户列表、使用日志页统计条 |
 | 18 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
+| 22 | 品牌主题层（Aurora Glass） | 与本文档同一提交 | 默认预设即生效，其他预设只叠加结构效果 | `web/src/styles/brand.css` + 前端组件 class | 首页、认证页、定价页、控制台、错误页的外观 |
 
-所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"）。
+所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
 ---
 
@@ -839,6 +841,23 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `middleware/access_token_routes.go` | fork 新增的管理接口若不经 `RequirePermission`，必须在这里声明访问令牌权限，否则上游的覆盖测试失败、令牌被拒 |
 | `web/src/features/users/api.ts` | 文件头 import |
 | `web/src/i18n/locales/*.json` | 新增文案 |
+| `web/src/components/ui/button.tsx` | `data-variant` / `data-size` 两个属性，是 `brand.css` 按钮钩子的契约（§22） |
+| `web/src/styles/index.css` | Geist / Geist Mono 字体与 `brand.css` 的 import 顺序（必须在 `theme-presets.css` 之后） |
+| `web/package.json` / `web/bun.lock` | `@fontsource-variable/geist`、`@fontsource-variable/geist-mono` 依赖 |
+| `web/src/components/config-drawer.tsx` | 默认预设色块改为极光渐变 |
+| `web/src/features/auth/auth-layout.tsx` | 认证页外壳整体重排：`data-slot='auth-card'` 玻璃卡片（`max-w-[480px]`）、品牌面板、lg 起背景层的边缘渐显与 mesh 峰值位置 |
+| `web/src/features/auth/components/oauth-providers.tsx` / `oauth-callback-screen.tsx` | "Or continue with"分隔线改为 flex 行，提供方按钮去掉 `h-11`；回调页图标底块与加载图标颜色 |
+| `web/src/components/layout/components/public-header.tsx` / `footer.tsx` | 页头玻璃胶囊（本地 `--glass-bg` 覆盖）、激活链接下划线、登录按钮、移动菜单背景层与 CTA；页脚默认分支的渐变分隔线、文字 class 与列表 key |
+| `web/src/features/home/index.tsx`（仅默认首页分支的区块顺序）/ `components/sections/{hero,stats,features,how-it-works,cta}.tsx` / `hero-terminal-demo.tsx` | 首页整体重排为与上游不同的版式（居中 hero + 光地平线 + 统计读数 + 应用条、步骤与终端并排的产品演示、左侧粘性标题的功能区、全宽收尾 CTA）；终端是夜岛（`class="dark"` + `data-brand-island`），标签按钮 `type='button'`、代码行 key 改为内容 |
+| `web/src/features/pricing/index.tsx` / `components/{search-bar,pricing-toolbar,pricing-sidebar,loading-skeleton}.tsx` | 定价页头部与 `data-brand-page='pricing'`；搜索框尺寸与内边距；工具栏框体、切换按钮 `h-8`、移动筛选抽屉的 `data-brand-page` 与侧栏 `bg-none`；侧栏框体；加载骨架与新头部同尺寸 |
+| `web/src/features/pricing/__tests__/pricing-controls.test.tsx` | 上游测试文件，新增 2 个用例（切换按钮 `h-8`、移动筛选抽屉的品牌作用域） |
+| `web/src/features/rankings/index.tsx` | 头部背景层；三态渲染由嵌套三元改为 `if / else` 赋给 `rankingsContent`（结构改写，合并时注意上游对这段的修改）；骨架与错误框圆角 |
+| `web/src/features/rankings/components/{rankings-hero,models-section,market-share-section,pulse-section,model-leaderboard,growth-text}.tsx` | 标题渐变字与标签下划线、区块改用 `brand-surface`、`text-muted-foreground/80` 去掉透明度 |
+| `web/src/components/layout/components/section-page-layout.tsx` | 控制台页面的 `data-slot='section-page-*'` 钩子与标题 class |
+| `web/src/components/search.tsx` | 顶栏搜索按钮 class |
+| `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
+| `web/src/features/dashboard/components/{models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts},flow/flow-charts,users/user-charts}.tsx` | 数据看板各标签页外框改为 `brand-surface rounded-2xl` |
+| `web/src/features/errors/{not-found-error,unauthorized-error,forbidden,maintenance-error,general-error}.tsx` | 错误页背景层；状态码改为渐变字，外包 `relative isolate` 的 div 并加 `BrandGlow` |
 
 ### 19.3 上游签名变化的传染点
 
@@ -873,6 +892,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - **渠道额度上限**：判定在结算之后，禁用前已在飞的请求仍会结算，`BATCH_UPDATE_ENABLED` 下还会多出一个刷盘间隔（默认 5 秒）的流量；多副本各自以数据库值判定，其他副本的内存缓存最长 `SYNC_FREQUENCY`（默认 60 秒）后感知禁用；预扣费不参与判定。折算成本 = 站内计费额度 × 成本倍率，是估算值而非上游账单。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道可用时段**：判定基于各副本本机时钟；窗口边界处进行中的流式响应与 WebSocket 会话不会被中断，只影响新请求；会话亲和在时段外会被放弃，该会话可能换渠道；全部渠道时段外时客户端只看到通用 503；时区运行时加载失败按全天可用处理；粒度只到周几 + 分钟，没有日期范围。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **实时 RPM / TPM 统计**：数字比当前时刻晚 4 到 14 秒；token 在请求结算时一次性计入（长流式请求的 token 全部落在结束那一分钟）；Redis 故障期间少计，实例崩溃会丢失最近 2 秒的计数；各实例按本机时钟分桶，时钟偏差超过 10 秒会明显失真；没有 Redis 的多实例部署只能看到本实例；列表只能在当前页查看，不能按 RPM / TPM 给全部渠道或用户排序；列表 RPM 按分发次数、日志页 RPM 按结算请求，两者口径不同。使用日志页不指定用户、又用多个条件或模糊匹配时，要读窗口内所有活跃用户的明细，流量很大时较慢；精确匹配区分大小写，模糊匹配不区分。
+- **品牌主题层**：只有默认预设使用完整的极光配色，其他预设保留原配色、只叠加结构效果；图表（VChart）配色未替换；控制台页面内部不用真玻璃（`backdrop-filter`），`AnimatedOutlet` 的 `filter` 终态也会让它失效；夜岛在命名预设下使用 `theme.css` 的经典深色 token。
 
 ### 测试缺口
 
@@ -884,6 +904,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 控制器层"启用已耗尽渠道被拒绝 / 跳过"（单个 / 批量 / 标签）只有本地端到端验证，没有 Go 单测；前端无渠道成本倍率 / 额度上限字段的组件测试。
 - 渠道可用时段：Responses WebSocket 路径只有共用 `SelectChannelForRequest` 的单元覆盖，没有 WS 端到端；前端无时段编辑器的组件测试。
 - 实时 RPM / TPM 统计：Midjourney、异步任务提交、实时语音、音频与 Responses WebSocket 路径只靠共用计数点的单元覆盖，没有这几条路径的端到端；真实 Redis（含集群模式）未验证。
+- 品牌主题层：vitest 不处理 CSS，测试只覆盖 DOM 契约（`aria-hidden`、`data-*` 钩子、DOM 顺序、链接与按钮）和关键布局 class（标题字号上限、换行与截断 class、控件高度、骨架尺寸），不验证实际渲染的尺寸与颜色；各预设、深浅色、移动端、减少动态效果 / 透明度、高对比度、强制颜色、RTL 以及 Safari / Firefox 下的视觉效果只能人工检查，没有视觉回归测试。玻璃条折射在 Chromium 中是否还有横向接缝尚未复查。
 
 ---
 
@@ -974,3 +995,159 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `168dbbafc` | 2026-09-24 | feat(channels): create and copy channels as manually disabled |
 | `f69683a02` | 2026-09-26 | feat(tokens): bind a key to a primary group plus ordered fallback groups |
 | `b0a715551` | 2026-09-27 | feat(channels): filter upstream response headers per channel (blacklist / whitelist) |
+
+---
+
+## 22. 品牌主题层（Aurora Glass）
+
+### 动机
+
+上游前端的外观来自 `theme.css` 的默认配色和 `theme-presets.css` 的命名预设，没有自己的品牌视觉。本功能为 fork 建立一套品牌主题"极光琉璃（Aurora Glass）"：弥散网格渐变（mesh）、带涟漪的玻璃、光晕，用在首页、认证页（登录、注册、忘记密码、重置密码、二次验证、OAuth 回调）、模型广场（定价页）、排行榜、控制台和错误页。
+
+**只改样式与布局**：不新增或修改任何路由、条件、文案、i18n key、事件处理、`role` / `aria-*` 与数据请求，也不新增 i18n key；新增的只有样式钩子属性（`data-slot`、`data-brand-*`、`data-variant` / `data-size`）、`aria-hidden` 的装饰节点、布局用的包裹元素，以及认证页 lg 起显示的品牌面板（根节点是 `aria-hidden` 的 `<div>`，不是 `<aside>`，不增加地标，也没有可聚焦元素，读屏内容与改版前一致；文案复用首页既有 key）；首页的 `landing-animate-*` 与 `opacity-0` 成对保留。管理后台的配置页面保持原布局，只随 token 换色。为通过 oxlint 做的少量非样式改动见"改动的既有文件"末条。
+
+### 设计约束
+
+- **光在后，玻璃在上，数据区保持平面。** 品牌只体现在颜色、光与质感上，不写死任何文字标识；管理员配置的 Logo 位于涟漪中心。
+- 真玻璃（`backdrop-filter`）只用于：公共页头滚动后的胶囊、移动端菜单遮罩、认证卡片、认证页 hub 圆盘（96px）、popover / dropdown / select 弹层、CTA 区的折射玻璃条。表格、卡片网格、图表、对话框、聊天流、滚动容器里的吸顶面板以及控制台页面内部一律不用；这些位置用 `brand-surface`（不透明卡片 + 光泽 + 发丝线）。控制台页面渲染在 `AnimatedOutlet`（`components/page-transition.tsx`，由 `authenticated-layout.tsx` 挂载）内，它的动画 `MOTION_VARIANTS.pageEnter` 终态是 `filter: blur(0px)`；非 `none` 的 filter 让该节点成为 backdrop root，页面内的真玻璃只能模糊页面自身的内容（减少动态效果时 `AnimatedOutlet` 渲染普通 div，没有 filter）。`PageTransition` 用同一个 `pageEnter`，只包裹公共的定价页与排行榜内容。
+- 每个视口最多一个漂移 mesh、一条边框光束（`brand-beam`）；每页最多一个带动画的渐变文字（`brand-text-aurora--flow`）。
+- 文字区下方 mesh 的叠加 alpha：浅色不超过 16%，深色不超过 30%，以保证正文对比度不低于 4.5:1；mesh 峰值放在终端、hub、角落等非文字对象后面，首页 hero 的文案列另有一层 veil 提亮。`brand-text-aurora` 只用于 24px 以上的展示文字。
+- 中日韩换行：`brand-display` 行高 1.1、`text-wrap: balance`，并设 `word-break: keep-all` 与 `overflow-wrap: break-word`，只在空格与标点处换行，过长的无空格串仍会折行。首页 hero 副标题用 `break-keep wrap-break-word`，认证面板说明用 `break-keep wrap-anywhere`，首页步骤与小功能说明用 `text-pretty break-keep wrap-break-word`，定价页说明用 `text-balance`，认证卡片内的 `<p>` 用 `text-pretty`，避免单字成行。
+
+### 新增文件
+
+| 文件 | 内容 |
+|---|---|
+| `web/src/styles/brand.css` | 全部品牌 token、效果类（`brand-*`）、共享组件的 `data-slot` 钩子、无障碍与环境降级 |
+| `web/src/components/brand/brand-backdrop.tsx` | `BrandBackdrop`：装饰性光层（mesh、漂移 mesh、veil、网格、噪点，可选静态环 `rings='static'`、声呐涟漪 `rings='sonar'`、两侧折射玻璃条 `flutes`）。8 个 variant：`hero`、`hero-center`（居中首页 hero）、`band`、`pricing`、`auth`、`auth-panel`、`panel`、`dawn`。根节点 `aria-hidden`，不含可聚焦元素；父元素必须是层叠上下文（`relative isolate` 或带 z-index 的定位元素） |
+| `web/src/components/brand/brand-glow.tsx` | `BrandGlow`：焦点对象背后的光晕，用 `[--glow-inset:…]` 调整大小 |
+| `web/src/components/brand/brand-pulse.tsx` | `BrandPulse`：6px 呼吸点，总是与可见文字搭配 |
+| `web/src/components/brand/index.ts` | 统一导出 |
+| `web/src/features/auth/components/auth-brand-panel.tsx` | 认证页 lg 及以上的品牌面板。根节点是 `aria-hidden='true'`、`data-slot='auth-brand-panel'` 的 `<div>`（纯装饰，不产生 complementary 地标，读屏不会在表单之后朗读首页标语）。hub 圆盘与协议轨道（Chat / Responses / Claude / Gemini）在 `aria-hidden` 的 `data-slot='auth-brand-hub'` 区域内；该区域在文档流中、位于文案之前，是尺寸容器（`@container-size`，`flex-1`），轨道（`data-slot='auth-brand-orbit'`）尺寸为 `min(30vw, 420px, 100cqh - 56px)`，容器高度不超过 255px 时隐藏，所以任何语言、任何视口高度下都不会压到文案；声呐涟漪用 `--sonar-y`（lg `calc(50% - 60px)`、xl `calc(50% - 108px)`）对准 hub 中心。文案（`data-slot='auth-brand-copy'`，`max-w-xl`，说明 `max-w-md`）复用首页既有 key，只用 `<p>`，不增加标题 |
+
+玻璃、渐变文字、发丝线等做成 class 而不是包裹组件：它们装饰的是既有元素（Button、卡片、标题、页头 `<nav>`），包裹组件会在受测试约束的 DOM 之间插入节点（定价卡片网格父节点、标题列表、label / value 兄弟节点）。常用 class：`brand-glass`、`brand-surface`、`brand-bezel`、`brand-terminal`、`brand-hairline`、`brand-beam`、`brand-cta`、`brand-sheen`、`brand-display`、`brand-text-aurora`、`brand-eyebrow`、`brand-chip`、`brand-icon-tile`、`brand-rule`、`brand-connector`、`brand-dots`、`brand-orbit`；Tailwind 颜色 `border-hairline`、`border-hairline-strong`、`bg-glass`、`bg-glass-strong`、`bg-brand-a/…` 与字体 `font-display` 由 `brand.css` 的 `@theme` 注册。
+
+### 改动的既有文件
+
+基础项写完整路径，其余路径相对 `web/src/`。
+
+- **基础**：`web/src/styles/index.css`（3 行 import）、`web/src/components/ui/button.tsx`（`data-variant` / `data-size`）、`web/src/components/config-drawer.tsx`（默认预设色块）、`web/package.json` / `web/bun.lock`（字体依赖）。
+- **公共页**：
+  - `components/layout/components/public-header.tsx`：滚动后的胶囊改为 `brand-glass brand-hairline`，并在本地把 `--glass-bg` 指向 `--glass-bg-strong`（浅色 88%、深色 84% 卡片色；`simple-large` 与高对比度下仍为实色）；激活链接加极光下划线；桌面登录按钮与移动菜单 CTA 用 `brand-cta`；移动菜单遮罩加 `<BrandBackdrop variant='dawn' />`。滚动判定、链接、菜单开关与滚动锁定不变。
+  - `components/layout/components/footer.tsx`：只改默认分支（渐变分隔线、底部光晕、文字去掉透明度）；`footerHtml` 分支、`LegalLinks`、`ProjectAttribution` 不变。
+  - 首页版式（刻意与上游不同）：`features/home/index.tsx` 默认分支的区块顺序改为 Hero → HowItWorks → Features → CTA → Footer（统计在 Hero 内渲染），自定义首页的 iframe / HTML / Markdown 分支与上游一致、不加背景。`hero.tsx` 为居中标题栈（`<BrandBackdrop variant='hero-center' rings='sonar' flutes />`，标题 `text-[clamp(2.5rem,6.2vw,4.75rem)]`），下方是 `.brand-horizon` 光地平线，统计读数（`stats.tsx`，无卡片、细线分隔）与常用应用条放在地平线上；`how-it-works.tsx` 左侧为竖向步骤轨道（`.brand-connector--y` 流光），右侧为 lg 起粘性的 API 终端（原 hero 右栏的终端移到这里，内容与交互不变）；`features.tsx` 左侧粘性标题与 4 项小功能列表，右侧 2×2 等宽功能卡（去掉 bento 跨列）；`cta.tsx` 改为全宽区块，背景上下边缘渐隐。其余：副标题与说明 `break-keep wrap-break-word text-pretty`；CTA 与 hero 按钮行 `flex-wrap`；终端页脚 `flex-wrap`，"stream · sse"不换行并靠右；步骤编号徽标 `bg-primary` 加光晕；功能卡片编号在 DOM 中仍位于标题之前（视觉上靠右）。
+- **认证**：
+  - `features/auth/auth-layout.tsx` 是全部认证页的唯一入口，DOM 顺序为"首页链接 → 表单卡片 → 品牌面板"（栅格把面板放在视觉左侧；面板 `aria-hidden` 且无可聚焦元素，键盘与读屏只经过表单）；`h-svh` 改为 `min-h-svh`，卡片不加 `overflow-hidden`，375px 下 Turnstile 不被裁切。卡片 `max-w-[480px]`，在 `sm:p-8` 下恢复原 `sm:w-[480px]` 的 416px 文字宽度；卡片内 `<p>` 用零特异性的 `[:where(&_p)]:text-pretty`，以后 `<p>` 上的 `truncate` / `whitespace-nowrap` 仍能覆盖它。lg 起页面背景层只铺右半页（`lg:start-1/2`，起点在品牌面板下面），用 80px 渐显遮罩消除中线接缝，并把 mesh 峰值移到卡片右上角后面（`--mesh-p1` / `--mesh-s1`，mesh 不透明度 100%），让卡片的玻璃有颜色可模糊。
+  - 表单文件（登录、注册、忘记 / 重置密码、OTP、`SecureVerificationDialog`、`PasskeyDomainSelector`）均未改，卡片内 44px 输入框与按钮（含重置密码页的 outline 图标复制按钮）和极光提交按钮来自 `brand.css` 的 `[data-slot='auth-card']` 作用域规则；各页标题 h2 在卡片内统一左对齐、使用展示字体，也由该作用域的非分层规则覆盖页面文件里移动端的 `text-center`（页面文件保持上游原样）。
+  - `components/oauth-providers.tsx` 只改"Or continue with"分隔线（两段 `aria-hidden` 线 + 文字的 flex 行），并去掉提供方按钮上原有的 `h-11`（保持默认尺寸，由卡片的 44px 控件规则统一高度，任何改 `--spacing` 的预设下都与输入框同高），`components/oauth-callback-screen.tsx` 只改图标底块（`brand-icon-tile`）与加载图标颜色。认证逻辑、顺序、门控与 autocomplete 均未变动。
+- **定价与排行榜**：
+  - `features/pricing/index.tsx`：外层 `relative isolate` 加 `data-brand-page='pricing'`、`<BrandBackdrop variant='pricing' rings='static' />`；标题 `brand-display brand-text-aurora mx-auto w-fit`（渐变按文字宽度铺开）；模型计数改为带 `BrandPulse` 的 chip；说明 `text-balance`。
+  - `components/search-bar.tsx`：48px 高、`rounded-2xl`、玻璃底色；右内边距 `pr-11 sm:pr-16`（⌘K 提示只在 sm 起显示，390px 下占位文字不被截断）。
+  - `components/pricing-toolbar.tsx`：框体 `brand-surface rounded-2xl`；4 个 `ToggleGroupItem` 加 `h-8`，与排序按钮同高；"/ 总数"去掉透明度；移动筛选抽屉的 `SheetContent` 加 `data-brand-page='pricing'`（抽屉 portal 到 `body`，需要自带作用域），传给侧栏的 class 加 `bg-none` 去掉光泽。
+  - `components/pricing-sidebar.tsx`：框体一个 class 字符串。
+  - `components/loading-skeleton.tsx`：头部骨架与新头部同尺寸（标题字号与行高、计数 chip、说明 sm 以下 2 行 / sm 起 1 行、48px 搜索框），侧栏与工具栏占位改为 `brand-surface rounded-2xl`，工具栏占位 `h-8`；按视图模式区分的结构不变。
+  - `features/rankings/index.tsx`：背景层 `<BrandBackdrop variant='pricing' />`；加载 / 错误 / 数据三态原为嵌套三元表达式，改为 `if / else` 先赋给 `rankingsContent` 再渲染，分支条件与内容不变；加载骨架与错误框改为 `rounded-2xl`。
+  - `features/rankings/components/rankings-hero.tsx`：标题 `brand-display brand-text-aurora w-fit`，激活标签的下划线改为极光渐变加光晕（`role='tab'`、`aria-selected`、`onClick` 不变）。`{models-section,market-share-section,pulse-section}.tsx` 的区块改为 `brand-surface rounded-2xl`。这三个文件与 `{model-leaderboard,growth-text}.tsx` 中共 17 处 `text-muted-foreground/80`（加上 hero 副标题共 18 处）改为不透明的 `text-muted-foreground`。
+  - 模型卡片、详情、表格与列定义未改，靠 token 和 `[data-brand-page='pricing']` 作用域钩子着色。计费展示逻辑未动。
+- **控制台**：
+  - `components/layout/components/section-page-layout.tsx`：`data-slot='section-page-header|title|actions|content|footer'` 钩子；标题 `font-display font-semibold`，前面的渐变短竖线由 CSS 画在 `::before` 上并绝对定位（`ps-[calc(0.5rem+3px)]` 预留位置），块级或 inline-flex 的标题子元素仍能在 `truncate` 的 h2 内截断；页脚分隔线 `border-hairline`。
+  - `components/search.tsx`：顶栏搜索按钮改为玻璃色胶囊，`dark:border-hairline-strong` 用来压过 outline 变体的 `dark:border-input`。
+  - `features/dashboard/components/overview/`：`overview-dashboard.tsx`（设置引导背景改为 `<BrandBackdrop variant='panel' />`，展开时带静态环；三个 `CardStaggerItem` 改用 `brand-surface`）、`summary-cards.tsx`（外框 `brand-surface`；余额面板浅色渐变的固定色值改为 `var(--brand-c)`，另加以卡片色为底的深色渐变 `dark:bg-[…]`；余额数字 `font-display tabular-nums`）、`performance-health-panel.tsx`（外框）、`api-info-item.tsx`（路由名 `max-w-full shrink-0 break-keep wrap-break-word`，不被说明挤压，过长时按词换行、始终完整可读；说明与 URL 用 `min-w-0 truncate` 先截断；两者去掉透明度）。
+  - `features/dashboard/components/ui/panel-wrapper.tsx`（外框）、`ui/stat-card.tsx`（两处说明去掉透明度）。
+  - 数据看板各标签页：`features/dashboard/components/models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts}.tsx`、`flow/flow-charts.tsx`、`users/user-charts.tsx` 的外框由 `overflow-hidden rounded-lg border` 改为 `brand-surface overflow-hidden rounded-2xl`（`performance-overview` 的空状态条同样处理），`log-stat-cards` 两处说明去掉透明度。VChart 规格本身是透明背景，未改。
+  - 其余由 `brand.css` 的全局钩子完成，不改组件文件：侧栏画布光晕只在 inset 布局生效（`[data-slot='sidebar-wrapper']:has([data-slot='sidebar'][data-variant='inset'])`）；md 及以上内容面板有发丝线、顶部高光、阴影、1px 极光顶边（`--panel-rim`）和顶部 dawn 渐变；768px 以下 dawn 在外壳与内容区上连续绘制（内容区按 `--app-header-height` 偏移）；移动端导航抽屉（`data-mobile='true'`）带画布光晕并保持不透明；激活项光条与页面标题短竖线从 `--tick-from` 渐变到 `--brand-a`；卡片光泽、表头着色、对话框顶部光晕、弹层玻璃。
+- **错误页**：`features/errors/{not-found-error,unauthorized-error,forbidden,maintenance-error,general-error}.tsx` 根节点加 `relative isolate` 与 `<BrandBackdrop variant='auth' />`；状态码 `<h1>` 改为 `brand-display brand-text-aurora`，外包 `<div className='relative isolate'>`，以 `<BrandGlow className='[--glow-inset:-35%]' />` 作为第一个子元素。`general-error` 在 `minimal` 模式下不渲染背景、光晕、`relative isolate` 与状态码。按钮与跳转（返回上一页、回到首页、报告问题）不变。
+- **为通过 oxlint 的非样式改动**（改动文件按 `.oxlintrc.json` 检查时暴露的既有问题，渲染结果不变）：`footer.tsx` 与 `hero-terminal-demo.tsx` 的列表 key 由下标改为内容（`column.title`、`link.href`、代码行文本、匹配位置；`react/no-array-index-key`）；终端标签按钮加 `type='button'`（`react/button-has-type`，按钮不在表单内）；`rankings/index.tsx` 的嵌套三元改为 `if / else`（`no-nested-ternary`）；`panel-wrapper.tsx` 改为 `import type { ReactNode }`（`typescript/consistent-type-imports`）。
+
+### 作用范围与预设
+
+| 预设 | 外观 |
+|---|---|
+| 默认（`body` 上无 `data-theme-preset` 属性） | 完整极光配色 + 全部效果，`--radius` 0.75rem，标题与等宽字体为 Geist / Geist Mono；现有默认用户直接看到新外观 |
+| 7 个配色预设（forest-whisper、lake-view、lavender-dream、ocean-breeze、rose-garden、sunset-glow、underground） | 配色保持原样；玻璃、发丝线、mesh、涟漪、光晕、按钮质感用预设自己的 `--primary` / `--chart-3` / `--chart-2` 着色；CTA 退化为纯色 primary，渐变文字退化为纯色；呼吸点改用 `--primary`（`--chart-2` 在部分预设的 primary 色 chip 上看不清）；侧栏激活项与页面标题的短竖线为单一色相 |
+| `anthropic` | 效果强度 50%，光晕颜色减半（`--glow-color` 25%），控制台无画布光晕、dawn 渐变与面板顶边 |
+| `simple-large` | 关闭全部氛围效果：背景层与渐变发丝线隐藏，光晕透明，玻璃（含弹层）改为实色，卡片 hover 沿用 `index.css` 原样（无障碍预设） |
+
+用户轴（圆角、字体、缩放、内容布局）照常覆盖；serif 字体轴同时把 `--font-display` 切为衬线。
+
+### 层叠规则（修改 `brand.css` 前必读）
+
+- `index.css` 中的导入顺序为 `theme.css` → `theme-presets.css` → `brand.css`。`theme.css` 在 `html` 上声明 token（`:root`、`.dark`，特异性均为 0,1,0）；预设在 `body` 上声明（`[data-theme-preset='x']` 0,1,0，`.dark [data-theme-preset='x']` 0,2,0）；用户轴在 `body` 上声明（`[data-theme-font|radius|scale]` 0,1,0）。
+- `brand.css` 的 token 分 6 块：
+
+| 块 | 选择器 | 特异性 | 内容 |
+|---|---|---|---|
+| B1 | `:where(body, body .dark)` | 0 | 所有预设的结构 token（浅色值，夜岛也匹配），含控制台的 `--console-canvas`、`--panel-dawn-image`、`--panel-rim` 与短竖线起始色 `--tick-from` |
+| B2 | `:where(html.dark body, body .dark)` | 0 | 结构 token 的深色值（夜岛也匹配），按顺序胜过 B1 |
+| B3 | `:where(body:not([data-theme-preset]), body[data-theme-preset='default'])` | 0 | 极光浅色核心：全部 `theme.css` token、品牌色、字体、`--radius`；`--tick-from: var(--brand-c)` 在 `body` 上求值，深色时取 B4 的青色（B2 不声明 `--tick-from`） |
+| B4 | `:where(html.dark) :is(<默认 body>)`、`:is(<默认 body>) .dark` | 0,1,1 / 0,2,1 | 极光深色核心 + 默认预设下的夜岛 |
+| B5 | `[data-brand-island]` | 0,1,0 | 夜岛文字颜色与 `color-scheme: dark` |
+| B6 | `[data-theme-preset='anthropic' \| 'simple-large']` | 0,1,0 | 各预设的效果强度（`--fx`）、`--glow-color`，以及控制台画布 / dawn / 顶边的开关 |
+
+- 不变式（也写在 `brand.css` 文件头）：
+  1. B3 可以设 `--radius`、`--font-display`、`--font-mono`，用户轴（0,1,0）仍然胜出。
+  2. **B4 不得设** `--radius`、`--font-*`、`--text-*`、`--spacing`、`--max-content-width`，否则会压过用户轴。
+  3. **B2 与 B3 不得出现同一属性**：B3 在后、特异性相同，会把浅色值漏进深色模式。
+  4. 用 `var()` 推导的 token 要在其输入变化的每一处重新声明（`var()` 在声明它的元素上求值），所以 B3 / B4 重复声明 `--accent`、`--sidebar*`、`--table-*`、`--overview-accent-*`，B1 也匹配 `body .dark`。
+  5. 默认预设不写 `data-theme-preset` 属性，`PRESET_DEFAULT_FONT.default` 仍为 `'sans'`；`context/__tests__/theme-preferences.test.tsx` 依赖这两点。
+- 效果类与全局钩子都在 `@layer components` 内，调用处的 Tailwind utility 仍然胜出；全局钩子用 `:where()` 保持 0 特异性，品牌 class 与调用处 class 可以覆盖它们。
+- **`:root body` 前缀**：CSS `@import` 会被提升，`brand.css` 的未分层规则在源码顺序上排在 `index.css` 自身的未分层规则之前。需要压过 `index.css` 的规则时，必须加 `:root body` 前缀提高特异性，不要靠调整顺序。目前只有卡片 hover 阴影：`index.css` 的选择器为 0,4,0，`brand.css` 写作 `:root body:not([data-theme-preset='simple-large']) …`，特异性 0,5,1（定价页卡片 0,6,1），`simple-large` 因此沿用 `index.css` 的 hover。
+- **层内顺序**：认证卡片的按钮规则必须排在全局按钮质感规则之后（特异性相同）；`simple-large` 弹层实色规则排在 `@supports` 弹层玻璃规则之后；`prefers-reduced-transparency` 块必须是全局钩子层的最后一块。
+- **贴着内阴影画 1px 线**：卡片与内容面板的 `inset 0 1px 0` 高光会盖住第 0 行，定价卡片顶边与内容面板顶边（`--panel-rim`）都放在 `background-position` 的 `0 1px`。
+- `brand.css` 只由主题层维护者修改；各页面通过 `className` 使用 `brand-*` class，不在功能目录里写自定义 CSS。
+
+### 夜岛（night island）
+
+- 首页的 API 终端（位于"工作流程"区块右栏）在浅色、深色模式下都显示为深色"仪表"：外层 div 同时加 `class="dark"` 与 `data-brand-island=""`。`.dark` 是普通类选择器，`theme.css` 的深色 token、所有 `dark:` 变体以及 B2 / B4 都会作用到这棵子树；B5 设置文字颜色与 `color-scheme: dark`。
+- 目前只有这一处夜岛。新增夜岛时两个属性必须同时加；在命名预设下夜岛使用 `theme.css` 的经典深色 token。
+
+### 字体依赖
+
+- `@fontsource-variable/geist`、`@fontsource-variable/geist-mono`（`^5.3.0`，OFL-1.1），随构建自托管，不走 CDN；在 `index.css` 中紧随 `@fontsource-variable/lora` 导入。
+- 只有默认预设把 `--font-display` / `--font-mono` 指向 Geist / Geist Mono（B3），并带中日韩回退字体；构建产物多出 Geist 系 woff2 文件，按需加载。`font-display` 工具类由 `brand.css` 的非 inline `@theme` 注册，输出 `var(--font-display)`，因此默认预设与 serif 轴的 `body` 级覆盖能生效。
+
+### Button 数据属性
+
+`components/ui/button.tsx` 在 `data-slot='button'` 之后、`{...props}` 之前新增 `data-variant={variant ?? 'default'}` 与 `data-size={size ?? 'default'}`，其他不变。`brand.css` 的按钮质感（默认按钮的高光、阴影、hover 加深 / 提亮）、认证卡片 44px 控件与极光提交按钮都依赖这两个属性。副作用排查：既有选择器中只有 ItemGroup 的 `has-data-[size=sm]` / `has-data-[size=xs]` 间距规则可能匹配 Button，它只在 API Keys 页"API 地址"弹层中使用，那里的 item 为 `xs`，间距不变；没有 JavaScript 读取这两个属性。
+
+### 无障碍与降级
+
+- 所有装饰层 `aria-hidden`、`pointer-events: none`，不新增 i18n key。
+- 动效全部受 `prefers-reduced-motion: no-preference` 门控；漂移 mesh 与声呐涟漪还要求视口 ≥ 768px。减少动态效果时没有漂移、声呐、光束、渐变平移、呼吸点、连接线流光与轨道旋转，光束改为静态渐变；静态渐变字按 140% 宽显示完整的三段色，只有 `--flow` 动画时用 220%。动画只用 transform / opacity / scale / rotate / translate（光束与 hero 渐变文字平移除外），装饰层不用 `filter: blur()`，`.brand-backdrop` 带 `contain: layout paint style`。
+- 浅色下紧贴渐变展示字的光晕（`.brand-glow:has(+ .brand-text-aurora)`，即错误页状态码）核心降到 30%：渐变字最浅一档的对比度为 3.27:1，核心 40% 时只有 2.86:1，低于大字 3:1。其余光晕（首页、统计条、步骤、认证 hub）核心 40%；深色光晕不变。
+- 两侧玻璃条在竖向与朝内容方向两个遮罩相交后渐隐，不留硬边；`[dir='rtl']` 下朝内方向随之翻转。折射只用 `blur(6px)`。
+- `prefers-reduced-transparency`：玻璃与弹层改为实色，玻璃条隐藏。`prefers-contrast: more`：发丝线加深，玻璃改实色，渐变文字改为前景色。`forced-colors`：隐藏装饰层（背景层、光晕、点阵、连接线、发丝线、光束、光泽），玻璃 / 卡面 / 终端加实线边框，渐变文字用 `CanvasText`。打印时隐藏背景层、光晕与点阵。不支持 `background-clip: text` 时渐变文字退化为纯色。
+
+### 兼容性
+
+- 不涉及后端、接口、数据库与 i18n 文件。
+- 默认预设用户的外观会变化（配色、圆角、标题与等宽字体）；选择命名预设的用户配色不变，只多出结构效果；`simple-large` 关闭全部氛围效果，是最接近原有观感的选择。
+- 与上游同步时，`brand.css` 与 `components/brand/` 是 fork 独有文件，不会冲突；§19.2 列出的页面文件如果上游改了 class 或结构，先采纳上游版本，再按本节规则把 `brand-*` class、装饰层与 `data-slot` 钩子补回。`button.tsx` 的两个属性是 CSS 契约，合并时不能丢。
+
+### 测试
+
+- `web/src/components/brand/__tests__/brand-backdrop.test.tsx`：7 个 variant 的根节点都是 `aria-hidden`、`data-brand-backdrop` 与 variant 一致、无可聚焦子元素；`rings='sonar'` 渲染 3 个环、`rings='static'` 渲染一个 `.brand-rings`、默认无环；`flutes` 渲染 2 条、`'refract'` 加 `brand-flutes--refract`、默认无。
+- `web/src/components/ui/__tests__/button-attributes.test.tsx`：`data-variant` / `data-size` 默认为 `default`，反映 `variant='outline' size='sm'`，`render={<a href='/x' />}` 时仍然存在且 role 保持 `button`。
+- `web/src/components/layout/components/__tests__/section-page-layout.test.tsx`：5 个 `data-slot` 钩子各出现一次；只有一个标题且位于标题钩子上；标题含块级子元素时短竖线不占标题文档流；未传送内容时页脚容器为空，`PageFooterPortal` 传送内容后可见；只有传入 Actions 时才渲染操作区。
+- `web/src/components/layout/components/__tests__/public-header.test.tsx`：桌面导航链接的目标；只有当前路径的链接处于激活态；未登录时登录按钮指向 `/sign-in`；滚动后胶囊使用 `[--glass-bg:var(--glass-bg-strong)]`；汉堡按钮（"Toggle navigation menu"）打开可交互的遮罩并锁定页面滚动；未登录时移动菜单 CTA 指向 `/sign-in`，点击后关闭菜单、解除滚动锁定；遮罩里的背景层 `aria-hidden`。
+- `web/src/components/layout/components/__tests__/footer.test.tsx`：默认页脚的项目署名链接在新窗口打开；按状态开关显示或隐藏用户协议与隐私政策链接。
+- `web/src/features/home/__tests__/landing.test.tsx`：未登录时 hero 与 CTA 的"Get Started"指向 `/sign-up`、"View Pricing"指向 `/pricing`；`docs_link` 以 `http` 开头时渲染新窗口外链，否则渲染路由链接；登录后"Go to Dashboard"指向 `/dashboard` 且 CTA 区不渲染；hero（`hero-center`）与 CTA 背景层 `aria-hidden`；终端有 4 个协议标签，点击后切换接口路径。布局回归：hero 标题栈居中，统计读数与 `aria-hidden` 的光地平线在 hero 区块内；终端与三个步骤同在"工作流程"区块；副标题带 `break-keep wrap-break-word`；CTA 按钮行 `flex-wrap`；终端页脚 `flex-wrap`、"stream · sse"不换行；统计标签 `font-sans`；步骤与小功能说明 `break-keep wrap-break-word text-pretty`；功能卡片编号在阅读顺序上位于标题之前。
+- `web/src/features/auth/__tests__/auth-layout.test.tsx`：子内容渲染在 `[data-slot='auth-card']` 内；首页链接 `href='/'` 且包含站点名，Logo 的 alt 为"Logo"；加载中显示骨架；品牌面板（`[data-slot='auth-brand-panel']`）在 DOM 中位于卡片之后，不含标题，根节点带 `hidden` 与 `lg:flex`；面板根节点 `aria-hidden`、无可聚焦子元素、页面没有 complementary 地标；卡片 `max-w-[480px]` 且 `<p>` 用 `text-pretty`；所有背景层 `aria-hidden`。
+- `web/src/features/auth/__tests__/oauth-providers.test.tsx`：无提供方时不渲染；启用 GitHub 时显示"Or continue with"，需要同意条款而未勾选时按钮禁用；提供方按钮是默认尺寸的 outline 按钮、不带 `h-11`，由卡片的 44px 规则定高。
+- `web/src/features/auth/__tests__/auth-brand-panel.test.tsx`：hub 是位于文案之前、在文档流中的尺寸容器（不是绝对定位）；空间过矮时隐藏轨道；文案 `max-w-xl`、说明 `max-w-md`；说明的中日韩换行 class。
+- `web/src/features/pricing/__tests__/search-bar.test.tsx`：Ctrl+K / Meta+K 聚焦、Escape 失焦、输入经 `onChange` 上报、空值时显示快捷键提示而非清除按钮、宽右内边距只从 sm 起生效、有值时清除按钮清空。
+- `web/src/features/pricing/__tests__/loading-skeleton.test.tsx`：搜索框占位与真实搜索框同高同圆角；区域 `aria-busy`，卡片视图 6 个卡片占位，表格视图显示行占位。
+- `web/src/features/pricing/__tests__/pricing-header.test.tsx`：加载中显示 `aria-busy` 骨架而非头部；标题 `w-fit`、说明 `text-balance`。
+- `web/src/features/pricing/__tests__/pricing-controls.test.tsx`（既有文件，新增 2 个用例）：Standard / Recharge / `/1M` / `/1K` 与排序按钮都是 `h-8`；移动筛选抽屉带 `data-brand-page='pricing'`，其中的侧栏为 `bg-transparent bg-none shadow-none`。
+- `web/src/features/rankings/__tests__/rankings-states.test.tsx`：在 TanStack 内存路由的 `/rankings` 下渲染真实的 `<Rankings />`，只 mock `api.get` 并替换 VChart；覆盖加载（3 个占位，无数据、无错误）、业务失败（显示"Unable to load rankings"与服务端原因）、有数据（Top Models、Market Share、上升 / 下降标题与模型链接）三态，锁定 `rankings/index.tsx` 的 `if / else` 改写。
+- `web/src/features/rankings/__tests__/rankings-hero.test.tsx`：只有当前周期标签 `aria-selected`，点击其他标签上报新周期；标题 `w-fit`。
+- `web/src/features/errors/__tests__/status-heading.test.tsx`：401 / 403 / 404 / 500 / 503 页各只有一个 h1 且内容为状态码，光晕只有一个且 `aria-hidden`；`general-error` 的 `minimal` 模式没有 h1、光晕与背景层。
+- `web/src/features/dashboard/components/overview/__tests__/api-info-item-layout.test.tsx`：路由名 `shrink-0 max-w-full break-keep`、不截断，不被长说明挤压；说明、所在行与 URL 用 `min-w-0` / `truncate` 吸收溢出。
+- 改动主题层后需要一并运行的既有用例（设计稿 §10）：`context/__tests__/theme-preferences.test.tsx`、`components/ui/__tests__/dialog-layout.test.tsx`、`features/dashboard/components/overview/__tests__/setup-guide.test.tsx`、`features/system-update/__tests__/update-checking.test.tsx`、`features/security/__tests__/page.test.tsx`、`features/pricing/__tests__/`、`features/performance-metrics/__tests__/summary.test.tsx`、`components/data-table/`、`features/auth/`（含 `passkey`、`otp`、`secure-verification` 的既有用例）、`hooks/__tests__/sidebar-config.test.tsx`、`features/channels/components/__tests__/table-refresh.test.tsx`、`components/__tests__/live-rpm.test.tsx`，以及 `features/keys/`、`features/usage-logs/`、`features/models/` 的列表用例；最后跑一次全量 `bun run test`。
+- vitest 不处理 CSS，视觉效果需要人工检查，见 §20 测试缺口。
+
+### 后续（本次未做）
+
+- 图表（VChart）换成极光配色：需要改 `features/dashboard/lib/charts.ts`，并有意更新 `charts.test.ts`。
+- 可选的 `classic` 预设（需要在 7 种语言中新增 `preset.classic`）、玻璃 toast（`ui/sonner.tsx`）、指针聚光效果、`<html lang>` 联动的中日韩字距。
+- 控制台页面内使用真玻璃：要让 `lib/motion.ts` 的 `MOTION_VARIANTS.pageEnter` 动画结束后清除 `filter`（例如 `transitionEnd: { filter: 'none' }`），`AnimatedOutlet` 才不再是 backdrop root；`PageTransition` 共用该变体，会一并受影响。
