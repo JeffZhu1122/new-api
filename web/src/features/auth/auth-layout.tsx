@@ -19,8 +19,11 @@ For commercial licensing, please contact support@quantumnous.com
 import { Link } from '@tanstack/react-router'
 import { useTranslation } from 'react-i18next'
 
+import { BrandBackdrop } from '@/components/brand'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useSystemConfig } from '@/hooks/use-system-config'
+
+import { AuthBrandPanel } from './components/auth-brand-panel'
 
 type AuthLayoutProps = {
   children: React.ReactNode
@@ -30,34 +33,52 @@ export function AuthLayout({ children }: AuthLayoutProps) {
   const { t } = useTranslation()
   const { systemName, logo, loading } = useSystemConfig()
 
+  // DOM order is home link -> form card -> brand panel (aria-hidden
+  // decoration with no controls), so the form comes first in reading and
+  // focus order; the grid shows the panel on the left at lg+ and hides it
+  // below that (OAuth popups included).
+  // From lg the page backdrop starts under the panel edge and fades in over
+  // 80px (no seam in the margins around the panel), and its indigo peak sits
+  // behind the card's top-right corner so the glass has colour to frost.
+  // The 480px card keeps the original 416px text measure at sm:p-8.
   return (
-    <div className='relative grid h-svh max-w-none'>
+    <div className='relative isolate grid min-h-svh lg:grid-cols-[minmax(0,1.1fr)_minmax(0,1fr)]'>
+      <BrandBackdrop
+        variant='auth'
+        className='lg:start-1/2 lg:[mask-image:linear-gradient(to_right,transparent,#000_80px)] lg:[--mesh-p1:82%_26%] lg:[--mesh-s1:46%_44%] lg:[&>.brand-mesh]:opacity-100'
+      />
       <Link
         to='/'
-        className='absolute top-4 left-4 z-10 flex items-center gap-2 transition-opacity hover:opacity-80 sm:top-8 sm:left-8'
+        className='absolute start-4 top-4 z-20 flex items-center gap-2.5 transition-opacity hover:opacity-80 sm:start-8 sm:top-8'
       >
-        <div className='relative h-8 w-8'>
+        <div className='relative size-8'>
           {loading ? (
-            <Skeleton className='absolute inset-0 rounded-full' />
+            <Skeleton className='absolute inset-0 rounded-lg' />
           ) : (
             <img
               src={logo}
               alt={t('Logo')}
-              className='h-8 w-8 rounded-full object-cover'
+              className='size-8 rounded-lg object-contain'
             />
           )}
         </div>
         {loading ? (
           <Skeleton className='h-6 w-24' />
         ) : (
-          <h1 className='text-xl font-medium'>{systemName}</h1>
+          <h1 className='font-display text-xl font-semibold tracking-tight'>
+            {systemName}
+          </h1>
         )}
       </Link>
-      <div className='container flex items-center pt-16 sm:pt-0'>
-        <div className='mx-auto flex w-full flex-col justify-center space-y-2 px-4 py-8 sm:w-[480px] sm:p-8'>
+      <div className='relative flex items-center justify-center px-4 pt-20 pb-10 sm:px-8 lg:col-start-2 lg:row-start-1 lg:py-12'>
+        <div
+          data-slot='auth-card'
+          className='brand-glass brand-hairline relative flex w-full max-w-[480px] flex-col justify-center space-y-2 rounded-3xl p-4 py-6 sm:p-8 [:where(&_p)]:text-pretty'
+        >
           {children}
         </div>
       </div>
+      <AuthBrandPanel className='hidden lg:col-start-1 lg:row-start-1 lg:flex' />
     </div>
   )
 }

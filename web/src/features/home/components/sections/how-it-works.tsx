@@ -20,6 +20,9 @@ import { Settings, Zap, BarChart3 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 
 import { AnimateInView } from '@/components/animate-in-view'
+import { BrandGlow } from '@/components/brand'
+
+import { HeroTerminalDemo } from '../hero-terminal-demo'
 
 export function HowItWorks() {
   const { t } = useTranslation()
@@ -49,41 +52,60 @@ export function HowItWorks() {
     },
   ]
 
+  // Product walkthrough: the three steps run down a lit rail on the left
+  // while the live API terminal stays in view on the right.
   return (
-    <section className='border-border/40 relative z-10 border-t px-6 py-24 md:py-32'>
-      <div className='mx-auto max-w-6xl'>
-        <AnimateInView className='mb-16 text-center md:mb-20'>
-          <p className='text-muted-foreground mb-3 text-xs font-medium tracking-widest uppercase'>
-            {t('How It Works')}
-          </p>
-          <h2 className='text-2xl font-bold tracking-tight md:text-3xl'>
-            {t('Three steps to get started')}
-          </h2>
-        </AnimateInView>
+    <section className='relative z-10 px-6 pt-10 pb-24 md:pt-16 md:pb-32'>
+      <div className='mx-auto grid max-w-6xl items-start gap-14 lg:grid-cols-12 lg:gap-12'>
+        <div className='lg:col-span-5 lg:pt-6'>
+          <AnimateInView>
+            <p className='brand-eyebrow mb-3'>{t('How It Works')}</p>
+            <h2 className='brand-display text-3xl md:text-[2.75rem]'>
+              {t('Three steps to get started')}
+            </h2>
+          </AnimateInView>
 
-        <div className='grid gap-8 md:grid-cols-3 md:gap-12'>
-          {steps.map((step, i) => (
-            <AnimateInView
-              key={step.num}
-              delay={i * 150}
-              animation='fade-up'
-              className='relative flex flex-col items-center text-center'
-            >
-              <div className='relative mb-6'>
-                <div className='text-muted-foreground border-border/50 bg-muted/30 flex size-16 items-center justify-center rounded-2xl border transition-colors'>
-                  {step.icon}
+          <div className='relative mt-12 space-y-10'>
+            <div
+              aria-hidden='true'
+              className='brand-connector brand-connector--y start-6 top-6 bottom-6'
+            />
+            {steps.map((step, i) => (
+              <AnimateInView
+                key={step.num}
+                delay={i * 150}
+                animation='fade-up'
+                className='relative flex items-start gap-5'
+              >
+                <div className='relative shrink-0'>
+                  <div className='brand-icon-tile bg-card size-12 rounded-2xl'>
+                    {step.icon}
+                  </div>
+                  <div className='bg-primary text-primary-foreground absolute -top-2 -right-2 flex size-5 items-center justify-center rounded-full font-mono text-[11px] font-bold shadow-[0_0_10px_var(--glow-color)]'>
+                    {step.num}
+                  </div>
                 </div>
-                <div className='bg-foreground text-background absolute -top-2 -right-2 flex size-6 items-center justify-center rounded-full text-xs font-bold'>
-                  {step.num}
+                <div className='pt-1'>
+                  <h3 className='mb-1.5 text-base font-semibold'>
+                    {step.title}
+                  </h3>
+                  <p className='text-muted-foreground max-w-sm text-sm leading-relaxed text-pretty wrap-break-word break-keep'>
+                    {step.desc}
+                  </p>
                 </div>
-              </div>
-              <h3 className='mb-2 text-base font-semibold'>{step.title}</h3>
-              <p className='text-muted-foreground max-w-[240px] text-sm leading-relaxed'>
-                {step.desc}
-              </p>
-            </AnimateInView>
-          ))}
+              </AnimateInView>
+            ))}
+          </div>
         </div>
+
+        <AnimateInView
+          animation='fade-up'
+          delay={150}
+          className='relative lg:sticky lg:top-28 lg:col-span-7'
+        >
+          <BrandGlow />
+          <HeroTerminalDemo />
+        </AnimateInView>
       </div>
     </section>
   )
