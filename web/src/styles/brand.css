@@ -419,6 +419,17 @@ For commercial licensing, please contact support@quantumnous.com
   background-color: color-mix(in oklch, var(--primary) 26%, transparent);
 }
 
+@property --brand-scroll-fade {
+  syntax: '<length>';
+  inherits: false;
+  initial-value: 0px;
+}
+@keyframes brand-scroll-fade {
+  to {
+    --brand-scroll-fade: 1.25rem;
+  }
+}
+
 @property --brand-beam-angle {
   syntax: '<angle>';
   inherits: false;
@@ -1539,6 +1550,28 @@ For commercial licensing, please contact support@quantumnous.com
   :where([data-slot='sidebar'][data-mobile='true']) {
     background-image: var(--console-canvas);
     background-repeat: no-repeat;
+  }
+
+  /* Fixed-height list panes (card grids, mobile lists) scroll inside their
+   * own pane. Once scrolled, rows fade out over the top 1.25rem instead of
+   * being cut hard against the toolbar. Scroll-driven, so the resting layout
+   * is untouched; browsers without scroll timelines keep the plain edge. */
+  @supports (animation-timeline: scroll()) {
+    :where([data-slot='data-table-scroll']) {
+      -webkit-mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        #000 var(--brand-scroll-fade)
+      );
+      mask-image: linear-gradient(
+        to bottom,
+        transparent,
+        #000 var(--brand-scroll-fade)
+      );
+      animation: brand-scroll-fade linear both;
+      animation-timeline: scroll(self);
+      animation-range: 0 1.5rem;
+    }
   }
 
   /* Console page title tick (hook in section-page-layout.tsx, which
