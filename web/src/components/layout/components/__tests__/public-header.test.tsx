@@ -137,19 +137,25 @@ describe('PublicHeader', () => {
     ).toHaveAttribute('href', '/sign-in')
   })
 
-  it('after scrolling uses the strong glass token for the floating pill', async () => {
+  it('after scrolling turns the whole header into a full-width glass bar without narrowing the nav', async () => {
     await renderHeader('/')
     const banner = await screen.findByRole('banner')
     const nav = within(banner).getByRole('navigation')
-    expect(nav).not.toHaveClass('brand-glass')
+    expect(banner).not.toHaveClass('brand-glass')
 
     Object.defineProperty(window, 'scrollY', { configurable: true, value: 40 })
     fireEvent.scroll(window)
 
-    expect(nav).toHaveClass(
+    // The glass spans the full header, so content cannot show around it.
+    expect(banner).toHaveClass(
       'brand-glass',
-      '[--glass-bg:var(--glass-bg-strong)]'
+      '[--glass-bg:var(--glass-bg-strong)]',
+      'pointer-events-auto'
     )
+    // The nav keeps the unscrolled content width (no floating pill).
+    expect(nav).not.toHaveClass('brand-glass', 'rounded-2xl')
+    expect(nav.parentElement).toHaveClass('max-w-7xl')
+    expect(nav.parentElement).not.toHaveClass('max-w-[52rem]')
   })
 
   it('opening the mobile menu makes the overlay interactive and locks page scroll', async () => {
