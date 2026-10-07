@@ -120,6 +120,25 @@ export type LogCleanupTask = SystemTask<
   LogCleanupTaskResult
 >
 
+export type LogFileCleanupRun = {
+  started_at: number
+  mode: 'by_count' | 'by_days'
+  value: number
+  deleted_count: number
+  freed_bytes: number
+  failed_files: string[] | null
+  error?: string
+}
+
+/** This node's scheduled server log file cleanup (times are Unix seconds). */
+export type LogFileCleanupScheduleStatus = {
+  log_dir_configured: boolean
+  timezone: string
+  utc_offset: string
+  next_run_at: number
+  last_run: LogFileCleanupRun | null
+}
+
 export type SystemTaskResponse<TTask = SystemTask | null> = {
   success: boolean
   message: string
@@ -377,6 +396,13 @@ export type OperationsSettings = {
   WorkerValidKey: string
   WorkerAllowHttpImageRequestEnabled: boolean
   LogConsumeEnabled: boolean
+  'log_file_cleanup_setting.enabled': boolean
+  'log_file_cleanup_setting.frequency': 'daily' | 'weekly' | 'monthly'
+  'log_file_cleanup_setting.weekday': number
+  'log_file_cleanup_setting.month_day': number
+  'log_file_cleanup_setting.time': string
+  'log_file_cleanup_setting.mode': 'by_count' | 'by_days'
+  'log_file_cleanup_setting.value': number
   'performance_setting.disk_cache_enabled': boolean
   'performance_setting.disk_cache_threshold_mb': number
   'performance_setting.disk_cache_max_size_mb': number

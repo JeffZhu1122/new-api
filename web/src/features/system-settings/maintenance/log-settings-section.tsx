@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useQueryClient } from '@tanstack/react-query'
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useForm } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
@@ -82,15 +83,24 @@ import { SettingsPageFormActions } from '../components/settings-page-context'
 import { SettingsSection } from '../components/settings-section'
 import { useUpdateOption } from '../hooks/use-update-option'
 import type { LogCleanupTask } from '../types'
+import { LogFileCleanupScheduleFields } from './log-file-cleanup-schedule'
+import {
+  LOG_FILE_CLEANUP_SCHEDULE_FIELDS,
+  LOG_FILE_CLEANUP_SCHEDULE_QUERY_KEY,
+  logFileCleanupScheduleSchema,
+  type LogFileCleanupScheduleValues,
+} from './log-file-cleanup-schedule-schema'
 
 const logSettingsSchema = z.object({
   LogConsumeEnabled: z.boolean(),
+  log_file_cleanup_setting: logFileCleanupScheduleSchema,
 })
 
 type LogSettingsFormValues = z.infer<typeof logSettingsSchema>
 
 type LogSettingsSectionProps = {
   defaultEnabled: boolean
+  scheduleDefaults: LogFileCleanupScheduleValues
 }
 
 type ServerLogInfo = {
@@ -146,15 +156,21 @@ function isActiveLogCleanupTask(task: LogCleanupTask | null) {
 
 export function LogSettingsSection({
   defaultEnabled,
+  scheduleDefaults,
 }: LogSettingsSectionProps) {
   const { t } = useTranslation()
   const updateOption = useUpdateOption()
+  const queryClient = useQueryClient()
   const form = useForm<LogSettingsFormValues>({
     resolver: zodResolver(logSettingsSchema),
     defaultValues: {
       LogConsumeEnabled: defaultEnabled,
+      log_file_cleanup_setting: scheduleDefaults,
     },
   })
+  // The registry rebuilds the defaults object on every render; reset only
+  // when its content changes.
+  const scheduleDefaultsKey = JSON.stringify(scheduleDefaults)
 
   const [purgeDate, setPurgeDate] = useState<Date | undefined>(() =>
     getDateDaysAgo(30)
@@ -180,8 +196,13 @@ export function LogSettingsSection({
   }, [])
 
   useEffect(() => {
-    form.reset({ LogConsumeEnabled: defaultEnabled })
-  }, [defaultEnabled, form])
+    form.reset({
+      LogConsumeEnabled: defaultEnabled,
+      log_file_cleanup_setting: JSON.parse(
+        scheduleDefaultsKey
+      ) as LogFileCleanupScheduleValues,
+    })
+  }, [defaultEnabled, scheduleDefaultsKey, form])
 
   useEffect(() => {
     fetchServerLogInfo()
@@ -263,11 +284,28 @@ export function LogSettingsSection({
   }, [logCleanupActive, logCleanupTaskId, t])
 
   const onSubmit = async (values: LogSettingsFormValues) => {
-    if (values.LogConsumeEnabled === defaultEnabled) return
-    await updateOption.mutateAsync({
-      key: 'LogConsumeEnabled',
-      value: values.LogConsumeEnabled,
-    })
+    if (values.LogConsumeEnabled !== defaultEnabled) {
+      await updateOption.mutateAsync({
+        key: 'LogConsumeEnabled',
+        value: values.LogConsumeEnabled,
+      })
+    }
+
+    const schedule = values.log_file_cleanup_setting
+    const changedScheduleFields = LOG_FILE_CLEANUP_SCHEDULE_FIELDS.filter(
+      (field) => schedule[field] !== scheduleDefaults[field]
+    )
+    for (const field of changedScheduleFields) {
+      await updateOption.mutateAsync({
+        key: `log_file_cleanup_setting.${field}`,
+        value: schedule[field],
+      })
+    }
+    if (changedScheduleFields.length > 0) {
+      queryClient.invalidateQueries({
+        queryKey: LOG_FILE_CLEANUP_SCHEDULE_QUERY_KEY,
+      })
+    }
   }
 
   const handleRequestCleanLogs = () => {
@@ -575,6 +613,12 @@ export function LogSettingsSection({
                   </AlertDialogContent>
                 </AlertDialog>
               </div>
+
+              <Form {...form}>
+                <SettingsForm onSubmit={form.handleSubmit(onSubmit)}>
+                  <LogFileCleanupScheduleFields formatSize={formatBytes} />
+                </SettingsForm>
+              </Form>
             </div>
           ) : (
             <Alert>

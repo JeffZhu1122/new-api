@@ -142,6 +142,9 @@ func main() {
 	// Live per-channel / per-user RPM statistics (flushed to Redis when enabled)
 	service.StartRpmStats()
 
+	// Scheduled cleanup of this node's server log files (log_file_cleanup_setting)
+	service.StartLogFileCleanupScheduler()
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle).
 	// Must run before the system task runner starts: the async_task_poll handler
 	// calls service.RunTaskPollingOnce, which needs this factory set.

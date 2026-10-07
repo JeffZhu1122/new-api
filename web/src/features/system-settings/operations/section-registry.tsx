@@ -98,6 +98,17 @@ const OPERATIONS_SECTIONS = [
     build: (settings: OperationsSettings) => (
       <LogSettingsSection
         defaultEnabled={Boolean(settings.LogConsumeEnabled)}
+        scheduleDefaults={{
+          enabled: Boolean(settings['log_file_cleanup_setting.enabled']),
+          frequency: settings['log_file_cleanup_setting.frequency'] ?? 'daily',
+          weekday: Number(settings['log_file_cleanup_setting.weekday'] ?? 1),
+          month_day: Number(
+            settings['log_file_cleanup_setting.month_day'] ?? 1
+          ),
+          time: settings['log_file_cleanup_setting.time'] || '03:00',
+          mode: settings['log_file_cleanup_setting.mode'] ?? 'by_days',
+          value: Number(settings['log_file_cleanup_setting.value'] ?? 30),
+        }}
       />
     ),
   },
