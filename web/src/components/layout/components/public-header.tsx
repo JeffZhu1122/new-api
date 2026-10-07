@@ -200,19 +200,22 @@ export function PublicHeader(props: PublicHeaderProps) {
 
   return (
     <>
-      <header className='pointer-events-none fixed inset-x-0 top-0 z-50'>
-        <div
-          className={cn(
-            'pointer-events-auto mx-auto transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-            scrolled ? 'max-w-[52rem] px-3 pt-3' : 'max-w-7xl px-4 pt-0 md:px-6'
-          )}
-        >
+      {/* Once scrolled the header becomes a full-width glass bar (content keeps
+          its width), so page content never shows around a floating pill and
+          nav labels are never squeezed. */}
+      <header
+        className={cn(
+          'fixed inset-x-0 top-0 z-50 transition-[background-color,box-shadow] duration-500',
+          scrolled
+            ? 'brand-glass pointer-events-auto [--glass-bg:var(--glass-bg-strong)] shadow-[0_1px_0_var(--hairline),0_12px_32px_-24px_var(--panel-shadow)]'
+            : 'pointer-events-none'
+        )}
+      >
+        <div className='pointer-events-auto mx-auto max-w-7xl px-4 md:px-6'>
           <nav
             className={cn(
-              'flex items-center justify-between gap-2 transition-all duration-700 ease-[cubic-bezier(0.16,1,0.3,1)]',
-              scrolled
-                ? 'brand-glass brand-hairline h-12 rounded-2xl pr-1.5 pl-4 [--glass-bg:var(--glass-bg-strong)]'
-                : 'h-16 px-2'
+              'flex items-center justify-between gap-2 px-2 transition-[height] duration-500 ease-[cubic-bezier(0.16,1,0.3,1)]',
+              scrolled ? 'h-14' : 'h-16'
             )}
           >
             {/* Logo */}

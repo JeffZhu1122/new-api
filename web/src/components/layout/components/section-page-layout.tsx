@@ -92,8 +92,8 @@ export function SectionPageLayout(props: SectionPageLayoutProps) {
             <div
               className={
                 props.stackActionsOnMobile
-                  ? 'min-w-0 flex-1 max-sm:basis-full'
-                  : 'min-w-0 flex-1'
+                  ? 'min-w-0 flex-auto max-sm:basis-full'
+                  : 'min-w-0 flex-auto'
               }
             >
               {/* brand.css paints the title tick on ::before; keep it out of
