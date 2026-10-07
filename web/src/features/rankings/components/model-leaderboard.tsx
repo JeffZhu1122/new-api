@@ -79,7 +79,7 @@ function ModelList(props: {
               : 'flex items-center gap-3 py-2.5'
           }
         >
-          <span className='text-muted-foreground/80 w-6 shrink-0 text-right font-mono text-xs tabular-nums'>
+          <span className='text-muted-foreground w-6 shrink-0 text-right font-mono text-xs tabular-nums'>
             {row.rank}.
           </span>
           <span className='shrink-0'>
@@ -99,8 +99,8 @@ function ModelList(props: {
             <p
               className={
                 compact
-                  ? 'text-muted-foreground/80 truncate text-[11px] italic'
-                  : 'text-muted-foreground/80 truncate text-xs italic'
+                  ? 'text-muted-foreground truncate text-[11px] italic'
+                  : 'text-muted-foreground truncate text-xs italic'
               }
             >
               by{' '}
@@ -121,7 +121,7 @@ function ModelList(props: {
               {!compact && (
                 <>
                   {' '}
-                  <span className='text-muted-foreground/80 font-normal'>
+                  <span className='text-muted-foreground font-normal'>
                     {t('tokens')}
                   </span>
                 </>
