@@ -39,6 +39,28 @@ function getSlot(container: HTMLElement, slot: string): HTMLElement {
 }
 
 describe('SectionPageLayout', () => {
+  test('sizes the title from its content so wide actions wrap below it instead of squeezing it away', () => {
+    const { container } = render(
+      <SectionPageLayout>
+        <SectionPageLayout.Title>Channels</SectionPageLayout.Title>
+        <SectionPageLayout.Actions>
+          <button type='button'>Create Channel</button>
+        </SectionPageLayout.Actions>
+        <SectionPageLayout.Content>
+          <p>Channel list</p>
+        </SectionPageLayout.Content>
+      </SectionPageLayout>
+    )
+
+    const titleBox = getSlot(container, 'section-page-title').parentElement
+    // flex-auto keeps the content-sized basis, so flex-wrap moves the actions
+    // to the next line once both no longer fit (flex-1 would shrink the title
+    // to nothing instead); min-w-0 still lets a long title truncate.
+    expect(titleBox).toHaveClass('min-w-0', 'flex-auto')
+    expect(titleBox).not.toHaveClass('flex-1')
+    expect(titleBox?.parentElement).toHaveClass('flex-wrap')
+  })
+
   test('with title, actions and content renders every style hook once', () => {
     const { container } = render(
       <SectionPageLayout>
