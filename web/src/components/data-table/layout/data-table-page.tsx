@@ -487,7 +487,14 @@ function renderMobile<TData>(
     }
   }
 
-  return <div className='min-h-0 flex-1 overflow-y-auto'>{mobileContent}</div>
+  return (
+    <div
+      data-slot='data-table-scroll'
+      className='min-h-0 flex-1 overflow-y-auto'
+    >
+      {mobileContent}
+    </div>
+  )
 }
 
 function renderDesktop<TData>(
@@ -506,6 +513,7 @@ function renderDesktop<TData>(
   if (cardViewActive && viewMode === DATA_TABLE_VIEW_MODES.CARD) {
     return (
       <div
+        data-slot={fixedHeight ? 'data-table-scroll' : undefined}
         className={cn(
           fixedHeight && 'min-h-0 flex-1 overflow-y-auto',
           'transition-opacity duration-150',

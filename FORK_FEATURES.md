@@ -847,13 +847,14 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/components/config-drawer.tsx` | 默认预设色块改为极光渐变 |
 | `web/src/features/auth/auth-layout.tsx` | 认证页外壳整体重排：`data-slot='auth-card'` 玻璃卡片（`max-w-[480px]`）、品牌面板、lg 起背景层的边缘渐显与 mesh 峰值位置 |
 | `web/src/features/auth/components/oauth-providers.tsx` / `oauth-callback-screen.tsx` | "Or continue with"分隔线改为 flex 行，提供方按钮去掉 `h-11`；回调页图标底块与加载图标颜色 |
-| `web/src/components/layout/components/public-header.tsx` / `footer.tsx` | 页头玻璃胶囊（本地 `--glass-bg` 覆盖）、激活链接下划线、登录按钮、移动菜单背景层与 CTA；页脚默认分支的渐变分隔线、文字 class 与列表 key |
+| `web/src/components/layout/components/public-header.tsx` / `footer.tsx` | 滚动后整条全宽玻璃页头（本地 `--glass-bg` 覆盖，取代上游的悬浮胶囊）、激活链接下划线、登录按钮、移动菜单背景层与 CTA；页脚默认分支的渐变分隔线、文字 class 与列表 key |
 | `web/src/features/home/index.tsx`（仅默认首页分支的区块顺序）/ `components/sections/{hero,stats,features,how-it-works,cta}.tsx` / `hero-terminal-demo.tsx` | 首页整体重排为与上游不同的版式（居中 hero + 光地平线 + 统计读数 + 应用条、步骤与终端并排的产品演示、左侧粘性标题的功能区、全宽收尾 CTA）；终端是夜岛（`class="dark"` + `data-brand-island`），标签按钮 `type='button'`、代码行 key 改为内容 |
 | `web/src/features/pricing/index.tsx` / `components/{search-bar,pricing-toolbar,pricing-sidebar,loading-skeleton}.tsx` | 定价页头部与 `data-brand-page='pricing'`；搜索框尺寸与内边距；工具栏框体、切换按钮 `h-8`、移动筛选抽屉的 `data-brand-page` 与侧栏 `bg-none`；侧栏框体；加载骨架与新头部同尺寸 |
 | `web/src/features/pricing/__tests__/pricing-controls.test.tsx` | 上游测试文件，新增 2 个用例（切换按钮 `h-8`、移动筛选抽屉的品牌作用域） |
 | `web/src/features/rankings/index.tsx` | 头部背景层；三态渲染由嵌套三元改为 `if / else` 赋给 `rankingsContent`（结构改写，合并时注意上游对这段的修改）；骨架与错误框圆角 |
 | `web/src/features/rankings/components/{rankings-hero,models-section,market-share-section,pulse-section,model-leaderboard,growth-text}.tsx` | 标题渐变字与标签下划线、区块改用 `brand-surface`、`text-muted-foreground/80` 去掉透明度 |
-| `web/src/components/layout/components/section-page-layout.tsx` | 控制台页面的 `data-slot='section-page-*'` 钩子与标题 class |
+| `web/src/components/layout/components/section-page-layout.tsx` | 控制台页面的 `data-slot='section-page-*'` 钩子与标题 class；标题容器 `flex-auto`（上游为 `flex-1`），右侧操作区放不下时换行而不是把标题挤没 |
+| `web/src/components/data-table/layout/data-table-page.tsx` | 固定高度的卡片网格与移动端列表滚动容器加 `data-slot='data-table-scroll'` 钩子（仅属性） |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
 | `web/src/features/dashboard/components/{models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts},flow/flow-charts,users/user-charts}.tsx` | 数据看板各标签页外框改为 `brand-surface rounded-2xl` |
@@ -1033,7 +1034,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 
 - **基础**：`web/src/styles/index.css`（3 行 import）、`web/src/components/ui/button.tsx`（`data-variant` / `data-size`）、`web/src/components/config-drawer.tsx`（默认预设色块）、`web/package.json` / `web/bun.lock`（字体依赖）。
 - **公共页**：
-  - `components/layout/components/public-header.tsx`：滚动后的胶囊改为 `brand-glass brand-hairline`，并在本地把 `--glass-bg` 指向 `--glass-bg-strong`（浅色 88%、深色 84% 卡片色；`simple-large` 与高对比度下仍为实色）；激活链接加极光下划线；桌面登录按钮与移动菜单 CTA 用 `brand-cta`；移动菜单遮罩加 `<BrandBackdrop variant='dawn' />`。滚动判定、链接、菜单开关与滚动锁定不变。
+  - `components/layout/components/public-header.tsx`：滚动后不再收成悬浮胶囊，而是整条 `<header>` 变为全宽玻璃条（`brand-glass` + 底部细线阴影，内容仍是 `max-w-7xl`，导航文字不再被截断，页面内容也不会从胶囊两侧露出），并在本地把 `--glass-bg` 指向 `--glass-bg-strong`（浅色 88%、深色 84% 卡片色；`simple-large` 与高对比度下仍为实色）；激活链接加极光下划线；桌面登录按钮与移动菜单 CTA 用 `brand-cta`；移动菜单遮罩加 `<BrandBackdrop variant='dawn' />`。滚动判定、链接、菜单开关与滚动锁定不变。
   - `components/layout/components/footer.tsx`：只改默认分支（渐变分隔线、底部光晕、文字去掉透明度）；`footerHtml` 分支、`LegalLinks`、`ProjectAttribution` 不变。
   - 首页版式（刻意与上游不同）：`features/home/index.tsx` 默认分支的区块顺序改为 Hero → HowItWorks → Features → CTA → Footer（统计在 Hero 内渲染），自定义首页的 iframe / HTML / Markdown 分支与上游一致、不加背景。`hero.tsx` 为居中标题栈（`<BrandBackdrop variant='hero-center' rings='sonar' flutes />`，标题 `text-[clamp(2.5rem,6.2vw,4.75rem)]`），下方是 `.brand-horizon` 光地平线，统计读数（`stats.tsx`，无卡片、细线分隔）与常用应用条放在地平线上；`how-it-works.tsx` 左侧为竖向步骤轨道（`.brand-connector--y` 流光），右侧为 lg 起粘性的 API 终端（原 hero 右栏的终端移到这里，内容与交互不变）；`features.tsx` 左侧粘性标题与 4 项小功能列表，右侧 2×2 等宽功能卡（去掉 bento 跨列）；`cta.tsx` 改为全宽区块，背景上下边缘渐隐。其余：副标题与说明 `break-keep wrap-break-word text-pretty`；CTA 与 hero 按钮行 `flex-wrap`；终端页脚 `flex-wrap`，"stream · sse"不换行并靠右；步骤编号徽标 `bg-primary` 加光晕；功能卡片编号在 DOM 中仍位于标题之前（视觉上靠右）。
 - **认证**：
@@ -1050,7 +1051,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
   - `features/rankings/components/rankings-hero.tsx`：标题 `brand-display brand-text-aurora w-fit`，激活标签的下划线改为极光渐变加光晕（`role='tab'`、`aria-selected`、`onClick` 不变）。`{models-section,market-share-section,pulse-section}.tsx` 的区块改为 `brand-surface rounded-2xl`。这三个文件与 `{model-leaderboard,growth-text}.tsx` 中共 17 处 `text-muted-foreground/80`（加上 hero 副标题共 18 处）改为不透明的 `text-muted-foreground`。
   - 模型卡片、详情、表格与列定义未改，靠 token 和 `[data-brand-page='pricing']` 作用域钩子着色。计费展示逻辑未动。
 - **控制台**：
-  - `components/layout/components/section-page-layout.tsx`：`data-slot='section-page-header|title|actions|content|footer'` 钩子；标题 `font-display font-semibold`，前面的渐变短竖线由 CSS 画在 `::before` 上并绝对定位（`ps-[calc(0.5rem+3px)]` 预留位置），块级或 inline-flex 的标题子元素仍能在 `truncate` 的 h2 内截断；页脚分隔线 `border-hairline`。
+  - `components/layout/components/section-page-layout.tsx`：`data-slot='section-page-header|title|actions|content|footer'` 钩子；标题 `font-display font-semibold`，前面的渐变短竖线由 CSS 画在 `::before` 上并绝对定位（`ps-[calc(0.5rem+3px)]` 预留位置），块级或 inline-flex 的标题子元素仍能在 `truncate` 的 h2 内截断；页脚分隔线 `border-hairline`；标题容器由 `flex-1` 改为 `flex-auto`，按内容宽度参与换行，约 1024px 宽时右侧操作按钮换到下一行，标题不再被挤成只剩竖线。
+  - `components/data-table/layout/data-table-page.tsx`：固定高度卡片视图与移动端列表的滚动容器加 `data-slot='data-table-scroll'`。`brand.css` 用滚动驱动动画（`animation-timeline: scroll(self)`，注册属性 `--brand-scroll-fade`）在列表滚动后给顶部 1.25rem 加渐隐遮罩，卡片在工具栏下方淡出而不是被硬切；静止时布局与点击区域不变，不支持滚动时间线的浏览器保持原样。
   - `components/search.tsx`：顶栏搜索按钮改为玻璃色胶囊，`dark:border-hairline-strong` 用来压过 outline 变体的 `dark:border-input`。
   - `features/dashboard/components/overview/`：`overview-dashboard.tsx`（设置引导背景改为 `<BrandBackdrop variant='panel' />`，展开时带静态环；三个 `CardStaggerItem` 改用 `brand-surface`）、`summary-cards.tsx`（外框 `brand-surface`；余额面板浅色渐变的固定色值改为 `var(--brand-c)`，另加以卡片色为底的深色渐变 `dark:bg-[…]`；余额数字 `font-display tabular-nums`）、`performance-health-panel.tsx`（外框）、`api-info-item.tsx`（路由名 `max-w-full shrink-0 break-keep wrap-break-word`，不被说明挤压，过长时按词换行、始终完整可读；说明与 URL 用 `min-w-0 truncate` 先截断；两者去掉透明度）。
   - `features/dashboard/components/ui/panel-wrapper.tsx`（外框）、`ui/stat-card.tsx`（两处说明去掉透明度）。
