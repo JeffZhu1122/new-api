@@ -26,9 +26,12 @@ For commercial licensing, please contact support@quantumnous.com
  * that activates it. Loaded globally so font-switching is instantaneous
  * with no FOUT once the variable is fetched. */
 @import '@fontsource-variable/lora';
+@import '@fontsource-variable/geist'; /* display face (default preset) */
+@import '@fontsource-variable/geist-mono'; /* mono face (default preset) */
 
 @import './theme.css';
 @import './theme-presets.css';
+@import './brand.css'; /* Aurora Glass brand layer */
 
 @layer base {
   :root {

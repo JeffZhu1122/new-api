@@ -1,0 +1,1833 @@
+/*
+Copyright (C) 2023-2026 QuantumNous
+
+This program is free software: you can redistribute it and/or modify
+it under the terms of the GNU Affero General Public License as
+published by the Free Software Foundation, either version 3 of the
+License, or (at your option) any later version.
+
+This program is distributed in the hope that it will be useful,
+but WITHOUT ANY WARRANTY; without even the implied warranty of
+MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE. See the
+GNU Affero General Public License for more details.
+
+You should have received a copy of the GNU Affero General Public License
+along with this program. If not, see <https://www.gnu.org/licenses/>.
+
+For commercial licensing, please contact support@quantumnous.com
+*/
+/* ============================================================================
+ * Aurora Glass — new-api brand layer.
+ * Imported once from index.css AFTER theme-presets.css.
+ *
+ * Cascade contract:
+ *  - theme.css: tokens on html (`:root`, `.dark`, both 0,1,0).
+ *  - theme-presets.css: presets + user axes on body (0,1,0 .. 0,3,0).
+ *  - This file declares on body (and on `.dark` night islands):
+ *      B1 :where(body, body .dark)            0      structural tokens, all presets
+ *      B2 :where(html.dark body, body .dark)  0      structural dark / island values
+ *      B3 :where(<default body>)              0      Aurora light core, fonts, radius
+ *      B4 dark default body / default islands 0,1,1 / 0,2,1  Aurora dark core
+ *  - B3 may set --radius / --font-*: the axis blocks (0,1,0) still win.
+ *  - B4 MUST NOT set --radius, --font-*, --text-*, --spacing, --max-content-width.
+ *  - B2 and B3 must never share a property.
+ *  - var()-derived tokens are re-declared wherever their inputs change.
+ *  - Rules that must beat index.css's own unlayered rules use a `:root body`
+ *    prefix (index.css rules come later in source order).
+ * ========================================================================== */
+
+/* ── 0. Tailwind theme extensions ─────────────────────────────────────── */
+/* Non-inline so `font-display` emits var(--font-display) and the body-level
+ * overrides below (default preset, serif axis) take effect. */
+@theme {
+  --font-display: 'Public Sans Variable', 'Public Sans', sans-serif;
+}
+@theme inline {
+  --color-brand-a: var(--brand-a);
+  --color-brand-b: var(--brand-b);
+  --color-brand-c: var(--brand-c);
+  --color-hairline: var(--hairline);
+  --color-hairline-strong: var(--hairline-strong);
+  --color-glass: var(--glass-bg);
+  --color-glass-strong: var(--glass-bg-strong);
+}
+
+/* ── B1. Structural tokens — every preset, light (also night islands) ── */
+:where(body, body .dark) {
+  --fx: 1; /* effect intensity 0..1 */
+  --ease-brand: cubic-bezier(0.16, 1, 0.3, 1);
+
+  /* brand stops: named presets derive them from their own palette */
+  --brand-a: var(--primary);
+  --brand-b: var(--chart-3);
+  --brand-c: var(--chart-2);
+  --cta-from: var(--primary);
+  --cta-to: var(--primary);
+  --cta-foreground: var(--primary-foreground);
+  --text-aurora-1: var(--primary);
+  --text-aurora-2: var(--primary);
+  --text-aurora-3: var(--primary);
+  --primary-hover: color-mix(in oklch, var(--primary) 88%, black);
+  --popover-solid: var(--popover);
+
+  /* hairlines */
+  --hairline: color-mix(in oklch, var(--foreground) 8%, transparent);
+  --hairline-strong: color-mix(in oklch, var(--foreground) 14%, transparent);
+  --hairline-accent: color-mix(in oklch, var(--brand-a) 45%, transparent);
+
+  /* surfaces */
+  --surface-sheen: color-mix(in oklch, var(--brand-a) 3%, transparent);
+  --glass-bg: color-mix(in oklch, var(--card) 72%, transparent);
+  --glass-bg-strong: color-mix(in oklch, var(--card) 88%, transparent);
+  --glass-bg-solid: var(--card);
+  --glass-border: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --glass-highlight: oklch(1 0 0 / 75%);
+  --glass-blur: 18px;
+  --glass-saturate: 160%;
+  --glass-shadow:
+    0 1px 2px oklch(0.3 0.04 275 / 6%),
+    0 18px 44px -20px oklch(0.35 0.08 275 / 24%);
+  --card-elevation: 0 1px 2px oklch(0.3 0.04 275 / 5%);
+  --terminal-bg: oklch(1 0 0 / 96%);
+  --panel-shadow: oklch(0.3 0.05 275 / 14%);
+
+  /* glow */
+  --glow-color: color-mix(in oklch, var(--brand-a) 50%, transparent);
+  --glow-cta:
+    0 0 0 1px color-mix(in oklch, var(--cta-from) 40%, transparent),
+    0 10px 30px -10px var(--glow-color);
+  --glow-cta-hover:
+    0 0 0 1px color-mix(in oklch, var(--cta-from) 55%, transparent),
+    0 16px 44px -10px var(--glow-color);
+
+  /* mesh (peak alphas; see §7 text budget) */
+  --mesh-1: color-mix(in oklch, var(--brand-a) 26%, transparent);
+  --mesh-2: color-mix(in oklch, var(--brand-b) 22%, transparent);
+  --mesh-3: color-mix(in oklch, var(--brand-c) 20%, transparent);
+  --mesh-dawn: color-mix(in oklch, var(--brand-a) 12%, transparent);
+
+  /* console (canvas peaks stay within the ≤16% light text budget) */
+  --console-canvas:
+    radial-gradient(
+      48% 38% at 0% 0%,
+      color-mix(in oklch, var(--brand-a) 16%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      36% 30% at 100% 0%,
+      color-mix(in oklch, var(--brand-c) 13%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 40% at 50% 112%,
+      color-mix(in oklch, var(--brand-b) 11%, transparent),
+      transparent 70%
+    );
+  --panel-dawn-image:
+    radial-gradient(
+      60% 160px at 18% 0%,
+      color-mix(in oklch, var(--brand-a) 10%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      45% 140px at 88% 0%,
+      color-mix(in oklch, var(--brand-c) 7%, transparent),
+      transparent
+    );
+  /* 1px aurora line along the top edge of the floating content panel */
+  --panel-rim: linear-gradient(
+    90deg,
+    transparent 4%,
+    color-mix(in oklch, var(--brand-a) 38%, transparent) 30%,
+    color-mix(in oklch, var(--brand-c) 38%, transparent) 70%,
+    transparent 96%
+  );
+  /* console title / nav tick: single hue for named presets (B3 restores
+   * the cyan → indigo Aurora tick) */
+  --tick-from: color-mix(in oklch, var(--brand-a) 50%, white);
+
+  /* texture */
+  --grid-line: color-mix(in oklch, var(--foreground) 5%, transparent);
+  --dot-color: color-mix(in oklch, var(--foreground) 12%, transparent);
+  --ripple-color: color-mix(in oklch, var(--brand-a) 22%, transparent);
+  --noise-opacity: 0.035;
+  --noise-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3CfeColorMatrix type='saturate' values='0'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+
+  /* type */
+  --display-tracking: -0.022em; /* CJK-safe: <html lang> is static */
+}
+
+/* ── B2. Structural tokens — dark mode and night islands ─────────────── */
+:where(html.dark body, body .dark) {
+  --primary-hover: color-mix(in oklch, var(--primary) 85%, white);
+  --hairline: color-mix(in oklch, var(--foreground) 9%, transparent);
+  --hairline-strong: color-mix(in oklch, var(--foreground) 16%, transparent);
+  --surface-sheen: oklch(1 0 0 / 3.5%);
+  --glass-bg: color-mix(in oklch, var(--card) 62%, transparent);
+  --glass-bg-strong: color-mix(in oklch, var(--card) 84%, transparent);
+  --glass-border: oklch(1 0 0 / 10%);
+  --glass-highlight: oklch(1 0 0 / 8%);
+  --glass-shadow: 0 24px 64px -24px oklch(0 0 0 / 60%);
+  --card-elevation: 0 1px 2px oklch(0 0 0 / 30%);
+  --terminal-bg: oklch(0.13 0.02 275 / 96%);
+  --panel-shadow: oklch(0 0 0 / 45%);
+  --mesh-1: color-mix(in oklch, var(--brand-a) 40%, transparent);
+  --mesh-2: color-mix(in oklch, var(--brand-b) 34%, transparent);
+  --mesh-3: color-mix(in oklch, var(--brand-c) 28%, transparent);
+  --mesh-dawn: color-mix(in oklch, var(--brand-a) 20%, transparent);
+  --console-canvas:
+    radial-gradient(
+      48% 38% at 0% 0%,
+      color-mix(in oklch, var(--brand-a) 22%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      36% 30% at 100% 0%,
+      color-mix(in oklch, var(--brand-c) 14%, transparent),
+      transparent 70%
+    ),
+    radial-gradient(
+      40% 40% at 50% 112%,
+      color-mix(in oklch, var(--brand-b) 12%, transparent),
+      transparent 70%
+    );
+  --panel-dawn-image:
+    radial-gradient(
+      60% 160px at 18% 0%,
+      color-mix(in oklch, var(--brand-a) 10%, transparent),
+      transparent
+    ),
+    radial-gradient(
+      45% 140px at 88% 0%,
+      color-mix(in oklch, var(--brand-c) 7%, transparent),
+      transparent
+    );
+  --grid-line: color-mix(in oklch, var(--foreground) 6%, transparent);
+  --dot-color: color-mix(in oklch, var(--foreground) 10%, transparent);
+  --ripple-color: color-mix(in oklch, var(--brand-a) 30%, transparent);
+  --noise-opacity: 0.05;
+}
+
+/* ── B3. Default preset = Aurora Glass, light ("Pearl") ──────────────── */
+:where(body:not([data-theme-preset]), body[data-theme-preset='default']) {
+  --radius: 0.75rem; /* sm 7.2 · md 9.6 · lg 12 · xl 16.8 · 2xl 21.6 · 3xl 26.4 · 4xl 31.2 px */
+  --font-display:
+    'Geist Variable', 'Public Sans Variable', -apple-system, BlinkMacSystemFont,
+    'PingFang SC', 'Hiragino Sans GB', 'Microsoft YaHei', 'Noto Sans SC',
+    sans-serif;
+  --font-mono:
+    'Geist Mono Variable', ui-monospace, SFMono-Regular, Menlo, Consolas,
+    'Liberation Mono', monospace;
+  --default-mono-font-family: var(
+    --font-mono
+  ); /* re-resolve for code/kbd/pre */
+
+  --background: oklch(0.985 0.004 275); /* #f9fafd */
+  --foreground: oklch(0.2 0.028 275); /* #121523 */
+  --card: oklch(1 0 0);
+  --card-foreground: oklch(0.2 0.028 275);
+  --popover: oklch(1 0 0);
+  --popover-foreground: oklch(0.2 0.028 275);
+  --primary: oklch(0.53 0.22 278); /* #564fe6 aurora indigo */
+  --primary-foreground: oklch(0.99 0.005 275);
+  --secondary: oklch(0.955 0.012 275);
+  --secondary-foreground: oklch(0.4 0.17 278);
+  --muted: oklch(0.962 0.008 275);
+  --muted-foreground: oklch(0.5 0.03 275);
+  --accent: color-mix(in oklch, var(--primary) 10%, var(--background));
+  --accent-foreground: oklch(0.2 0.028 275);
+  --destructive: oklch(0.57 0.22 22);
+  --destructive-foreground: oklch(0.99 0 0);
+  --success: oklch(0.52 0.12 162);
+  --success-foreground: oklch(0.99 0 0);
+  --warning: oklch(0.545 0.13 58);
+  --warning-foreground: oklch(0.99 0 0);
+  --info: oklch(0.53 0.15 242);
+  --info-foreground: oklch(0.99 0 0);
+  --neutral: oklch(0.7 0.015 275);
+  --neutral-foreground: oklch(0.2 0.028 275);
+  --border: oklch(0.915 0.012 275);
+  --input: oklch(0.9 0.014 275);
+  --ring: oklch(0.6 0.2 278);
+  --chart-1: oklch(0.56 0.21 278); /* indigo */
+  --chart-2: oklch(0.53 0.11 220); /* cyan */
+  --chart-3: oklch(0.56 0.21 305); /* violet */
+  --chart-4: oklch(0.58 0.2 355); /* rose */
+  --chart-5: oklch(0.52 0.13 162); /* mint */
+  --overview-accent-1: oklch(0.62 0.19 278);
+  --overview-accent-2: oklch(0.64 0.12 215);
+  --overview-accent-3: oklch(0.64 0.2 305);
+  --sidebar: oklch(0.97 0.009 275); /* console canvas */
+  --sidebar-foreground: oklch(0.24 0.03 275);
+  --sidebar-primary: oklch(0.53 0.22 278);
+  --sidebar-primary-foreground: oklch(0.99 0.005 275);
+  --sidebar-accent: color-mix(in oklch, var(--primary) 12%, var(--sidebar));
+  --sidebar-accent-foreground: oklch(0.45 0.2 278);
+  --sidebar-border: oklch(0.91 0.014 275);
+  --sidebar-ring: oklch(0.6 0.2 278);
+  --skeleton-base: oklch(0.955 0.01 275);
+  --skeleton-highlight: oklch(0.985 0.006 275);
+  --table-row: var(--background);
+  --table-header: color-mix(in oklch, var(--primary) 3.5%, var(--background));
+  --table-header-hover: color-mix(
+    in oklch,
+    var(--primary) 6%,
+    var(--background)
+  );
+  --table-disabled: color-mix(
+    in oklch,
+    var(--foreground) 3%,
+    var(--background)
+  );
+  --table-disabled-hover: color-mix(
+    in oklch,
+    var(--foreground) 4.5%,
+    var(--background)
+  );
+  --table-disabled-border: color-mix(
+    in oklch,
+    var(--foreground) 16%,
+    var(--background)
+  );
+
+  --brand-a: oklch(0.6 0.21 278); /* indigo */
+  --brand-b: oklch(0.66 0.2 310); /* violet */
+  --brand-c: oklch(0.78 0.13 210); /* cyan — decorative only, never text */
+  --cta-from: oklch(0.53 0.22 278);
+  --cta-to: oklch(0.54 0.23 302);
+  --text-aurora-1: oklch(0.53 0.12 222);
+  --text-aurora-2: oklch(0.55 0.2 278);
+  --text-aurora-3: oklch(0.55 0.23 305);
+  --tick-from: var(--brand-c); /* resolves on body, so dark follows B4 */
+}
+
+/* ── B4. Default preset dark ("Deep space") + default night islands ──── */
+:where(html.dark)
+  :is(body:not([data-theme-preset]), body[data-theme-preset='default']),
+:is(body:not([data-theme-preset]), body[data-theme-preset='default']) .dark {
+  --background: oklch(0.165 0.02 275); /* #0c0e17 */
+  --foreground: oklch(0.965 0.008 275);
+  --card: oklch(0.205 0.022 275);
+  --card-foreground: oklch(0.965 0.008 275);
+  --popover: oklch(0.225 0.024 275);
+  --popover-foreground: oklch(0.965 0.008 275);
+  --primary: oklch(0.71 0.16 278); /* #8c95ff luminous periwinkle */
+  --primary-foreground: oklch(0.17 0.04 278); /* dark ink on glowing fill */
+  --secondary: oklch(0.26 0.025 275);
+  --secondary-foreground: oklch(0.9 0.05 278);
+  --muted: oklch(0.235 0.022 275);
+  --muted-foreground: oklch(0.73 0.025 275);
+  --accent: color-mix(in oklch, var(--primary) 16%, var(--background));
+  --accent-foreground: oklch(0.975 0.006 275);
+  --destructive: oklch(0.7 0.19 22);
+  --destructive-foreground: oklch(0.17 0.03 22);
+  --success: oklch(0.75 0.16 162);
+  --success-foreground: oklch(0.17 0.03 162);
+  --warning: oklch(0.81 0.15 75);
+  --warning-foreground: oklch(0.2 0.04 60);
+  --info: oklch(0.74 0.13 232);
+  --info-foreground: oklch(0.17 0.03 240);
+  --neutral: oklch(0.72 0.015 275);
+  --neutral-foreground: oklch(0.17 0.02 275);
+  --border: oklch(0.85 0.04 275 / 12%);
+  --input: oklch(0.85 0.04 275 / 18%);
+  --ring: oklch(0.72 0.16 278);
+  --chart-1: oklch(0.72 0.17 278);
+  --chart-2: oklch(0.78 0.12 215);
+  --chart-3: oklch(0.72 0.19 305);
+  --chart-4: oklch(0.74 0.17 350);
+  --chart-5: oklch(0.77 0.14 165);
+  --overview-accent-1: oklch(0.72 0.17 278);
+  --overview-accent-2: oklch(0.78 0.12 215);
+  --overview-accent-3: oklch(0.72 0.19 305);
+  --sidebar: oklch(0.135 0.02 275); /* deepest: console canvas */
+  --sidebar-foreground: oklch(0.93 0.01 275);
+  --sidebar-primary: oklch(0.71 0.16 278);
+  --sidebar-primary-foreground: oklch(0.17 0.04 278);
+  --sidebar-accent: color-mix(in oklch, var(--primary) 20%, var(--sidebar));
+  --sidebar-accent-foreground: oklch(0.9 0.07 278);
+  --sidebar-border: oklch(0.85 0.04 275 / 11%);
+  --sidebar-ring: oklch(0.72 0.16 278);
+  --skeleton-base: oklch(0.23 0.02 275);
+  --skeleton-highlight: oklch(0.29 0.025 275);
+  --table-row: var(--background);
+  --table-header: color-mix(in oklch, var(--primary) 7%, var(--background));
+  --table-header-hover: color-mix(
+    in oklch,
+    var(--primary) 11%,
+    var(--background)
+  );
+  --table-disabled: color-mix(
+    in oklch,
+    var(--foreground) 6%,
+    var(--background)
+  );
+  --table-disabled-hover: color-mix(
+    in oklch,
+    var(--foreground) 8.5%,
+    var(--background)
+  );
+  --table-disabled-border: color-mix(
+    in oklch,
+    var(--foreground) 22%,
+    var(--background)
+  );
+
+  --brand-a: oklch(0.62 0.2 278);
+  --brand-b: oklch(0.6 0.22 305);
+  --brand-c: oklch(0.72 0.14 215);
+  --cta-from: oklch(0.74 0.15 268);
+  --cta-to: oklch(0.74 0.15 305);
+  --text-aurora-1: oklch(0.8 0.12 215);
+  --text-aurora-2: oklch(0.76 0.15 278);
+  --text-aurora-3: oklch(0.74 0.17 310);
+}
+
+/* ── B5. Night islands: a subtree with class="dark" + data-brand-island ── */
+[data-brand-island] {
+  color: var(--foreground);
+  color-scheme: dark;
+}
+
+/* ── B6. Per-preset intensity (0,1,0 on body beats B1/B2) ──────────────── */
+[data-theme-preset='anthropic'] {
+  --fx: 0.5;
+  --console-canvas: none;
+  --panel-dawn-image: none;
+  --panel-rim: none;
+  --glow-color: color-mix(in oklch, var(--brand-a) 25%, transparent);
+}
+[data-theme-preset='simple-large'] {
+  --fx: 0;
+  --console-canvas: none;
+  --panel-dawn-image: none;
+  --panel-rim: none;
+  --glow-color: transparent;
+  --glass-bg: var(--card);
+  --glass-bg-strong: var(--card);
+  --glass-blur: 0px;
+  --glow-cta: 0 0 #0000;
+  --glow-cta-hover: 0 0 #0000;
+}
+
+/* Serif font axis also drives display headings. */
+[data-theme-font='serif'] {
+  --font-display: var(--font-serif);
+}
+
+::selection {
+  background-color: color-mix(in oklch, var(--primary) 26%, transparent);
+}
+
+@property --brand-beam-angle {
+  syntax: '<angle>';
+  inherits: false;
+  initial-value: 0deg;
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Effect classes. In @layer components so call-site utilities still win.
+ * ════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  /* ── Backdrop container (rendered by <BrandBackdrop>) ──
+   * Parent must be a stacking context: `relative isolate` or z-indexed. */
+  .brand-backdrop {
+    position: absolute;
+    inset: 0;
+    z-index: -1;
+    overflow: hidden;
+    pointer-events: none;
+    contain: layout paint style;
+    opacity: var(--fx);
+    -webkit-mask-image: linear-gradient(
+      to bottom,
+      #000 var(--backdrop-fade-start, 72%),
+      transparent
+    );
+    mask-image: linear-gradient(
+      to bottom,
+      #000 var(--backdrop-fade-start, 72%),
+      transparent
+    );
+  }
+  .brand-backdrop > * {
+    position: absolute;
+    inset: 0;
+  }
+
+  /* Static aurora: radial falloff, no filter: blur(). All stops are oklch,
+   * so browsers interpolate in Oklab (no muddy midpoints). */
+  .brand-mesh {
+    background-image:
+      radial-gradient(
+        var(--mesh-s1, 42% 52%) at var(--mesh-p1, 82% 16%),
+        var(--mesh-1),
+        transparent 70%
+      ),
+      radial-gradient(
+        var(--mesh-s2, 36% 46%) at var(--mesh-p2, 102% 78%),
+        var(--mesh-2),
+        transparent 70%
+      ),
+      radial-gradient(
+        var(--mesh-s3, 40% 44%) at var(--mesh-p3, -4% 104%),
+        var(--mesh-3),
+        transparent 70%
+      ),
+      radial-gradient(72% 46% at 50% -12%, var(--mesh-dawn), transparent 72%);
+  }
+  /* Drifting aurora: oversized, animated with transform only. */
+  .brand-backdrop > .brand-mesh-drift {
+    inset: -20%;
+    opacity: 0.6;
+    background-image:
+      radial-gradient(26% 30% at 34% 38%, var(--mesh-2), transparent 70%),
+      radial-gradient(24% 28% at 66% 64%, var(--mesh-3), transparent 70%);
+  }
+  /* Legibility veil: keeps the text column inside the alpha budget. */
+  .brand-veil {
+    background-image: radial-gradient(
+      var(--veil-s, 46% 58%) at var(--veil-p, 26% 46%),
+      color-mix(in oklch, var(--background) 72%, transparent),
+      transparent 75%
+    );
+  }
+  /* Masked blueprint grid. */
+  .brand-grid {
+    background-image:
+      linear-gradient(to right, var(--grid-line) 1px, transparent 1px),
+      linear-gradient(to bottom, var(--grid-line) 1px, transparent 1px);
+    background-size: var(--grid-size, 48px) var(--grid-size, 48px);
+    background-position: -1px -1px;
+    -webkit-mask-image: var(
+      --grid-mask,
+      radial-gradient(ellipse 75% 65% at 50% 35%, #000 15%, transparent 78%)
+    );
+    mask-image: var(
+      --grid-mask,
+      radial-gradient(ellipse 75% 65% at 50% 35%, #000 15%, transparent 78%)
+    );
+  }
+  /* Standalone dot field (used directly in Home > Features). */
+  .brand-dots {
+    background-image: radial-gradient(
+      circle,
+      var(--dot-color) 1px,
+      transparent 1.4px
+    );
+    background-size: 16px 16px;
+    -webkit-mask-image: radial-gradient(
+      ellipse 65% 60% at 50% 40%,
+      #000 30%,
+      transparent 80%
+    );
+    mask-image: radial-gradient(
+      ellipse 65% 60% at 50% 40%,
+      #000 30%,
+      transparent 80%
+    );
+  }
+  /* Film grain (static SVG tile, rasterised once, no blend mode). */
+  .brand-noise {
+    background-image: var(--noise-image);
+    background-size: 160px 160px;
+    opacity: var(--noise-opacity);
+  }
+
+  /* ── Glass ripple: static rings ── */
+  .brand-rings {
+    background-image: repeating-radial-gradient(
+      circle at var(--rings-at, 50% 50%),
+      transparent 0 calc(var(--ring-gap, 56px) - 1.5px),
+      var(--ripple-color) calc(var(--ring-gap, 56px) - 0.75px),
+      transparent var(--ring-gap, 56px)
+    );
+    -webkit-mask-image: radial-gradient(
+      circle at var(--rings-at, 50% 50%),
+      #000 0 18%,
+      transparent var(--rings-fade, 60%)
+    );
+    mask-image: radial-gradient(
+      circle at var(--rings-at, 50% 50%),
+      #000 0 18%,
+      transparent var(--rings-fade, 60%)
+    );
+  }
+  /* ── Glass ripple: sonar (3 expanding glass rims; scale + opacity only) ── */
+  .brand-backdrop > .brand-sonar {
+    inset: auto;
+    left: var(--sonar-x, 50%);
+    top: var(--sonar-y, 50%);
+    width: 0;
+    height: 0;
+  }
+  .brand-sonar > span {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: var(--sonar-size, 560px);
+    aspect-ratio: 1;
+    translate: -50% -50%;
+    border-radius: 9999px;
+    border: 1px solid var(--ripple-color);
+    background: radial-gradient(
+      closest-side,
+      transparent 88%,
+      color-mix(in oklch, var(--brand-c) 12%, transparent) 97%,
+      transparent
+    );
+    opacity: 0.55;
+    scale: var(--s, 0.6);
+  }
+  .brand-sonar > span:nth-child(1) {
+    --s: 0.42;
+  }
+  .brand-sonar > span:nth-child(2) {
+    --s: 0.7;
+  }
+  .brand-sonar > span:nth-child(3) {
+    --s: 0.98;
+  }
+
+  /* ── Reeded (fluted) glass strips ──
+   * Masked vertically AND toward the content (intersected), so neither the
+   * stripes nor the refraction ever end in a hard inner edge. */
+  .brand-backdrop > .brand-flutes {
+    inset-block: 0;
+    inset-inline: auto;
+    width: var(--flute-w, clamp(56px, 8vw, 128px));
+    background-image: repeating-linear-gradient(
+      90deg,
+      oklch(1 0 0 / 22%) 0 1px,
+      oklch(1 0 0 / 2%) 1px 7px,
+      oklch(0 0 0 / 3%) 7px 8px,
+      transparent 8px 14px
+    );
+    -webkit-mask-image:
+      linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent),
+      linear-gradient(var(--flute-fade-dir, to right), #000 35%, transparent);
+    -webkit-mask-composite: source-in;
+    mask-image:
+      linear-gradient(to bottom, transparent, #000 18%, #000 82%, transparent),
+      linear-gradient(var(--flute-fade-dir, to right), #000 35%, transparent);
+    mask-composite: intersect;
+  }
+  .brand-backdrop > .brand-flutes--start {
+    inset-inline-start: 0;
+    --flute-fade-dir: to right;
+  }
+  .brand-backdrop > .brand-flutes--end {
+    inset-inline-end: 0;
+    --flute-fade-dir: to left;
+  }
+  [dir='rtl'] .brand-backdrop > .brand-flutes--start {
+    --flute-fade-dir: to left;
+  }
+  [dir='rtl'] .brand-backdrop > .brand-flutes--end {
+    --flute-fade-dir: to right;
+  }
+  .dark .brand-backdrop > .brand-flutes {
+    background-image: repeating-linear-gradient(
+      90deg,
+      oklch(1 0 0 / 6%) 0 1px,
+      oklch(1 0 0 / 1.5%) 1px 7px,
+      oklch(0 0 0 / 18%) 7px 8px,
+      transparent 8px 14px
+    );
+  }
+  /* Real refraction — only where the backdrop is STATIC (CTA band). The
+   * .brand-backdrop mask makes it a backdrop root, so the blur sees only
+   * the mesh/grid siblings — exactly what we want to refract. Blur only:
+   * a saturate() step reads as a hard colour block at the strip edge. */
+  @supports ((-webkit-backdrop-filter: blur(1px)) or
+    (backdrop-filter: blur(1px))) {
+    .brand-backdrop > .brand-flutes--refract {
+      -webkit-backdrop-filter: blur(6px);
+      backdrop-filter: blur(6px);
+    }
+  }
+  @media (max-width: 1023px) {
+    .brand-backdrop > .brand-flutes {
+      display: none;
+    }
+  }
+
+  /* ── Per-variant geometry (positions only; colours come from tokens) ── */
+  [data-brand-backdrop='hero'] {
+    --mesh-p1: 90% 14%;
+    --mesh-s1: 44% 56%; /* indigo peak spills out above/right of the terminal */
+    --mesh-p2: 104% 88%;
+    --mesh-s2: 34% 44%;
+    --mesh-p3: -6% 102%;
+    --mesh-s3: 34% 40%;
+    --veil-p: 24% 48%;
+    --veil-s: 42% 56%; /* the copy column */
+    /* rims clear the opaque terminal; ≤860px keeps the outer rim right of the copy */
+    --sonar-x: 76%;
+    --sonar-y: 48%;
+    --sonar-size: clamp(680px, 58vw, 860px);
+    --ripple-color: color-mix(in oklch, var(--brand-a) 34%, transparent);
+    --grid-mask: radial-gradient(
+      ellipse 80% 70% at 72% 40%,
+      #000 10%,
+      transparent 75%
+    );
+    --backdrop-fade-start: 70%;
+  }
+  @media (max-width: 1023px) {
+    [data-brand-backdrop='hero'] {
+      --mesh-p1: 60% 80%;
+      --mesh-s1: 60% 34%;
+      --veil-p: 50% 24%;
+      --veil-s: 90% 34%;
+      --sonar-x: 50%;
+      --sonar-y: 80%;
+      --sonar-size: 520px;
+      --grid-mask: radial-gradient(
+        ellipse 90% 60% at 50% 72%,
+        #000 10%,
+        transparent 75%
+      );
+    }
+  }
+  [data-brand-backdrop='hero-center'] {
+    /* Centred home hero: twin aurora peaks frame the headline, the veil keeps
+     * the copy column readable, the sonar radiates from behind the title. */
+    --mesh-p1: 18% 8%;
+    --mesh-s1: 42% 52%;
+    --mesh-p2: 84% 6%;
+    --mesh-s2: 40% 50%;
+    --mesh-p3: 50% 78%;
+    --mesh-s3: 46% 34%;
+    --veil-p: 50% 40%;
+    --veil-s: 38% 30%;
+    --sonar-x: 50%;
+    --sonar-y: 36%;
+    --sonar-size: clamp(620px, 62vw, 980px);
+    --ripple-color: color-mix(in oklch, var(--brand-a) 30%, transparent);
+    --grid-mask: radial-gradient(
+      ellipse 70% 60% at 50% 34%,
+      #000 10%,
+      transparent 72%
+    );
+    --backdrop-fade-start: 62%;
+  }
+  @media (max-width: 767px) {
+    [data-brand-backdrop='hero-center'] {
+      --mesh-p1: 0% 4%;
+      --mesh-s1: 70% 34%;
+      --mesh-p2: 100% 2%;
+      --mesh-s2: 70% 30%;
+      --veil-s: 70% 26%;
+      --sonar-y: 30%;
+      --sonar-size: 520px;
+    }
+  }
+  [data-brand-backdrop='band'] {
+    /* CTA band: corners lit, centre clean */
+    --mesh-p1: 0% 100%;
+    --mesh-s1: 50% 70%;
+    --mesh-p2: 100% 0%;
+    --mesh-s2: 50% 70%;
+    --mesh-p3: 50% 135%;
+    --mesh-s3: 40% 40%;
+    --rings-at: 50% 50%;
+    --ring-gap: 72px;
+    --rings-fade: 440px;
+    --grid-mask: radial-gradient(
+      ellipse 80% 80% at 50% 50%,
+      transparent 30%,
+      #000 90%
+    );
+    --backdrop-fade-start: 100%;
+  }
+  /* Rings ripple out AROUND the copy (it reaches ~260px from the centre in
+   * every locale), so no 1px line crosses the heading or subtitle. Absolute
+   * stops: the copy does not scale with the band; phones show none. */
+  [data-brand-backdrop='band'] .brand-rings {
+    -webkit-mask-image: radial-gradient(
+      circle at var(--rings-at),
+      transparent 0 224px,
+      #000 296px,
+      transparent var(--rings-fade)
+    );
+    mask-image: radial-gradient(
+      circle at var(--rings-at),
+      transparent 0 224px,
+      #000 296px,
+      transparent var(--rings-fade)
+    );
+  }
+  [data-brand-backdrop='pricing'] {
+    /* pricing + rankings header band */
+    --mesh-p1: 12% -6%;
+    --mesh-s1: 40% 60%;
+    --mesh-p2: 92% 4%;
+    --mesh-s2: 34% 54%;
+    --mesh-p3: 50% 140%;
+    --mesh-s3: 40% 44%;
+    /* absolute fade keeps the ripple a corner focal point, clear of the h1 */
+    --rings-at: 94% -2%;
+    --ring-gap: 64px;
+    --rings-fade: min(55%, 420px);
+    --grid-mask: radial-gradient(
+      ellipse 60% 55% at 50% 38%,
+      transparent 30%,
+      #000 85%
+    );
+    --backdrop-fade-start: 55%;
+  }
+  @media (max-width: 639px) {
+    [data-brand-backdrop='pricing'] {
+      --rings-fade: 200px;
+    }
+  }
+  [data-brand-backdrop='auth'] {
+    /* full page behind the glass card; static */
+    --mesh-p1: 50% -8%;
+    --mesh-s1: 70% 40%;
+    --mesh-p2: 104% 40%;
+    --mesh-s2: 36% 46%;
+    --mesh-p3: -4% 84%;
+    --mesh-s3: 40% 44%;
+    --grid-mask: radial-gradient(
+      ellipse 60% 46% at 50% 0%,
+      #000 10%,
+      transparent 80%
+    );
+    --backdrop-fade-start: 100%;
+  }
+  @media (min-width: 1024px) {
+    [data-brand-backdrop='auth'] {
+      --mesh-p1: 100% 0%;
+      --mesh-s1: 50% 50%;
+      --mesh-p2: 100% 100%;
+      --mesh-p3: 40% 110%;
+    }
+  }
+  [data-brand-backdrop='auth'] .brand-mesh {
+    opacity: 0.75;
+  }
+  [data-brand-backdrop='auth-panel'] {
+    /* bottom-left copy area stays clean */
+    --mesh-p1: 40% 4%;
+    --mesh-s1: 60% 50%;
+    --mesh-p2: 104% 46%;
+    --mesh-s2: 44% 50%;
+    --mesh-p3: 92% 106%;
+    --mesh-s3: 40% 44%;
+    --sonar-x: 50%;
+    --sonar-y: 38%;
+    --sonar-size: 600px;
+    --grid-mask: radial-gradient(
+      ellipse 70% 60% at 50% 38%,
+      #000 10%,
+      transparent 75%
+    );
+    --backdrop-fade-start: 100%;
+  }
+  [data-brand-backdrop='panel'] {
+    /* in-page hero card (dashboard setup guide, error pages use 'auth') */
+    --mesh-p1: 82% -10%;
+    --mesh-s1: 46% 90%;
+    --mesh-p2: 104% 100%;
+    --mesh-s2: 30% 70%;
+    --mesh-p3: 30% -30%;
+    --mesh-s3: 40% 60%;
+    --rings-at: 88% 18%;
+    --ring-gap: 48px;
+    --rings-fade: 45%;
+    --grid-mask: radial-gradient(
+      ellipse 60% 90% at 100% 0%,
+      #000 10%,
+      transparent 75%
+    );
+    --backdrop-fade-start: 100%;
+  }
+  [data-brand-backdrop='panel'] .brand-mesh {
+    opacity: 0.7;
+  }
+  [data-brand-backdrop='dawn'] {
+    --backdrop-fade-start: 100%;
+  }
+  [data-brand-backdrop='dawn'] .brand-mesh {
+    background-image:
+      radial-gradient(72% 46% at 50% -12%, var(--mesh-dawn), transparent 72%),
+      radial-gradient(
+        40% 36% at 100% 0%,
+        color-mix(in oklch, var(--brand-c) 10%, transparent),
+        transparent 70%
+      );
+  }
+
+  /* ── Glass (REAL): floating chrome only ── */
+  .brand-glass {
+    background-color: var(--glass-bg-solid);
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      0 0 0 1px var(--glass-border),
+      var(--glass-shadow);
+  }
+  @supports ((-webkit-backdrop-filter: blur(1px)) or
+    (backdrop-filter: blur(1px))) {
+    .brand-glass {
+      background-color: var(--glass-bg);
+      -webkit-backdrop-filter: blur(var(--glass-blur))
+        saturate(var(--glass-saturate));
+      backdrop-filter: blur(var(--glass-blur)) saturate(var(--glass-saturate));
+    }
+  }
+  /* ── Faux glass: everywhere else (no backdrop-filter) ── */
+  .brand-surface {
+    background-color: var(--card);
+    background-image: linear-gradient(
+      180deg,
+      var(--surface-sheen),
+      transparent 160px
+    );
+    box-shadow:
+      inset 0 1px 0 var(--glass-highlight),
+      0 0 0 1px var(--hairline),
+      var(--card-elevation);
+  }
+  /* Double-frame bezel card */
+  .brand-bezel {
+    border-radius: calc(var(--radius) * 2.2);
+    padding: 6px;
+    background: color-mix(in oklch, var(--foreground) 2.5%, transparent);
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+  .brand-bezel > * {
+    border-radius: calc(var(--radius) * 2.2 - 6px);
+  }
+  /* Terminal / product window chrome (used inside a night island) */
+  .brand-terminal {
+    background-color: var(--terminal-bg);
+    background-image: linear-gradient(
+      180deg,
+      var(--surface-sheen),
+      transparent 120px
+    );
+    box-shadow:
+      0 0 0 1px var(--hairline-strong),
+      inset 0 1px 0 var(--glass-highlight),
+      0 40px 80px -32px var(--panel-shadow);
+  }
+
+  /* ── Gradient hairline ring (::before). Host gets position: relative. ── */
+  .brand-hairline {
+    position: relative;
+  }
+  .brand-hairline::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    background: linear-gradient(
+      var(--hairline-angle, 160deg),
+      var(--hairline-accent),
+      var(--hairline) 38%,
+      var(--hairline) 62%,
+      color-mix(in oklch, var(--brand-c) 35%, transparent)
+    );
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+  /* ── Border beam (::after). Max ONE per viewport. Never with .brand-sheen. ── */
+  .brand-beam {
+    position: relative;
+  }
+  .brand-beam::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    padding: 1px;
+    pointer-events: none;
+    opacity: var(--fx);
+    background: conic-gradient(
+      from var(--brand-beam-angle),
+      transparent 0 74%,
+      color-mix(in oklch, var(--brand-c) 80%, white) 86%,
+      var(--brand-a) 92%,
+      transparent 98%
+    );
+    mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask:
+      linear-gradient(#000 0 0) content-box,
+      linear-gradient(#000 0 0);
+    -webkit-mask-composite: xor;
+    mask-composite: exclude;
+  }
+
+  /* ── Glow halo behind a focal object (<BrandGlow/>) ── */
+  .brand-glow {
+    position: absolute;
+    inset: var(--glow-inset, -14%);
+    z-index: -1;
+    pointer-events: none;
+    border-radius: 9999px;
+    opacity: var(--fx);
+    background: radial-gradient(
+      closest-side,
+      color-mix(in oklch, var(--brand-a) var(--glow-core, 40%), transparent),
+      color-mix(in oklch, var(--brand-b) var(--glow-mid, 20%), transparent) 60%,
+      transparent
+    );
+  }
+  /* Directly behind gradient display text (error codes) the light halo stays
+   * text-safe: the faintest aurora stop is 3.27:1 on a 30% core, 2.86:1 on 40%. */
+  .brand-glow:has(+ .brand-text-aurora) {
+    --glow-core: 30%;
+    --glow-mid: 12%;
+  }
+  .dark .brand-glow {
+    background: radial-gradient(
+      closest-side,
+      color-mix(in oklch, var(--brand-a) 42%, transparent),
+      color-mix(in oklch, var(--brand-b) 18%, transparent) 55%,
+      transparent
+    );
+  }
+
+  /* ── Hero/marketing CTA: aurora fill + inset highlight + colour halo ──
+   * Works on <Button> (default variant): bg-primary sets the base colour,
+   * our background-image paints over it. Also works on a plain <Link>. */
+  .brand-cta {
+    color: var(--cta-foreground);
+    background-color: var(--cta-from);
+    background-image:
+      linear-gradient(180deg, oklch(1 0 0 / 16%), transparent 55%),
+      linear-gradient(100deg, var(--cta-from), var(--cta-to));
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 22%),
+      var(--glow-cta);
+    transition:
+      box-shadow 0.25s var(--ease-brand),
+      filter 0.25s var(--ease-brand);
+  }
+  .brand-cta:hover {
+    box-shadow:
+      inset 0 1px 0 oklch(1 0 0 / 28%),
+      var(--glow-cta-hover);
+    filter: brightness(1.06);
+  }
+  .brand-cta:focus-visible {
+    outline: 2px solid var(--ring);
+    outline-offset: 3px;
+  }
+
+  /* ── Hover sheen (::after) ── */
+  .brand-sheen {
+    position: relative;
+    overflow: hidden;
+  }
+  .brand-sheen::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    pointer-events: none;
+    background: linear-gradient(
+      105deg,
+      transparent 35%,
+      oklch(1 0 0 / var(--sheen-alpha, 18%)) 50%,
+      transparent 65%
+    );
+    translate: -120% 0;
+  }
+  .dark .brand-sheen {
+    --sheen-alpha: 9%;
+  }
+
+  /* ── Typography ── */
+  .brand-display {
+    font-family: var(--font-display);
+    font-weight: 600;
+    letter-spacing: var(--display-tracking);
+    line-height: 1.1;
+    text-wrap: balance;
+    /* CJK: break only at spaces/punctuation (never inside 网关); long
+     * space-less runs still wrap instead of overflowing. */
+    word-break: keep-all;
+    overflow-wrap: break-word;
+  }
+  /* Static phrases show stops 1 → 2 → 3 (140%); the --flow pan uses 220%. */
+  .brand-text-aurora {
+    color: var(--text-aurora-2);
+    background-image: linear-gradient(
+      100deg,
+      var(--text-aurora-1),
+      var(--text-aurora-2) 40%,
+      var(--text-aurora-3) 70%,
+      var(--text-aurora-1)
+    );
+    background-size: 140% 100%;
+    -webkit-background-clip: text;
+    background-clip: text;
+    -webkit-text-fill-color: transparent;
+    -webkit-box-decoration-break: clone;
+    box-decoration-break: clone;
+  }
+  .brand-eyebrow {
+    font-family: var(--font-mono);
+    font-size: 0.6875rem;
+    font-weight: 500;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: var(--muted-foreground);
+  }
+
+  /* ── Chips, pulse, tiles, rules ── */
+  .brand-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    min-height: 1.75rem;
+    padding: 0.125rem 0.75rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 500;
+    color: var(--primary);
+    background-color: color-mix(
+      in oklch,
+      var(--primary) 8%,
+      var(--glass-bg-strong)
+    );
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--primary) 22%, transparent),
+      inset 0 1px 0 var(--glass-highlight);
+  }
+  .brand-pulse {
+    --pulse: var(--brand-c);
+    position: relative;
+    display: inline-block;
+    flex: none;
+    width: 6px;
+    height: 6px;
+    border-radius: 9999px;
+    background: var(--pulse);
+    box-shadow: 0 0 0 3px color-mix(in oklch, var(--pulse) 22%, transparent);
+  }
+  .brand-pulse[data-tone='success'] {
+    --pulse: var(--success);
+  }
+  /* Named presets: chart-2 can vanish on their own primary-tinted chip
+   * (rose-garden); pulse in the preset's primary instead. <BrandPulse>
+   * always writes data-tone, so match "not success" rather than "no tone". */
+  [data-theme-preset]:not([data-theme-preset='default'])
+    .brand-pulse:not([data-tone='success']) {
+    --pulse: var(--primary);
+  }
+  .brand-pulse::after {
+    content: '';
+    position: absolute;
+    inset: 0;
+    border-radius: inherit;
+    background: inherit;
+    opacity: 0;
+  }
+  .brand-icon-tile {
+    display: grid;
+    place-items: center;
+    flex: none;
+    border-radius: calc(var(--radius) * 0.9);
+    color: var(--tile-color, var(--primary));
+    background: radial-gradient(
+      120% 120% at 30% 0%,
+      color-mix(in oklch, var(--tile-color, var(--primary)) 18%, transparent),
+      color-mix(in oklch, var(--tile-color, var(--primary)) 6%, transparent)
+    );
+    box-shadow:
+      inset 0 0 0 1px
+        color-mix(in oklch, var(--tile-color, var(--primary)) 24%, transparent),
+      inset 0 1px 0 var(--glass-highlight);
+  }
+  .brand-rule {
+    height: 1px;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--hairline-strong) 15%,
+      color-mix(in oklch, var(--brand-a) 40%, transparent) 50%,
+      var(--hairline-strong) 85%,
+      transparent
+    );
+  }
+  .brand-connector {
+    /* how-it-works travelling light */
+    position: absolute;
+    height: 1px;
+    overflow: hidden;
+    pointer-events: none;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--hairline-strong) 12%,
+      var(--hairline-strong) 88%,
+      transparent
+    );
+  }
+  .brand-connector::after {
+    content: '';
+    position: absolute;
+    inset: 0 auto 0 0;
+    width: 22%;
+    background: linear-gradient(
+      90deg,
+      transparent,
+      var(--brand-c),
+      var(--brand-a),
+      transparent
+    );
+    translate: -100% 0;
+  }
+
+  /* Vertical rail variant (home walkthrough steps): same travelling light. */
+  .brand-connector--y {
+    width: 1px;
+    height: auto;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      var(--hairline-strong) 10%,
+      var(--hairline-strong) 90%,
+      transparent
+    );
+  }
+  .brand-connector--y::after {
+    inset: 0 0 auto 0;
+    width: auto;
+    height: 22%;
+    background: linear-gradient(
+      180deg,
+      transparent,
+      var(--brand-c),
+      var(--brand-a),
+      transparent
+    );
+    translate: 0 -100%;
+  }
+
+  /* ── Aurora horizon: a lit planet rim the hero settles onto ──
+   * The host is `relative`; the arc paints from the host's top edge down.
+   * The body is the page background, so content placed on it reads on a
+   * clean surface while the rim and its glow catch the aurora above. */
+  .brand-horizon {
+    /* Unclipped on purpose: the atmosphere glow rises above the host's top
+     * edge. The host section (overflow: hidden) clips the planet body. */
+    position: absolute;
+    inset-inline: 0;
+    top: 0;
+    height: var(--horizon-h, 360px);
+    pointer-events: none;
+    opacity: max(var(--fx), 0.35);
+  }
+  .brand-horizon::before {
+    /* atmosphere glow rising above the rim */
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: min(1200px, 90%);
+    height: 220px;
+    translate: -50% -55%;
+    border-radius: 9999px;
+    background: radial-gradient(
+      closest-side,
+      color-mix(in oklch, var(--brand-a) 34%, transparent),
+      color-mix(in oklch, var(--brand-b) 14%, transparent) 55%,
+      transparent
+    );
+  }
+  .brand-horizon::after {
+    /* planet body with the lit rim */
+    content: '';
+    position: absolute;
+    left: 50%;
+    top: 0;
+    width: max(1800px, 130%);
+    aspect-ratio: 3.2;
+    translate: -50% 0;
+    border-radius: 50%;
+    background-color: var(--background);
+    background-image: radial-gradient(
+      50% 140px at 50% 0%,
+      color-mix(in oklch, var(--brand-a) 10%, transparent),
+      transparent
+    );
+    box-shadow:
+      inset 0 1px 0 0 color-mix(in oklch, var(--brand-c) 75%, white 10%),
+      0 -1px 14px 0 color-mix(in oklch, var(--brand-a) 55%, transparent),
+      0 -24px 90px -8px color-mix(in oklch, var(--brand-b) 26%, transparent);
+  }
+
+  /* ── Auth hub orbit ── */
+  .brand-orbit {
+    position: absolute;
+    inset: 0;
+    border-radius: 9999px;
+    border: 1px solid var(--hairline-strong);
+  }
+  .brand-orbit-chip {
+    position: absolute;
+    translate: -50% -50%;
+  }
+
+  /* ════════ Motion (everything gated) ════════ */
+  @media (prefers-reduced-motion: no-preference) and (min-width: 768px) {
+    .brand-backdrop > .brand-mesh-drift {
+      animation: brand-drift 48s ease-in-out infinite alternate;
+      will-change: transform;
+    }
+    .brand-sonar > span {
+      opacity: 0;
+      scale: 0.25;
+      animation: brand-sonar 9s cubic-bezier(0.2, 0.6, 0.3, 1) infinite;
+    }
+    .brand-sonar > span:nth-child(2) {
+      animation-delay: 3s;
+    }
+    .brand-sonar > span:nth-child(3) {
+      animation-delay: 6s;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) {
+    .brand-beam::after {
+      animation: brand-beam 7s linear infinite;
+    }
+    .brand-text-aurora--flow {
+      background-size: 220% 100%; /* seamless pan geometry; static falls back to 140% */
+      animation: brand-text-pan 14s ease-in-out infinite alternate;
+    }
+    .brand-pulse::after {
+      animation: brand-ping 2.4s cubic-bezier(0, 0, 0.2, 1) infinite;
+    }
+    .brand-connector::after {
+      animation: brand-travel 3.6s var(--ease-brand) infinite;
+    }
+    .brand-connector--y::after {
+      animation-name: brand-travel-y;
+    }
+    .brand-orbit {
+      animation: brand-orbit 90s linear infinite;
+    }
+    .brand-orbit-chip {
+      animation: brand-orbit 90s linear infinite reverse;
+    }
+  }
+  @media (prefers-reduced-motion: no-preference) and (hover: hover) {
+    .brand-sheen::after {
+      transition: translate 0.9s var(--ease-brand);
+    }
+    .brand-sheen:hover::after {
+      translate: 120% 0;
+    }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    .brand-beam::after {
+      background: linear-gradient(
+        160deg,
+        var(--hairline-accent),
+        transparent 60%
+      );
+    }
+  }
+}
+
+@keyframes brand-drift {
+  0% {
+    transform: translate3d(-4%, -2%, 0) rotate(0deg) scale(1);
+  }
+  50% {
+    transform: translate3d(3%, 3%, 0) rotate(8deg) scale(1.06);
+  }
+  100% {
+    transform: translate3d(5%, -3%, 0) rotate(-6deg) scale(1.02);
+  }
+}
+@keyframes brand-sonar {
+  0% {
+    opacity: 0;
+    scale: 0.25;
+  }
+  15% {
+    opacity: 0.9;
+  }
+  100% {
+    opacity: 0;
+    scale: 1;
+  }
+}
+@keyframes brand-beam {
+  to {
+    --brand-beam-angle: 360deg;
+  }
+}
+@keyframes brand-text-pan {
+  from {
+    background-position: 0% 50%;
+  }
+  to {
+    background-position: 100% 50%;
+  }
+}
+@keyframes brand-ping {
+  0% {
+    transform: scale(1);
+    opacity: 0.7;
+  }
+  80%,
+  100% {
+    transform: scale(3);
+    opacity: 0;
+  }
+}
+@keyframes brand-travel {
+  to {
+    translate: 560% 0;
+  }
+}
+@keyframes brand-travel-y {
+  to {
+    translate: 0 560%;
+  }
+}
+@keyframes brand-orbit {
+  to {
+    rotate: 360deg;
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Global hooks on shared primitives (console + public). :where() keeps them
+ * at zero specificity so brand classes and call-site utilities win.
+ * ════════════════════════════════════════════════════════════════════════ */
+@layer components {
+  /* Cards: faint top light + inset highlight + elevation. The card's own
+   * `ring-1` utility composes --tw-inset-shadow / --tw-shadow, so the ring
+   * survives. */
+  :where([data-slot='card']) {
+    background-image: linear-gradient(
+      180deg,
+      var(--surface-sheen),
+      transparent 140px
+    );
+    --tw-inset-shadow: inset 0 1px 0 var(--glass-highlight);
+    --tw-shadow: var(--card-elevation);
+  }
+
+  /* Tactile default buttons (needs data-variant on <Button>, see P0). */
+  :where([data-slot='button'][data-variant='default']) {
+    background-image: linear-gradient(
+      180deg,
+      oklch(1 0 0 / 14%),
+      oklch(1 0 0 / 0%) 62%
+    );
+    --tw-inset-shadow: inset 0 1px 0 oklch(1 0 0 / 20%);
+    --tw-shadow:
+      0 1px 2px oklch(0.2 0.05 275 / 16%),
+      0 6px 16px -8px color-mix(in oklch, var(--primary) 55%, transparent);
+    box-shadow:
+      var(--tw-inset-shadow, 0 0 #0000), var(--tw-inset-ring-shadow, 0 0 #0000),
+      var(--tw-ring-offset-shadow, 0 0 #0000), var(--tw-ring-shadow, 0 0 #0000),
+      var(--tw-shadow, 0 0 #0000);
+  }
+  /* Darken (light) / lighten (dark) on hover — contrast goes UP on hover.
+   * Anchors keep their `[a]:hover:bg-primary/80` utility (utilities win). */
+  :where([data-slot='button'][data-variant='default']):not(:disabled):hover {
+    background-color: var(--primary-hover);
+  }
+  :where([data-slot='button'][data-variant='default']):disabled {
+    --tw-shadow: 0 0 #0000;
+  }
+
+  /* Sidebar: active pill + glowing aurora tick (hidden in icon rail). */
+  :where(
+    [data-slot='sidebar-menu-button'],
+    [data-slot='sidebar-menu-sub-button']
+  )[data-active]:not([data-active='false']) {
+    background-image: linear-gradient(
+      90deg,
+      color-mix(in oklch, var(--primary) 14%, transparent),
+      color-mix(in oklch, var(--primary) 2%, transparent) 85%
+    );
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--primary) 16%, transparent),
+      inset 0 1px 0 var(--glass-highlight);
+  }
+  [data-slot='sidebar']:not([data-collapsible='icon'])
+    :where([data-slot='sidebar-menu-item']):has(
+      > [data-slot='sidebar-menu-button'][data-active]:not(
+        [data-active='false']
+      )
+    )::before {
+    content: '';
+    position: absolute;
+    inset-inline-start: -6px;
+    top: 50%;
+    width: 3px;
+    height: 1rem;
+    translate: 0 -50%;
+    border-radius: 9999px;
+    pointer-events: none;
+    background: linear-gradient(180deg, var(--tick-from), var(--brand-a));
+    box-shadow: 0 0 10px var(--glow-color);
+  }
+  :where([data-slot='sidebar-group-label']) {
+    font-family: var(--font-mono);
+  }
+
+  /* Console canvas aurora (static) + content panel dawn wash. Painted as
+   * background-image: no pseudo-elements, no new stacking contexts. The
+   * dawn fades out by ~160px so it never sits under table rows.
+   * The canvas belongs to the inset layout only (the transparent header and
+   * the floating panel sit on it); other layouts would cut it off under the
+   * header. On phones the nav is a sheet, so the canvas is off there too. */
+  :where(
+    [data-slot='sidebar-wrapper']:has(
+      [data-slot='sidebar'][data-variant='inset']
+    )
+  ) {
+    background-image: var(--console-canvas);
+    background-repeat: no-repeat;
+  }
+  @media (min-width: 768px) {
+    /* Floating panel: 1px aurora rim over the dawn. The rim sits 1px down
+     * because the panel's inset top highlight paints over its first row. */
+    :where(
+      [data-slot='sidebar'][data-variant='inset'] ~ [data-slot='sidebar-inset']
+    ) {
+      background-image: var(--panel-rim), var(--panel-dawn-image);
+      background-size:
+        100% 1px,
+        auto,
+        auto;
+      background-position:
+        0 1px,
+        0 0,
+        0 0;
+      background-repeat: no-repeat;
+    }
+  }
+  /* Phones: no panel and a transparent header, so one continuous dawn runs
+   * from the header (on the wrapper) into the content (offset by the header
+   * height). Both are full width on the page colour, so the halves line up. */
+  @media (max-width: 767px) {
+    :where([data-slot='sidebar-wrapper']) {
+      background-image: var(--panel-dawn-image);
+      background-repeat: no-repeat;
+    }
+    :where([data-slot='sidebar-inset']) {
+      background-image: var(--panel-dawn-image);
+      background-repeat: no-repeat;
+      background-position: 0 calc(-1 * var(--app-header-height, 3rem));
+    }
+  }
+  /* Mobile nav sheet: the canvas aurora the desktop nav sits on. Opaque
+   * (bg-sidebar sets only the colour), no blur. */
+  :where([data-slot='sidebar'][data-mobile='true']) {
+    background-image: var(--console-canvas);
+    background-repeat: no-repeat;
+  }
+
+  /* Console page title tick (hook in section-page-layout.tsx, which
+   * positions it out of flow and reserves its space). No glow: the h2 is
+   * `truncate` (overflow hidden) and would clip it into a hard box. */
+  :where([data-slot='section-page-title'])::before {
+    content: '';
+    width: 3px;
+    height: 0.9em;
+    border-radius: 2px;
+    background: linear-gradient(180deg, var(--tick-from), var(--brand-a));
+  }
+
+  /* Dialogs and sheets: OPAQUE, branded with a top aurora wash only. */
+  :where(
+    [data-slot='dialog-content'],
+    [data-slot='alert-dialog-content'],
+    [data-slot='sheet-content']
+  ) {
+    background-image: linear-gradient(
+      180deg,
+      color-mix(in oklch, var(--brand-a) 6%, transparent),
+      transparent 128px
+    );
+    background-repeat: no-repeat;
+  }
+
+  /* Segmented tabs and pressed toggles. */
+  :where([data-slot='tabs-list']):not([data-variant='line']) {
+    box-shadow: inset 0 0 0 1px var(--hairline);
+  }
+  :where(
+    [data-slot='toggle-group-item'][aria-pressed='true'],
+    [data-brand-page='pricing'] [data-slot='button'][aria-pressed='true']
+  ) {
+    box-shadow:
+      inset 0 0 0 1px color-mix(in oklch, var(--primary) 35%, transparent),
+      0 0 18px -8px var(--glow-color);
+  }
+
+  /* Pricing page model cards: lit top edge + top aurora wash, tabular
+   * numerals. Longhands only, so the bg-card utility still sets the colour.
+   * The edge sits 1px down: the card's inset highlight paints over row 0.
+   * Wash peak on the card ≈ half of --card-wash (≤16% light / ≤30% dark). */
+  :where([data-brand-page='pricing'] [data-slot='card']) {
+    background-image:
+      linear-gradient(
+        90deg,
+        transparent 8%,
+        color-mix(in oklch, var(--brand-a) 40%, transparent) 50%,
+        transparent 92%
+      ),
+      radial-gradient(
+        120% 60% at 50% -20%,
+        color-mix(in oklch, var(--brand-a) var(--card-wash, 24%), transparent),
+        transparent 70%
+      );
+    background-size:
+      100% 1px,
+      100% 100%;
+    background-position:
+      0 1px,
+      center;
+    background-repeat: no-repeat;
+    font-variant-numeric: tabular-nums;
+  }
+  :where(.dark [data-brand-page='pricing'] [data-slot='card']) {
+    --card-wash: 16%;
+  }
+
+  /* Auth card: unified 44px controls + aurora submit (form files untouched).
+   * Must stay AFTER the global tactile button rule (same specificity).
+   * FormControl overrides the Input's data-slot with 'form-control', so both
+   * slots are matched; `input` keeps checkbox roots (spans) out. */
+  :where([data-slot='auth-card'])
+    :where(
+      input:is([data-slot='input'], [data-slot='form-control']):not(
+        [type='checkbox'],
+        [type='radio'],
+        [type='hidden']
+      )
+    ) {
+    min-height: 2.75rem;
+  }
+  :where([data-slot='auth-card'])
+    :where([data-slot='button']):where(
+      [data-variant='default'],
+      [data-variant='outline']
+    ):where(:not([data-size^='icon'])) {
+    min-height: 2.75rem;
+  }
+  /* Outline icon buttons beside a 44px field (reset-password copy) match it. */
+  :where([data-slot='auth-card'])
+    :where([data-slot='button'][data-variant='outline'][data-size='icon']) {
+    min-height: 2.75rem;
+    min-width: 2.75rem;
+  }
+  :where([data-slot='auth-card'])
+    :where([data-slot='button'][data-variant='default']) {
+    background-image:
+      linear-gradient(180deg, oklch(1 0 0 / 16%), transparent 55%),
+      linear-gradient(100deg, var(--cta-from), var(--cta-to));
+    --tw-shadow: var(--glow-cta);
+  }
+  :where([data-slot='auth-card'])
+    :where([data-slot='button'][data-variant='default']):disabled {
+    --tw-shadow: 0 0 #0000;
+  }
+
+  /* Small floating popups: translucent glass. Overriding --popover (not
+   * background-color) keeps call-site bg-* overrides working. `.dark`
+   * popups (context-menu sub-content) are excluded. */
+  @supports ((-webkit-backdrop-filter: blur(1px)) or
+    (backdrop-filter: blur(1px))) {
+    :where(
+      [data-slot='popover-content'],
+      [data-slot='dropdown-menu-content'],
+      [data-slot='dropdown-menu-sub-content'],
+      [data-slot='select-content']
+    ):not(.dark) {
+      --popover: color-mix(in oklch, var(--popover-solid) 88%, transparent);
+      -webkit-backdrop-filter: blur(16px) saturate(150%);
+      backdrop-filter: blur(16px) saturate(150%);
+    }
+  }
+  /* simple-large: solid glass (§3.3), popups included. Popups portal into
+   * body, which carries the preset attribute. `.dark` popups stay excluded:
+   * on them B1 redeclares --popover-solid as var(--popover) (a cycle). */
+  [data-theme-preset='simple-large']
+    :where(
+      [data-slot='popover-content'],
+      [data-slot='dropdown-menu-content'],
+      [data-slot='dropdown-menu-sub-content'],
+      [data-slot='select-content']
+    ):not(.dark) {
+    --popover: var(--popover-solid);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+
+  /* Reduced transparency — must stay last inside this layer. */
+  @media (prefers-reduced-transparency: reduce) {
+    .brand-glass {
+      background-color: var(--glass-bg-solid);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+    .brand-backdrop > .brand-flutes {
+      display: none;
+    }
+    :where(
+      [data-slot='popover-content'],
+      [data-slot='dropdown-menu-content'],
+      [data-slot='dropdown-menu-sub-content'],
+      [data-slot='select-content']
+    ):not(.dark) {
+      --popover: var(--popover-solid);
+      -webkit-backdrop-filter: none;
+      backdrop-filter: none;
+    }
+  }
+}
+
+/* ════════════════════════════════════════════════════════════════════════
+ * Unlayered overrides — only where a primitive's own utility sets the same
+ * property (bg-sidebar, shadow-sm, bg-black/10) or an index.css rule wins.
+ * ════════════════════════════════════════════════════════════════════════ */
+@media (min-width: 768px) {
+  /* Let the canvas aurora flow under the nav (inner bg == canvas colour). */
+  [data-slot='sidebar'][data-variant='inset'] [data-slot='sidebar-inner'] {
+    background-color: transparent;
+  }
+  /* Content panel: hairline + top highlight + deep soft shadow. */
+  [data-slot='sidebar'][data-variant='inset'] ~ [data-slot='sidebar-inset'] {
+    box-shadow:
+      0 0 0 1px var(--hairline),
+      inset 0 1px 0 var(--glass-highlight),
+      0 24px 60px -36px var(--panel-shadow);
+  }
+}
+[data-slot='dialog-overlay'],
+[data-slot='alert-dialog-overlay'],
+[data-slot='sheet-overlay'] {
+  background-color: oklch(0.2 0.04 275 / 18%);
+}
+.dark
+  :is(
+    [data-slot='dialog-overlay'],
+    [data-slot='alert-dialog-overlay'],
+    [data-slot='sheet-overlay']
+  ) {
+  background-color: oklch(0.08 0.02 275 / 55%);
+}
+/* Card hover: index.css sets (0,4,0) and comes later; `:root body:not(…)`
+ * makes these (0,5,1)/(0,6,1). Keeps the ring, adds an aurora glow.
+ * simple-large (no ambient effects) keeps the index.css hover. */
+@media (prefers-reduced-motion: no-preference) and (min-width: 641px) {
+  :root
+    body:not([data-theme-preset='simple-large'])
+    [data-slot='card']:not([data-card-hover='false']):hover {
+    box-shadow:
+      var(--tw-inset-shadow, 0 0 #0000),
+      var(--tw-inset-ring-shadow, 0 0 #0000),
+      var(--tw-ring-offset-shadow, 0 0 #0000),
+      var(--tw-ring-shadow, 0 0 #0000),
+      0 0 0 1px color-mix(in oklch, var(--brand-a) 18%, transparent),
+      0 12px 32px -16px color-mix(in oklch, var(--brand-a) 30%, transparent);
+  }
+  :root
+    body:not([data-theme-preset='simple-large'])
+    [data-brand-page='pricing']
+    [data-slot='card']:not([data-card-hover='false']):hover {
+    box-shadow:
+      var(--tw-inset-shadow, 0 0 #0000),
+      var(--tw-inset-ring-shadow, 0 0 #0000),
+      var(--tw-ring-offset-shadow, 0 0 #0000),
+      var(--tw-ring-shadow, 0 0 #0000),
+      0 0 0 1px color-mix(in oklch, var(--brand-a) 32%, transparent),
+      0 14px 36px -16px color-mix(in oklch, var(--brand-a) 45%, transparent);
+  }
+}
+/* Auth screens: the screen title (h2) sits inside the framed auth card, so it
+ * aligns with the left-aligned subline below it at every width instead of
+ * the page files' mobile `text-center` (kept untouched to avoid upstream
+ * merge noise), and uses the display face. */
+[data-slot='auth-card'] h2 {
+  text-align: start;
+  font-family: var(--font-display);
+}
+[data-theme-preset='simple-large'] :is(.brand-backdrop, .brand-horizon) {
+  display: none;
+}
+/* No aurora-tinted gradient ring either (the glass box-shadow ring stays). */
+[data-theme-preset='simple-large'] .brand-hairline::before {
+  display: none;
+}
+
+/* ════════ Accessibility and environment fallbacks (end of file) ════════ */
+@media (prefers-contrast: more) {
+  :where(body, body .dark) {
+    --hairline: var(--border);
+    --hairline-strong: var(--foreground);
+    --glass-bg: var(--card);
+    --glass-bg-strong: var(--card);
+  }
+  .brand-text-aurora {
+    background: none;
+    color: var(--foreground);
+    -webkit-text-fill-color: currentColor;
+  }
+}
+@media (forced-colors: active) {
+  .brand-backdrop,
+  .brand-glow,
+  .brand-dots,
+  .brand-connector,
+  .brand-horizon,
+  .brand-hairline::before,
+  .brand-beam::after,
+  .brand-sheen::after {
+    display: none;
+  }
+  .brand-text-aurora {
+    background: none;
+    color: CanvasText;
+    -webkit-text-fill-color: CanvasText;
+  }
+  .brand-glass,
+  .brand-surface,
+  .brand-terminal {
+    border: 1px solid CanvasText;
+  }
+}
+@supports not ((-webkit-background-clip: text) or (background-clip: text)) {
+  .brand-text-aurora {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
+@media print {
+  .brand-backdrop,
+  .brand-glow,
+  .brand-dots,
+  .brand-horizon {
+    display: none;
+  }
+  /* Background graphics are off by default in print: solid brand ink. */
+  .brand-text-aurora {
+    background: none;
+    -webkit-text-fill-color: currentColor;
+  }
+}
