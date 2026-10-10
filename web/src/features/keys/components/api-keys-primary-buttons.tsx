@@ -16,7 +16,8 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { ChevronDown, Globe, Plus } from 'lucide-react'
+import { Boxes, ChevronDown, Globe, Plus } from 'lucide-react'
+import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { CopyButton } from '@/components/copy-button'
@@ -40,10 +41,12 @@ import { useApiInfo } from '@/features/dashboard/hooks/use-status-data'
 import { useStatus } from '@/hooks/use-status'
 
 import { useApiKeys } from './api-keys-provider'
+import { GroupModelsSheet } from './group-models-sheet'
 
 export function ApiKeysPrimaryButtons() {
   const { t } = useTranslation()
   const { setOpen } = useApiKeys()
+  const [groupModelsOpen, setGroupModelsOpen] = useState(false)
   const { status, loading } = useStatus()
   const { items } = useApiInfo()
   const serverAddress =
@@ -112,6 +115,18 @@ export function ApiKeysPrimaryButtons() {
           )}
         </PopoverContent>
       </Popover>
+      <Button
+        variant='outline'
+        size='sm'
+        onClick={() => setGroupModelsOpen(true)}
+      >
+        <Boxes aria-hidden='true' />
+        {t('Groups & Models')}
+      </Button>
+      <GroupModelsSheet
+        open={groupModelsOpen}
+        onOpenChange={setGroupModelsOpen}
+      />
       <Button size='sm' onClick={() => setOpen('create')}>
         <Plus className='h-4 w-4' />
         {t('Create API Key')}
