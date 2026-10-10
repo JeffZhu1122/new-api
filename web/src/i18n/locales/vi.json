@@ -3,6 +3,7 @@
     "{{count}} / {{max}} fallback groups selected": "{{count}} / {{max}} fallback groups selected",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} kênh vẫn bị tắt vì đã đạt giới hạn hạn mức",
     "{{count}} discount": "{{count}} mức giảm giá",
+    "{{endpoint}} call, not billed": "Lệnh gọi {{endpoint}}, không tính phí",
     "0.9 = 10% off. Values must be in (0, 10].": "0.9 = giảm 10%. Giá trị phải nằm trong (0, 10].",
     "360": "360",
     "1000": "1000",

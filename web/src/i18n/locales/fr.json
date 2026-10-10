@@ -3,6 +3,7 @@
     "{{count}} / {{max}} fallback groups selected": "{{count}} / {{max}} fallback groups selected",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} canal(aux) sont restés désactivés car ils ont atteint leur limite de quota",
     "{{count}} discount": "{{count}} remise(s)",
+    "{{endpoint}} call, not billed": "Appel {{endpoint}}, non facturé",
     "0.9 = 10% off. Values must be in (0, 10].": "0,9 = 10 % de remise. Les valeurs doivent être dans (0, 10].",
     "360": "360",
     "1000": "1000",

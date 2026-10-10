@@ -3,6 +3,7 @@
     "{{count}} / {{max}} fallback groups selected": "{{count}} / {{max}} fallback groups selected",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} 件のチャネルはクォータ上限に達したため無効のままです",
     "{{count}} discount": "{{count}} 件の割引",
+    "{{endpoint}} call, not billed": "{{endpoint}} の呼び出し（課金なし）",
     "0.9 = 10% off. Values must be in (0, 10].": "0.9 = 10% 割引。値は (0, 10] の範囲で指定してください。",
     "360": "360",
     "1000": "1000",
