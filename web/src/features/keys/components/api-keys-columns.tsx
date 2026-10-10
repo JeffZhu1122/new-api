@@ -25,12 +25,14 @@ import { StatusBadge } from '@/components/status-badge'
 import { Checkbox } from '@/components/ui/checkbox'
 import { useMediaQuery } from '@/hooks'
 import { toIntlLocale } from '@/i18n/languages'
-import { getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay } from '@/lib/currency'
-import { requireServerSuccess } from '@/lib/server-error-message'
 import { useSystemConfigStore } from '@/stores/system-config-store'
 
 import { API_KEY_STATUSES } from '../constants'
+import {
+  apiKeyOwnerGroupsQuery,
+  useApiKeyOwner,
+} from '../hooks/use-api-key-owner'
 import type { ApiKey } from '../types'
 import { ApiKeyGroupCell } from './api-key-group-cell'
 import { ApiKeyQuotaCell } from './api-key-quota-cell'
@@ -48,9 +50,9 @@ import { DataTableRowActions } from './data-table-row-actions'
 const EMPTY_GROUP_RATIOS: Record<string, number | string> = {}
 
 function useGroupRatios(): Record<string, number | string> {
+  const owner = useApiKeyOwner()
   const { data } = useQuery({
-    queryKey: ['user-groups'],
-    queryFn: async () => requireServerSuccess(await getUserGroups()),
+    ...apiKeyOwnerGroupsQuery(owner),
     staleTime: 0,
     select: (res) => {
       if (!res.success || !res.data) return {}
@@ -73,10 +75,12 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
   const { meta: currency } = getCurrencyDisplay()
   const quotaUnit = currency.kind === 'tokens' ? t('Tokens') : currency.symbol
   const groupRatios = useGroupRatios()
+  // Another user's keys have no batch actions, so no selection column.
+  const selectable = useApiKeyOwner() === null
   const shouldReduceMotion = useMediaQuery('(prefers-reduced-motion: reduce)')
   const locale = toIntlLocale(i18n.resolvedLanguage || i18n.language)
   const justNowLabel = t('Just now')
-  return useMemo<ColumnDef<ApiKey>[]>(
+  const columns = useMemo<ColumnDef<ApiKey>[]>(
     () => [
       {
         id: 'select',
@@ -235,5 +239,10 @@ export function useApiKeysColumns(now: number): ColumnDef<ApiKey>[] {
       },
     ],
     [t, quotaUnit, now, groupRatios, shouldReduceMotion, locale, justNowLabel]
+  )
+  return useMemo(
+    () =>
+      selectable ? columns : columns.filter((column) => column.id !== 'select'),
+    [columns, selectable]
   )
 }

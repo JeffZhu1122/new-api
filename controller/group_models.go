@@ -27,23 +27,10 @@ type UserGroupModels struct {
 	Models     []string `json:"models"`
 }
 
-// GetUserGroupModels returns every group the user may select with the models
-// it can call. Groups follow GetUserGroups; models follow /v1/models, so a
-// model without a price is hidden unless self-use mode or the user's
-// accept-unset-ratio setting allows it.
-func GetUserGroupModels(c *gin.Context) {
-	userId := c.GetInt("id")
-	userGroup, err := model.GetUserGroup(userId, false)
-	if err != nil {
-		common.ApiError(c, err)
-		return
-	}
-	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
-	if !acceptUnsetRatioModel {
-		userSettings, _ := model.GetUserSetting(userId, false)
-		acceptUnsetRatioModel = userSettings.AcceptUnsetRatioModel
-	}
-
+// userSelectableGroups lists the groups a user in userGroup may select, with
+// the same rules as GetUserGroups: groups that have a ratio and are usable,
+// sorted by name, then auto when usable. Models are left empty.
+func userSelectableGroups(userGroup string) []UserGroupModels {
 	usableGroups := service.GetUserUsableGroups(userGroup)
 	result := make([]UserGroupModels, 0, len(usableGroups))
 	for groupName := range ratio_setting.GetGroupRatioCopy() {
@@ -68,7 +55,27 @@ func GetUserGroupModels(c *gin.Context) {
 			AutoGroups: service.GetUserAutoGroup(userGroup),
 		})
 	}
+	return result
+}
 
+// GetUserGroupModels returns every group the user may select with the models
+// it can call. Groups follow GetUserGroups; models follow /v1/models, so a
+// model without a price is hidden unless self-use mode or the user's
+// accept-unset-ratio setting allows it.
+func GetUserGroupModels(c *gin.Context) {
+	userId := c.GetInt("id")
+	userGroup, err := model.GetUserGroup(userId, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
+	if !acceptUnsetRatioModel {
+		userSettings, _ := model.GetUserSetting(userId, false)
+		acceptUnsetRatioModel = userSettings.AcceptUnsetRatioModel
+	}
+
+	result := userSelectableGroups(userGroup)
 	for i := range result {
 		groups := []string{result[i].Group}
 		if result[i].Group == "auto" {

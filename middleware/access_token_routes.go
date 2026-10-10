@@ -124,6 +124,16 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"DELETE /api/user/:id/reset_passkey":               accessTokenScopeRule("user:write"),
 	"GET /api/user/2fa/stats":                          accessTokenScopeRule("user:read"),
 	"DELETE /api/user/:id/2fa":                         accessTokenScopeRule("user:write"),
+	// Root management of other users' API keys stays on browser sessions.
+	"GET /api/user/:id/tokens":                accessTokenSessionRule,
+	"GET /api/user/:id/tokens/groups":         accessTokenSessionRule,
+	"GET /api/user/:id/tokens/auto-groups":    accessTokenSessionRule,
+	"GET /api/user/:id/tokens/models":         accessTokenSessionRule,
+	"GET /api/user/:id/tokens/:token_id":      accessTokenSessionRule,
+	"POST /api/user/:id/tokens":               accessTokenSessionRule,
+	"PUT /api/user/:id/tokens":                accessTokenSessionRule,
+	"DELETE /api/user/:id/tokens/:token_id":   accessTokenSessionRule,
+	"POST /api/user/:id/tokens/:token_id/key": accessTokenSessionRule,
 
 	// router/api-router.go: /api/subscription
 	"GET /api/subscription/plans":                                    accessTokenScopeRule("wallet:read"),

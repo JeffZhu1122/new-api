@@ -45,6 +45,11 @@ var auditContentTemplates = map[string]string{
 	"user.email_binding_resend": "Email confirmation code resend",
 	"user.passkey_delete":       "Deleted a passkey",
 	"user.reset_passkey":        "Reset the user passkey",
+	"user.token_create":         "Created API key ${name} for user ${target_username} (ID: ${target_user_id})",
+	"user.token_update":         "Updated API key ${name} of user ${target_username} (ID: ${target_user_id})",
+	"user.token_status_update":  "Changed the status of API key ${name} of user ${target_username} (ID: ${target_user_id})",
+	"user.token_delete":         "Deleted API key ${name} of user ${target_username} (ID: ${target_user_id})",
+	"user.token_key_view":       "Viewed the key of API key ${name} of user ${target_username} (ID: ${target_user_id})",
 	"option.update":             "Updated system setting ${key}",
 
 	"option.passkey_domains":           "Updated Passkey domains: removed ${domains}; affected ${known}; unknown ${unknown}",
