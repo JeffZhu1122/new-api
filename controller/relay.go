@@ -159,6 +159,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	}
 	relayInfo.RetryIndex = 0
 	relayInfo.LastError = nil
+	forcedRetry := false
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
 		relayInfo.StreamStatus = nil
@@ -169,6 +170,10 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if channelErr != nil {
 			logger.LogError(c, channelErr.Error())
 			newAPIError = channelErr
+			// 「出错一律重试」换不到渠道时，返回上一次的真实错误而不是"无可用渠道"
+			if forcedRetry && relayInfo.LastError != nil {
+				newAPIError = relayInfo.LastError
+			}
 			break
 		}
 		service.AppendUsedChannel(c, channel.Id)
@@ -229,6 +234,7 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 		if decision.Action != "retry" {
 			break
 		}
+		forcedRetry = decision.Reason == service.ForceRetryReason
 	}
 
 	useChannel := c.GetStringSlice("use_channel")

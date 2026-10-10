@@ -98,6 +98,7 @@ export const channelSchema = z.object({
             .optional(),
         })
         .nullish(),
+      force_retry: z.boolean().optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -141,6 +142,8 @@ export interface ChannelExtendSettings {
   quota_limit?: number
   // Weekly availability windows; undefined = always selectable
   schedule?: ChannelSchedule
+  // Retry every relay error from this channel, ignoring the retry rules
+  force_retry?: boolean
 }
 
 // One weekly availability window: start inclusive, end exclusive (HH:MM in

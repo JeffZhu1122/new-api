@@ -278,6 +278,12 @@ type ChannelExtendSettings struct {
 	// Schedule limits channel selection to weekly availability windows.
 	// nil = always available.
 	Schedule *ChannelSchedule `json:"schedule,omitempty"`
+	// ForceRetry retries every relay error from this channel, skipping the
+	// status code, error code and keyword retry rules. The global retry
+	// count, pinned channels, strict sessions, started responses,
+	// disconnected clients and content violations still stop the retry.
+	// Async task submissions are not affected.
+	ForceRetry bool `json:"force_retry,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -364,7 +370,7 @@ func (s *ChannelExtendSettings) IsZero() bool {
 		s.RpmLimit == 0 && s.TpmLimit == 0 &&
 		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey) &&
 		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0 &&
-		s.CostRatio == 0 && s.QuotaLimit == 0 && s.Schedule == nil)
+		s.CostRatio == 0 && s.QuotaLimit == 0 && s.Schedule == nil && !s.ForceRetry)
 }
 
 // AvailableAt reports whether the channel may be selected at the given

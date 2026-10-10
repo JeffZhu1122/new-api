@@ -7421,6 +7421,11 @@
     "Input TPM": "输入 TPM",
     "Cache read TPM": "缓存读取 TPM",
     "Cache write TPM": "缓存写入 TPM",
-    "Output TPM": "输出 TPM"
+    "Output TPM": "输出 TPM",
+    "Always Retry on Errors": "出错一律重试",
+    "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "此渠道的任何报错都重试，忽略状态码、错误码和关键词重试规则。仍受全局重试次数限制（为 0 时不重试）。已开始输出的响应、客户端已断开、固定渠道、严格会话和内容违规不会重试，异步任务提交不受影响。",
+    "Channel always retries on errors": "渠道设置出错一律重试",
+    "Response already started": "响应已开始输出",
+    "Client disconnected": "客户端已断开"
   }
 }

@@ -52,6 +52,7 @@ const ADVANCED_SETTINGS_FIELDS = new Set<FieldPath<ChannelFormValues>>([
   'response_headers',
   'cost_ratio',
   'quota_limit_amount',
+  'force_retry',
   'schedule_enabled',
   'schedule_timezone',
   'schedule_windows',

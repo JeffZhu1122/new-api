@@ -7421,6 +7421,11 @@
     "Input TPM": "TPM ввода",
     "Cache read TPM": "TPM чтения кэша",
     "Cache write TPM": "TPM записи в кэш",
-    "Output TPM": "TPM вывода"
+    "Output TPM": "TPM вывода",
+    "Always Retry on Errors": "Всегда повторять при ошибках",
+    "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "Повторять любую ошибку этого канала, игнорируя правила повтора по коду состояния, коду ошибки и ключевым словам. Глобальное число повторов по-прежнему действует (0 отключает повторы). Уже отправляемые ответы, отключившиеся клиенты, закреплённые каналы, строгие сессии и нарушения контента никогда не повторяются; отправка асинхронных задач не затрагивается.",
+    "Channel always retries on errors": "Канал всегда повторяет при ошибках",
+    "Response already started": "Ответ уже начат",
+    "Client disconnected": "Клиент отключился"
   }
 }

@@ -71,6 +71,24 @@ func TestUpsertChannelExtendPersistsRateLimits(t *testing.T) {
 	assert.Equal(t, int64(1), count)
 }
 
+func TestUpsertChannelExtendPersistsForceRetry(t *testing.T) {
+	useChannelExtendDB(t)
+
+	// 只开启出错一律重试的行必须完整往返，关闭后整行删除
+	require.NoError(t, UpsertChannelExtend(nil, 9, dto.ChannelExtendSettings{ForceRetry: true}))
+	settings, err := GetChannelExtend(9)
+	require.NoError(t, err)
+	assert.Equal(t, dto.ChannelExtendSettings{ForceRetry: true}, settings)
+
+	require.NoError(t, UpsertChannelExtend(nil, 9, dto.ChannelExtendSettings{ForceRetry: false}))
+	var count int64
+	require.NoError(t, DB.Model(&ChannelExtend{}).Where("channel_id = ?", 9).Count(&count).Error)
+	assert.Equal(t, int64(0), count)
+
+	// 迁移重复执行不得报错（新增列幂等）
+	require.NoError(t, DB.AutoMigrate(&ChannelExtend{}))
+}
+
 func TestGetChannelExtendSettingsFallsBackToDBWithoutMemoryCache(t *testing.T) {
 	useChannelExtendDB(t)
 	previousMemoryCache := common.MemoryCacheEnabled

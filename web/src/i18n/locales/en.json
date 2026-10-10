@@ -7421,6 +7421,11 @@
     "Input TPM": "Input TPM",
     "Cache read TPM": "Cache read TPM",
     "Cache write TPM": "Cache write TPM",
-    "Output TPM": "Output TPM"
+    "Output TPM": "Output TPM",
+    "Always Retry on Errors": "Always Retry on Errors",
+    "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.",
+    "Channel always retries on errors": "Channel always retries on errors",
+    "Response already started": "Response already started",
+    "Client disconnected": "Client disconnected"
   }
 }

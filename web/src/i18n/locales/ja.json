@@ -7421,6 +7421,11 @@
     "Input TPM": "入力 TPM",
     "Cache read TPM": "キャッシュ読み取り TPM",
     "Cache write TPM": "キャッシュ書き込み TPM",
-    "Output TPM": "出力 TPM"
+    "Output TPM": "出力 TPM",
+    "Always Retry on Errors": "エラー時は常に再試行",
+    "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "このチャネルのすべてのエラーを再試行し、ステータスコード・エラーコード・キーワードの再試行ルールを無視します。グローバルの再試行回数は引き続き適用されます（0 の場合は再試行しません）。送信を開始した応答、切断されたクライアント、固定チャネル、厳格セッション、コンテンツ違反は再試行されず、非同期タスクの送信には影響しません。",
+    "Channel always retries on errors": "チャネル設定によりエラー時は常に再試行",
+    "Response already started": "応答の送信が開始済み",
+    "Client disconnected": "クライアントが切断されました"
   }
 }

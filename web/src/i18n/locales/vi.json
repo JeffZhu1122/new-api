@@ -7421,6 +7421,11 @@
     "Input TPM": "TPM đầu vào",
     "Cache read TPM": "TPM đọc bộ nhớ đệm",
     "Cache write TPM": "TPM ghi bộ nhớ đệm",
-    "Output TPM": "TPM đầu ra"
+    "Output TPM": "TPM đầu ra",
+    "Always Retry on Errors": "Luôn thử lại khi có lỗi",
+    "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "Thử lại mọi lỗi từ kênh này, bỏ qua các quy tắc thử lại theo mã trạng thái, mã lỗi và từ khóa. Số lần thử lại toàn cục vẫn được áp dụng (0 sẽ tắt thử lại). Phản hồi đã bắt đầu gửi, máy khách đã ngắt kết nối, kênh được ghim, phiên nghiêm ngặt và vi phạm nội dung không bao giờ được thử lại, và việc gửi tác vụ bất đồng bộ không bị ảnh hưởng.",
+    "Channel always retries on errors": "Kênh luôn thử lại khi có lỗi",
+    "Response already started": "Phản hồi đã bắt đầu",
+    "Client disconnected": "Máy khách đã ngắt kết nối"
   }
 }

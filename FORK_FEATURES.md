@@ -38,6 +38,7 @@
 21. [附录](#21-附录)
 22. [品牌主题层（Aurora Glass）](#22-品牌主题层aurora-glass)
 23. [定时清理服务器日志文件](#23-定时清理服务器日志文件)
+24. [渠道「出错一律重试」开关](#24-渠道出错一律重试开关)
 
 ---
 
@@ -63,6 +64,7 @@
 | 18 | 移除 GitHub workflows | `a034e98b3` | — | `.github/workflows/` | CI |
 | 22 | 品牌主题层（Aurora Glass） | 与本文档同一提交 | 默认预设即生效，其他预设只叠加结构效果 | `web/src/styles/brand.css` + 前端组件 class | 首页、认证页、定价页、控制台、错误页的外观 |
 | 23 | 定时清理服务器日志文件 | 与本文档同一提交 | 关闭 | options 表（`log_file_cleanup_setting.*`，7 个 key） | 后台定时任务（每个节点）、日志维护设置页 |
+| 24 | 渠道「出错一律重试」开关 | 与本文档同一提交 | 关闭 | `channel_extend` | 重试决策、重试耗尽时返回的错误 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -93,6 +95,7 @@ fork 的原则是**不修改上游 `channels` / `users` 表结构**，所有 for
 | `cost_ratio` | double | 0 | 成本倍率：每计费 $1 站内额度实际付给上游的美元数，仅用于成本展示 | §15 |
 | `quota_limit` | bigint | 0 | 额度上限（quota 单位，`QuotaPerUnit` = $1），累计 `used_quota` 达到即自动禁用，0 = 不限 | §15 |
 | `schedule` | text | 无 | JSON `dto.ChannelSchedule`，每周可用时段规则；空 = 全天可用 | §16 |
+| `force_retry` | bool | 无（NULL 视为关） | 此渠道的任何报错都重试，跳过状态码 / 错误码 / 关键词规则 | §24 |
 
 关键方法与行为：
 
@@ -821,8 +824,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/channel_cache.go` | `channelExtendIDM`、`GetRandomSatisfiedChannel` 新增 `excludeChannelIds` 参数、多个 `HasAny*` 标志 |
 | `model/ability.go` | `GetChannel` 新参数、`filterAbilitiesByConstraints` 回填 extend |
 | `model/channel_constraint.go` | count_tokens 与 input_tokens 谓词 |
-| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支 |
-| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误 |
+| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
+| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误 |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
 | `relay/helper/price.go` | `HandleGroupRatio` 折扣乘法 |
 | `service/http.go` | `ShouldCopyUpstreamHeader` 响应头过滤 |
@@ -906,6 +909,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - **渠道额度上限**：判定在结算之后，禁用前已在飞的请求仍会结算，`BATCH_UPDATE_ENABLED` 下还会多出一个刷盘间隔（默认 5 秒）的流量；多副本各自以数据库值判定，其他副本的内存缓存最长 `SYNC_FREQUENCY`（默认 60 秒）后感知禁用；预扣费不参与判定。折算成本 = 站内计费额度 × 成本倍率，是估算值而非上游账单。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道可用时段**：判定基于各副本本机时钟；窗口边界处进行中的流式响应与 WebSocket 会话不会被中断，只影响新请求；会话亲和在时段外会被放弃，该会话可能换渠道；全部渠道时段外时客户端只看到通用 503；时区运行时加载失败按全天可用处理；粒度只到周几 + 分钟，没有日期范围。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **实时 RPM / TPM 统计**：数字比当前时刻晚 4 到 14 秒；token 在请求结算时一次性计入（长流式请求的 token 全部落在结束那一分钟）；Redis 故障期间少计，实例崩溃会丢失最近 2 秒的计数；各实例按本机时钟分桶，时钟偏差超过 10 秒会明显失真；没有 Redis 的多实例部署只能看到本实例；列表只能在当前页查看，不能按 RPM / TPM 给全部渠道或用户排序；列表 RPM 按分发次数、日志页 RPM 按结算请求，两者口径不同。使用日志页不指定用户、又用多个条件或模糊匹配时，要读窗口内所有活跃用户的明细，流量很大时较慢；精确匹配区分大小写，模糊匹配不区分。
+- **渠道出错一律重试**：只看刚失败的那个渠道的开关；重试次数仍受全局 `RetryTimes` 限制；异步任务提交与 Responses WebSocket 不受影响；用户自身原因的错误（参数错误、上下文超长）也会被重试，等待时间与上游请求量随之放大；上游对失败请求收费时，重复调用的成本由站点承担。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **品牌主题层**：只有默认预设使用完整的极光配色，其他预设保留原配色、只叠加结构效果；图表（VChart）配色未替换；控制台页面内部不用真玻璃（`backdrop-filter`），`AnimatedOutlet` 的 `filter` 终态也会让它失效；夜岛在命名预设下使用 `theme.css` 的经典深色 token。
 
 ### 测试缺口
@@ -918,6 +922,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 控制器层"启用已耗尽渠道被拒绝 / 跳过"（单个 / 批量 / 标签）只有本地端到端验证，没有 Go 单测；前端无渠道成本倍率 / 额度上限字段的组件测试。
 - 渠道可用时段：Responses WebSocket 路径只有共用 `SelectChannelForRequest` 的单元覆盖，没有 WS 端到端；前端无时段编辑器的组件测试。
 - 实时 RPM / TPM 统计：Midjourney、异步任务提交、实时语音、音频与 Responses WebSocket 路径只靠共用计数点的单元覆盖，没有这几条路径的端到端；真实 Redis（含集群模式）未验证。
+- 渠道出错一律重试：「已开始输出后不重试」只有单元测试（`c.Writer.Written()`），没有真实流式中断的端到端；没有测试多 key 渠道在避开失败渠道开启时重复命中同一渠道的情况。
 - 品牌主题层：vitest 不处理 CSS，测试只覆盖 DOM 契约（`aria-hidden`、`data-*` 钩子、DOM 顺序、链接与按钮）和关键布局 class（标题字号上限、换行与截断 class、控件高度、骨架尺寸），不验证实际渲染的尺寸与颜色；各预设、深浅色、移动端、减少动态效果 / 透明度、高对比度、强制颜色、RTL 以及 Safari / Firefox 下的视觉效果只能人工检查，没有视觉回归测试。玻璃条折射在 Chromium 中是否还有横向接缝尚未复查。
 
 ---
@@ -1216,4 +1221,55 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 日志文件每写满约一百万行才换新文件，正在写入的文件不会被删除。访问量小的实例上，定时清理可能无法明显减少磁盘占用；本功能不按总大小清理。
 - 7 项设置逐项保存，中途失败会只保存一部分。其他节点在 `SYNC_FREQUENCY`（默认 60 秒）内同步新设置，执行时间设得离当前太近时，其他节点可能从下一个周期才开始执行。停机期间错过的执行不补跑。
 - 未测试：多节点与共享日志目录、Docker 中设置 `TZ`、MySQL / PostgreSQL（只新增 options 行，不改表结构）、夏令时切换。
+
+## 24. 渠道「出错一律重试」开关
+
+### 背景
+
+重试规则是全局的：状态码规则、"永不重试"的状态码 / 错误码、400 关键词规则（§3）以及上游标记的"不可重试"错误。有些上游经常返回本该可重试、却落在这些规则之外的错误（例如用 400 表示临时故障），全局放宽又会影响所有渠道。本功能给单个渠道加一个开关：这个渠道的请求出现任何报错都重试。
+
+### 配置
+
+渠道编辑抽屉 →「其他」→「渠道额外设置」卡片中的「出错一律重试」开关，保存在 `channel_extend.force_retry`（§2.1）。改动属于 `extend_config` 变化，按敏感变更处理，需要 `authz.ChannelSensitiveWrite` 权限。关闭时整行与其他字段一起按 `IsZero()` 规则清理。
+
+### 行为
+
+`service/relay_error.go` `DecideRelayRetry` 在固定渠道、严格会话与 `channel_error` 判断之后，读取请求上下文中**刚失败的那个渠道**的 `ChannelExtendSettings`（`constant.ContextKeyChannelExtendSetting`）。开关打开时跳过以下规则直接重试，决策原因记为 `channel_force_retry`、来源 `channel`：
+
+- 状态码重试规则与"永不重试"的状态码 / 错误码（例如 504）；
+- 400 关键词规则（§3）；
+- 上游或本地标记为"不可重试"的错误（`ErrOptionWithSkipRetry`）。
+
+以下情况即使开关打开也不重试：
+
+| 情况 | 决策原因 | 原因 |
+|---|---|---|
+| 全局重试次数用完（`RetryTimes` 为 0 时始终如此） | `attempt_budget_exhausted` | 防止无限重试 |
+| 已向客户端输出内容（`c.Writer.Written()`） | `response_started` | 再重试会把两次响应拼在一起 |
+| 客户端已断开（请求 context 已取消） | `client_gone` | 重试只会白白消耗上游 |
+| 固定渠道（单次尝试）/ 严格会话 | `pinned_channel` / `strict_session` | 用户或管理员明确要求不换渠道 |
+| 内容违规（违规扣费错误码，含 CSAM 标记） | 交给常规规则（`non_retryable_error`） | 违规扣费按最后一次错误计算，换渠道成功会绕过扣费；违规内容也不应转发给更多上游 |
+
+"这个渠道"只看失败的那一次：A（开）失败后重试到 B（关），B 再失败按 B 的常规规则判断。异步任务提交走 `decideTaskRetry`，不受开关影响（上游可能已收费或已开始生成）。Responses WebSocket 的连接已被接管，`Written()` 为真，开关在该路径上不生效。
+
+`controller/relay.go`：上一次重试由本开关触发、而下一次换不到渠道时（避开失败渠道 §4 开启后候选耗尽，或没有其他可用渠道），返回上一次的真实上游错误，而不是 §4 配置的耗尽状态码 / 文案或"无可用渠道"。其他情况的耗尽行为不变。
+
+请求策略日志（设置 → 请求策略）显示新的决策原因：渠道设置出错一律重试 / 响应已开始输出 / 客户端已断开。
+
+计费：不改动预扣、结算、退款代码。重试复用同一次预扣，只有成功的那次结算，最终失败统一退款（`RefundFailedRequestBilling`），违规扣费仍按最后一次错误判断。
+
+### 测试
+
+- `service/relay_error_test.go` `TestDecideRelayRetryReasons`：开关打开时 400 / 504 / 不可重试错误都重试；重试次数用完、已开始输出、客户端断开、固定渠道时停止；内容违规不重试。
+- `model/channel_extend_test.go` `TestUpsertChannelExtendPersistsForceRetry`：只开启此开关的行完整往返，关闭后整行删除，重复 AutoMigrate 不报错（SQLite）。
+- `relaykit/dto/channel_extend_settings_test.go`：`IsZero` 不把只开了此开关的设置当作全零。
+- `web/src/features/channels/lib/__tests__/channel-force-retry.test.ts`：提交时带上 `force_retry`（关闭时发 `false` 以便清除），回填已保存的开关，开启后「渠道额外设置」标记为已配置。
+- 本地端到端（`scratchpad/feat_e2e.py force`，7 项，另跑 `fork_e2e.py` 38 项回归）：不开开关时普通 400 不重试；开启后 400 换到下一个渠道并成功；渠道详情返回 `force_retry`；避开失败渠道开启时唯一渠道失败后返回真实的上游 400 而不是 429；避开失败渠道关闭时同一渠道按全局次数重试 3 次；`RetryTimes=0` 时只请求一次；关闭开关后设置被清除。
+
+### 已知限制
+
+- 参数错误、上下文超长这类用户自身原因的错误在任何渠道都会失败，开关会让用户多等几轮，并把同一个错误请求发给更多渠道；这些渠道也会各记一次失败（是否触发自动禁用仍按各自规则）。
+- 最坏耗时约为（`RetryTimes` + 1）× 渠道超时，错误日志与上游请求量随之放大。上游对失败请求收费（例如超时后其实已生成）时，重复调用的成本由站点承担，用户只为成功的那次付费。
+- 多 key 渠道不进入避开失败渠道的排除集合（§4），开启开关后可能在同一渠道上换 key 重试。
+- MySQL / PostgreSQL 上 `force_retry` 新列的迁移尚未实机验证（本机没有实例）；部署前需确认 AutoMigrate 新增该列且重复启动不会重复 ALTER。
 

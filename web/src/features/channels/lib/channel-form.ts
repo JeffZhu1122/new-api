@@ -335,6 +335,8 @@ export const channelFormSchema = z
     // the limit is edited in the display currency and stored as quota units
     cost_ratio: z.number().optional(),
     quota_limit_amount: z.number().optional(),
+    // Retry every relay error from this channel (channel_extend)
+    force_retry: z.boolean().optional(),
     // Weekly availability schedule (channel_extend, off = always selectable)
     schedule_enabled: z.boolean().optional(),
     schedule_timezone: z.string().optional(),
@@ -716,6 +718,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   response_headers: '',
   cost_ratio: 0,
   quota_limit_amount: 0,
+  force_retry: false,
   schedule_enabled: false,
   schedule_timezone: DEFAULT_CHANNEL_SCHEDULE_TIMEZONE,
   schedule_windows: [],
@@ -901,6 +904,7 @@ export function transformChannelToFormDefaults(
     quota_limit_amount: quotaUnitsToEditableAmount(
       channel.extend_config?.quota_limit || 0
     ),
+    force_retry: Boolean(channel.extend_config?.force_retry),
     schedule_enabled: Boolean(channel.extend_config?.schedule),
     schedule_timezone:
       channel.extend_config?.schedule?.timezone ||
@@ -1165,6 +1169,7 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
     cost_ratio: formData.cost_ratio || 0,
     // The form edits the limit in the display currency; persist quota units.
     quota_limit: parseQuotaFromDollars(formData.quota_limit_amount || 0),
+    force_retry: Boolean(formData.force_retry),
     // The schedule only exists while enabled; undefined clears it.
     schedule: formData.schedule_enabled
       ? {

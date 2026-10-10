@@ -96,6 +96,7 @@ const CONFIGURATION_BLOCKS = {
       'response_headers',
       'cost_ratio',
       'quota_limit_amount',
+      'force_retry',
       'schedule_enabled',
       'schedule_timezone',
       'schedule_windows',
@@ -200,6 +201,7 @@ export function getChannelConfigurationState(
       (values.response_header_mode ?? 'off') !== 'off' ||
       (values.cost_ratio ?? 0) > 0 ||
       (values.quota_limit_amount ?? 0) > 0 ||
+      Boolean(values.force_retry) ||
       Boolean(values.schedule_enabled)
     ),
     upstreamModelDetection:
