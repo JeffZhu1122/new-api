@@ -529,3 +529,82 @@ func TestSetupLoginDoesNotTouchPasswordWhenPasswordFieldOmitted(t *testing.T) {
 	require.NoError(t, db.First(&stored, user.Id).Error)
 	assert.Equal(t, hashedPassword, stored.Password)
 }
+
+type userGroupModelsResponse struct {
+	Success bool              `json:"success"`
+	Data    []UserGroupModels `json:"data"`
+}
+
+func TestGetUserGroupModelsListsEachUsableGroup(t *testing.T) {
+	originalAutoGroups := setting.AutoGroups2JsonString()
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	originalSpecialGroups := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup.ReadAll()
+	originalGroupRatio := ratio_setting.GroupRatio2JSONString()
+	originalModelRatio := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateAutoGroupsByJsonString(originalAutoGroups))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+		specialGroups := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup
+		specialGroups.Clear()
+		specialGroups.AddAll(originalSpecialGroups)
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatio))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatio))
+	})
+	withSelfUseModeDisabled(t)
+
+	require.NoError(t, setting.UpdateAutoGroupsByJsonString(`["vip","default","unavailable"]`))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"auto":"自动分组","default":"默认分组","unavailable":"不可用分组"}`))
+	specialGroups := ratio_setting.GetGroupRatioSetting().GroupSpecialUsableGroup
+	specialGroups.Clear()
+	specialGroups.Set("default", map[string]string{
+		"+:vip":         "VIP 分组",
+		"-:unavailable": "",
+	})
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":1.5,"unavailable":1}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"zz-vip-model":1,"zz-shared-model":1,"zz-default-model":1}`))
+
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.Create(&model.User{
+		Id:       1004,
+		Username: "group-models-user",
+		Password: "password",
+		Group:    "default",
+		Status:   common.UserStatusEnabled,
+	}).Error)
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "vip", Model: "zz-vip-model", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "zz-shared-model", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "zz-shared-model", ChannelId: 2, Enabled: true},
+		{Group: "default", Model: "zz-default-model", ChannelId: 2, Enabled: true},
+		{Group: "default", Model: "zz-unpriced-model", ChannelId: 2, Enabled: true},
+		{Group: "default", Model: "zz-disabled-model", ChannelId: 2, Enabled: false},
+		{Group: "unavailable", Model: "zz-unavailable-model", ChannelId: 3, Enabled: true},
+	}).Error)
+
+	request := func() []UserGroupModels {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/api/user/self/group-models", nil)
+		context.Set("id", 1004)
+		GetUserGroupModels(context)
+		require.Equal(t, http.StatusOK, recorder.Code)
+		var payload userGroupModelsResponse
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+		require.True(t, payload.Success)
+		return payload.Data
+	}
+
+	// unusable groups are left out, unpriced and disabled models are hidden,
+	// and the auto group merges its groups in the configured order
+	assert.Equal(t, []UserGroupModels{
+		{Group: "default", Desc: "默认分组", Ratio: float64(1), Models: []string{"zz-default-model", "zz-shared-model"}},
+		{Group: "vip", Desc: "VIP 分组", Ratio: 1.5, Models: []string{"zz-shared-model", "zz-vip-model"}},
+		{Group: "auto", Desc: "自动分组", Ratio: "auto", AutoGroups: []string{"vip", "default"}, Models: []string{"zz-default-model", "zz-shared-model", "zz-vip-model"}},
+	}, request())
+
+	// self-use mode accepts unpriced models, as /v1/models does
+	operation_setting.SelfUseModeEnabled = true
+	groups := request()
+	require.Len(t, groups, 3)
+	assert.Equal(t, []string{"zz-default-model", "zz-shared-model", "zz-unpriced-model"}, groups[0].Models)
+}
