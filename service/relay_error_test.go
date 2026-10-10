@@ -1,6 +1,7 @@
 package service
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -192,6 +193,10 @@ func TestUpstreamAddressesMaskOnlyConfiguredAddresses(t *testing.T) {
 	}
 }
 
+func forceRetryChannel(c *gin.Context) {
+	common.SetContextKey(c, constant.ContextKeyChannelExtendSetting, kitdto.ChannelExtendSettings{ForceRetry: true})
+}
+
 func TestDecideRelayRetryReasons(t *testing.T) {
 	upstream := func(status int) *types.NewAPIError {
 		return types.NewOpenAIError(errors.New("upstream"), types.ErrorCodeBadResponseStatusCode, status)
@@ -218,6 +223,25 @@ func TestDecideRelayRetryReasons(t *testing.T) {
 			RequestPolicy(c).SessionModeSource = "global"
 		}, want: PolicyDecision{Action: "stop", Reason: "strict_session", Source: "global"}},
 		{name: "nil error", retries: 1, want: PolicyDecision{Action: "stop", Reason: "request_completed", Source: "system"}},
+		{name: "force retry overrides status rules", err: upstream(http.StatusBadRequest), retries: 1, setup: forceRetryChannel, want: PolicyDecision{Action: "retry", Reason: ForceRetryReason, Source: "channel"}},
+		{name: "force retry overrides always skipped status", err: upstream(http.StatusGatewayTimeout), retries: 1, setup: forceRetryChannel, want: PolicyDecision{Action: "retry", Reason: ForceRetryReason, Source: "channel"}},
+		{name: "force retry overrides skip retry error", err: types.NewErrorWithStatusCode(errors.New("local"), types.ErrorCodeInvalidRequest, http.StatusBadRequest, types.ErrOptionWithSkipRetry()), retries: 1, setup: forceRetryChannel, want: PolicyDecision{Action: "retry", Reason: ForceRetryReason, Source: "channel"}},
+		{name: "force retry keeps attempt budget", err: upstream(http.StatusBadRequest), retries: 0, setup: forceRetryChannel, want: PolicyDecision{Action: "stop", Reason: "attempt_budget_exhausted", Source: "global"}},
+		{name: "force retry stops after response started", err: upstream(http.StatusInternalServerError), retries: 1, setup: func(c *gin.Context) {
+			forceRetryChannel(c)
+			_, _ = c.Writer.WriteString("data: partial\n\n")
+		}, want: PolicyDecision{Action: "stop", Reason: "response_started", Source: "system"}},
+		{name: "force retry stops after client disconnect", err: upstream(http.StatusInternalServerError), retries: 1, setup: func(c *gin.Context) {
+			forceRetryChannel(c)
+			ctx, cancel := context.WithCancel(context.Background())
+			cancel()
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil).WithContext(ctx)
+		}, want: PolicyDecision{Action: "stop", Reason: "client_gone", Source: "system"}},
+		{name: "force retry never resends a content violation", err: NormalizeViolationFeeError(types.NewOpenAIError(errors.New("blocked"), types.ErrorCode(ViolationFeeCodePrefix+"test"), http.StatusBadRequest)), retries: 1, setup: forceRetryChannel, want: PolicyDecision{Action: "stop", Reason: "non_retryable_error", Source: "system"}},
+		{name: "force retry keeps channel pin", err: upstream(http.StatusBadRequest), retries: 1, setup: func(c *gin.Context) {
+			forceRetryChannel(c)
+			GetChannelConstraints(c).AddPin(dto.ChannelPin{ChannelId: 1, Source: dto.PinSourceToken, Rank: dto.PinRankToken, RetryMode: dto.PinRetrySingleAttempt})
+		}, want: PolicyDecision{Action: "stop", Reason: "pinned_channel", Source: "channel_constraint"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			c, _ := gin.CreateTestContext(httptest.NewRecorder())

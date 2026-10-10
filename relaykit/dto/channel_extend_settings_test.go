@@ -102,6 +102,8 @@ func TestChannelExtendSettingsIsZero(t *testing.T) {
 	assert.False(t, (&ChannelExtendSettings{QuotaLimit: 1}).IsZero())
 	// 可用时段单独配置时同样不得被当作全零删除
 	assert.False(t, (&ChannelExtendSettings{Schedule: &ChannelSchedule{Timezone: "UTC", Windows: []ChannelScheduleWindow{{Start: "09:00", End: "18:00"}}}}).IsZero())
+	// 出错一律重试单独开启时同样不得被当作全零删除
+	assert.False(t, (&ChannelExtendSettings{ForceRetry: true}).IsZero())
 }
 
 // 2026-09-30 是周三；用 UTC 时刻输入，验证按规则时区换算后再比较

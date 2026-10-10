@@ -10,12 +10,17 @@ import (
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 
 	"github.com/bytedance/gopkg/util/gopool"
 	"github.com/gin-gonic/gin"
 )
+
+// ForceRetryReason marks a retry made only because the failed channel has
+// "always retry on errors" enabled.
+const ForceRetryReason = "channel_force_retry"
 
 // DecideRelayRetry is the single retry decision for relay attempts. The reason
 // is recorded in the request policy decision events of the log details.
@@ -35,6 +40,20 @@ func DecideRelayRetry(c *gin.Context, err *types.NewAPIError, retryTimes int) Po
 	}
 	if types.IsChannelError(err) {
 		return PolicyDecision{Action: "retry", Reason: "channel_error", Source: "system"}
+	}
+	// 渠道「出错一律重试」：跳过状态码、错误码、关键词规则与不可重试标记。
+	// 违规内容不换渠道重发，交给下方常规规则处理。
+	if extend, ok := common.GetContextKeyType[dto.ChannelExtendSettings](c, constant.ContextKeyChannelExtendSetting); ok && extend.ForceRetry && !IsViolationFeeCode(err.GetErrorCode()) {
+		switch {
+		case c.Writer.Written():
+			// 已向客户端输出内容，再重试会把两次响应拼在一起
+			return PolicyDecision{Action: "stop", Reason: "response_started", Source: "system"}
+		case c.Request != nil && c.Request.Context().Err() != nil:
+			return PolicyDecision{Action: "stop", Reason: "client_gone", Source: "system"}
+		case retryTimes <= 0:
+			return PolicyDecision{Action: "stop", Reason: "attempt_budget_exhausted", Source: "global"}
+		}
+		return PolicyDecision{Action: "retry", Reason: ForceRetryReason, Source: "channel"}
 	}
 	if types.IsSkipRetryError(err) {
 		return PolicyDecision{Action: "stop", Reason: "non_retryable_error", Source: "system"}
