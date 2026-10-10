@@ -22,6 +22,7 @@ import {
   createRootRoute,
   createRoute,
   createRouter,
+  getRouteApi,
   RouterProvider,
 } from '@tanstack/react-router'
 import {
@@ -294,10 +295,15 @@ it('keeps a long amount within its column while showing the full amount in detai
   ).toHaveLength(2)
 })
 
+const keysRouteApi = getRouteApi('/_authenticated/keys/')
+
 function KeysPage() {
   return (
     <ApiKeysProvider>
-      <ApiKeysTable />
+      <ApiKeysTable
+        search={keysRouteApi.useSearch()}
+        navigate={keysRouteApi.useNavigate()}
+      />
       <Toaster />
     </ApiKeysProvider>
   )
