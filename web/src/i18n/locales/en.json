@@ -3,6 +3,7 @@
     "{{count}} / {{max}} fallback groups selected": "{{count}} / {{max}} fallback groups selected",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} channel(s) stayed disabled because they reached their quota limit",
     "{{count}} discount": "{{count}} discount",
+    "{{endpoint}} call, not billed": "{{endpoint}} call, not billed",
     "0.9 = 10% off. Values must be in (0, 10].": "0.9 = 10% off. Values must be in (0, 10].",
     "360": "360",
     "1000": "1000",

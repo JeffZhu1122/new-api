@@ -7,7 +7,6 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
-	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 
@@ -66,13 +65,13 @@ func respondRpmTotals(c *gin.Context, read func([]int) (service.RpmReading, erro
 		}
 		id, err := strconv.Atoi(part)
 		if err != nil || id <= 0 {
-			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			common.ApiErrorT(c, "Invalid parameters")
 			return
 		}
 		ids = append(ids, id)
 	}
 	if len(ids) == 0 || len(ids) > rpmStatsMaxIds {
-		common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
 	reading, err := read(ids)
@@ -149,14 +148,14 @@ func GetUserRpmChannels(c *gin.Context) {
 func parseRpmBreakdownParams(c *gin.Context) (id int, limit int, ok bool) {
 	id, err := strconv.Atoi(c.Param("id"))
 	if err != nil || id <= 0 {
-		common.ApiErrorI18n(c, i18n.MsgInvalidId)
+		common.ApiErrorT(c, "Invalid ID")
 		return 0, 0, false
 	}
 	limit = rpmStatsDefaultLimit
 	if raw := c.Query("limit"); raw != "" {
 		limit, err = strconv.Atoi(raw)
 		if err != nil || limit <= 0 {
-			common.ApiErrorI18n(c, i18n.MsgInvalidParams)
+			common.ApiErrorT(c, "Invalid parameters")
 			return 0, 0, false
 		}
 		limit = min(limit, rpmStatsMaxLimit)

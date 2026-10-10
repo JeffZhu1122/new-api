@@ -3,6 +3,7 @@
     "{{count}} / {{max}} fallback groups selected": "已选择 {{count}} / {{max}} 个备用分组",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} 个渠道已达额度上限，保持禁用",
     "{{count}} discount": "{{count}} 条折扣",
+    "{{endpoint}} call, not billed": "{{endpoint}} 调用，不计费",
     "0.9 = 10% off. Values must be in (0, 10].": "0.9 = 九折。取值范围 (0, 10]。",
     "360": "360",
     "1000": "1000",
