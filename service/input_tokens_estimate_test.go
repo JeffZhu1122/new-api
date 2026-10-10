@@ -3,6 +3,7 @@ package service
 import (
 	"testing"
 
+	"github.com/QuantumNous/new-api/tokenkit"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -52,7 +53,7 @@ func TestEstimateInputTokensFromJSONExtraction(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			estimate, ok := estimateInputTokensFromJSON([]byte(tt.body), model)
 			require.True(t, ok)
-			assert.Equal(t, EstimateTokenByModel(model, tt.wantText), estimate)
+			assert.Equal(t, tokenkit.Count(model, tt.wantText), estimate)
 		})
 	}
 }

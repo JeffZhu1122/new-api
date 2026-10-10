@@ -7058,6 +7058,7 @@
     "Verification required to reveal the saved key.": "需要驗證才能顯示已儲存的金鑰。",
     "Verification scope is missing": "缺少驗證範圍",
     "Violation fee charged": "已收取違規費用",
+    "{{endpoint}} call, not billed": "{{endpoint}} 呼叫，不計費",
     "Verify": "驗證",
     "Verify again before retrying this action.": "重試此操作前，請重新驗證。",
     "VIP group": "VIP 分組",

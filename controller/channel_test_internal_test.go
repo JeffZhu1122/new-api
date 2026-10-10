@@ -213,7 +213,7 @@ func TestCopyChannelCreatesManuallyDisabledClone(t *testing.T) {
 
 	assert.Contains(t, recorder.Body.String(), `"success":true`)
 	var clone model.Channel
-	require.NoError(t, db.Where("name = ?", "enabled origin_复制").First(&clone).Error)
+	require.NoError(t, db.Where("name = ?", "enabled origin_copy").First(&clone).Error)
 	assert.Equal(t, common.ChannelStatusManuallyDisabled, clone.Status, "a copy must never take traffic before an admin enables it")
 	var abilities []model.Ability
 	require.NoError(t, db.Where("channel_id = ?", clone.Id).Find(&abilities).Error)

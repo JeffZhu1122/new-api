@@ -676,11 +676,11 @@ func UpdateUser(c *gin.Context) {
 		return
 	}
 	if err := setting.CheckRateLimitOverride(updatedUser.RateLimit); err != nil {
-		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
+		common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
 	if err := ratio_setting.CheckUserModelDiscountMap(updatedUser.ModelDiscount); err != nil {
-		common.ApiErrorI18n(c, i18n.MsgUserInputInvalid, map[string]any{"Error": err.Error()})
+		common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)

@@ -7058,6 +7058,7 @@
     "Verification required to reveal the saved key.": "Yêu cầu xác minh để tiết lộ khóa đã lưu.",
     "Verification scope is missing": "Thiếu phạm vi xác minh",
     "Violation fee charged": "Đã thu phí vi phạm",
+    "{{endpoint}} call, not billed": "Lệnh gọi {{endpoint}}, không tính phí",
     "Verify": "Kiểm tra",
     "Verify again before retrying this action.": "Vui lòng xác minh lại trước khi thử lại thao tác này.",
     "VIP group": "Nhóm VIP",

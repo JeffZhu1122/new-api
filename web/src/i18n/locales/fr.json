@@ -7058,6 +7058,7 @@
     "Verification required to reveal the saved key.": "Vérification requise pour révéler la clé enregistrée.",
     "Verification scope is missing": "La portée de vérification est manquante",
     "Violation fee charged": "Frais d'infraction facturés",
+    "{{endpoint}} call, not billed": "Appel {{endpoint}}, non facturé",
     "Verify": "Vérifier",
     "Verify again before retrying this action.": "Veuillez vous authentifier à nouveau avant de réessayer cette action.",
     "VIP group": "Groupe VIP",

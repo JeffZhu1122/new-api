@@ -7058,6 +7058,7 @@
     "Verification required to reveal the saved key.": "保存されたキーを表示するには、認証が必要です。",
     "Verification scope is missing": "検証スコープがありません",
     "Violation fee charged": "違反料金を請求しました",
+    "{{endpoint}} call, not billed": "{{endpoint}} の呼び出し（課金なし）",
     "Verify": "認証",
     "Verify again before retrying this action.": "この操作を再試行する前に、もう一度認証してください。",
     "VIP group": "VIP グループ",

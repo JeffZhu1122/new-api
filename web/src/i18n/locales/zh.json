@@ -7058,6 +7058,7 @@
     "Verification required to reveal the saved key.": "需要验证才能显示已保存的密钥。",
     "Verification scope is missing": "缺少验证范围",
     "Violation fee charged": "已收取违规费用",
+    "{{endpoint}} call, not billed": "{{endpoint}} 调用，不计费",
     "Verify": "验证",
     "Verify again before retrying this action.": "重试此操作前，请重新验证。",
     "VIP group": "VIP 分组",

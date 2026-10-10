@@ -562,7 +562,7 @@ func PostCountTokensLog(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, inpu
 		ModelName:      relayInfo.OriginModelName,
 		TokenName:      ctx.GetString("token_name"),
 		Quota:          0,
-		Content:        endpoint + " 调用，不计费",
+		Content:        []*common.Message{common.NewMessage("{{endpoint}} call, not billed", map[string]any{"endpoint": endpoint})},
 		TokenId:        relayInfo.TokenId,
 		UseTimeSeconds: int(time.Now().Unix() - relayInfo.StartTime.Unix()),
 		IsStream:       false,

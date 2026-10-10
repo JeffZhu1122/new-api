@@ -7058,6 +7058,7 @@
     "Verification required to reveal the saved key.": "Требуется подтверждение для отображения сохраненного ключа.",
     "Verification scope is missing": "Область проверки не указана",
     "Violation fee charged": "Списан штраф за нарушение",
+    "{{endpoint}} call, not billed": "Вызов {{endpoint}}, без оплаты",
     "Verify": "Проверить",
     "Verify again before retrying this action.": "Прежде чем повторить действие, подтвердите личность ещё раз.",
     "VIP group": "VIP-группа",
