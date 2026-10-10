@@ -64,7 +64,6 @@ import { Switch } from '@/components/ui/switch'
 import { Textarea } from '@/components/ui/textarea'
 import { RelatedPolicyLink } from '@/features/system-settings/request-policies/related-policy-link'
 import { useStatus } from '@/hooks/use-status'
-import { getUserModels, getUserGroups } from '@/lib/api'
 import { getCurrencyDisplay, getCurrencyLabel } from '@/lib/currency'
 import { handleServerError } from '@/lib/handle-server-error'
 import {
@@ -80,6 +79,11 @@ import {
   getTokenAutoGroups,
 } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
+import {
+  apiKeyOwnerGroupsQuery,
+  apiKeyOwnerModelsQuery,
+  useApiKeyOwner,
+} from '../hooks/use-api-key-owner'
 import {
   getApiKeyFormSchema,
   type ApiKeyFormValues,
@@ -112,6 +116,8 @@ export function ApiKeysMutateDrawer({
   const isUpdate = !!currentRow
   const currentRowId = currentRow?.id
   const { triggerRefresh } = useApiKeys()
+  const owner = useApiKeyOwner()
+  const ownerId = owner?.id
   const { status, loading: statusLoading } = useStatus()
   const [isSubmitting, setIsSubmitting] = useState(false)
   const [advancedOpen, setAdvancedOpen] = useState(false)
@@ -122,8 +128,7 @@ export function ApiKeysMutateDrawer({
 
   // Fetch models
   const { data: modelsData } = useQuery({
-    queryKey: ['user-models'],
-    queryFn: async () => requireServerSuccess(await getUserModels()),
+    ...apiKeyOwnerModelsQuery(owner),
     enabled: open,
     staleTime: 0,
   })
@@ -134,8 +139,7 @@ export function ApiKeysMutateDrawer({
     isFetched: groupsFetched,
     isFetching: groupsFetching,
   } = useQuery({
-    queryKey: ['user-groups'],
-    queryFn: async () => requireServerSuccess(await getUserGroups()),
+    ...apiKeyOwnerGroupsQuery(owner),
     enabled: open,
     staleTime: 0,
   })
@@ -145,9 +149,11 @@ export function ApiKeysMutateDrawer({
     isFetched: apiKeyFetched,
     isFetching: apiKeyFetching,
   } = useQuery({
-    queryKey: ['api-key', currentRowId],
+    queryKey: ownerId
+      ? ['api-key', ownerId, currentRowId]
+      : ['api-key', currentRowId],
     queryFn: async () =>
-      requireServerSuccess(await getApiKey(currentRowId ?? 0)),
+      requireServerSuccess(await getApiKey(currentRowId ?? 0, ownerId)),
     enabled: open && isUpdate && currentRowId !== undefined,
     staleTime: 0,
   })
@@ -157,8 +163,9 @@ export function ApiKeysMutateDrawer({
     isFetched: autoGroupsFetched,
     isFetching: autoGroupsFetching,
   } = useQuery({
-    queryKey: ['token-auto-groups'],
-    queryFn: async () => requireServerSuccess(await getTokenAutoGroups()),
+    queryKey: ownerId ? ['token-auto-groups', ownerId] : ['token-auto-groups'],
+    queryFn: async () =>
+      requireServerSuccess(await getTokenAutoGroups(ownerId)),
     enabled: open,
     staleTime: 0,
   })
@@ -298,10 +305,13 @@ export function ApiKeysMutateDrawer({
       const basePayload = transformFormDataToPayload(data)
 
       if (isUpdate && currentRow) {
-        const result = await updateApiKey({
-          ...basePayload,
-          id: currentRow.id,
-        })
+        const result = await updateApiKey(
+          {
+            ...basePayload,
+            id: currentRow.id,
+          },
+          ownerId
+        )
         if (result.success) {
           toast.success(t(SUCCESS_MESSAGES.API_KEY_UPDATED))
           onOpenChange(false)
@@ -315,13 +325,16 @@ export function ApiKeysMutateDrawer({
         let successCount = 0
 
         for (let i = 0; i < count; i++) {
-          const result = await createApiKey({
-            ...basePayload,
-            name:
-              i === 0 && data.name
-                ? data.name
-                : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
-          })
+          const result = await createApiKey(
+            {
+              ...basePayload,
+              name:
+                i === 0 && data.name
+                  ? data.name
+                  : `${data.name || 'default'}-${Math.random().toString(36).slice(2, 8)}`,
+            },
+            ownerId
+          )
           if (result.success) {
             successCount++
           } else {
@@ -468,7 +481,7 @@ export function ApiKeysMutateDrawer({
                       />
                     </FormControl>
                     <FormMessage />
-                    <GroupModelsLink group={field.value} />
+                    {!owner && <GroupModelsLink group={field.value} />}
                   </FormItem>
                 )}
               />

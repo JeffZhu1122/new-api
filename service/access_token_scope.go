@@ -239,6 +239,9 @@ var accessTokenVerificationScopes = map[string]string{
 	VerificationScopeAccessTokenUpdate:     "",
 	VerificationScopeAccessTokenRevoke:     "",
 	VerificationScopeLogin:                 "",
+
+	// Revealing another user's API key is limited to browser sessions.
+	VerificationScopeAdminUserTokenRead: "",
 }
 
 // AccessTokenVerificationScope returns the token scope a PAT needs for a

@@ -45,7 +45,10 @@ const (
 	VerificationScopeAdminUserPasskeyReset = "admin.user.passkey.reset"
 	VerificationScopeAdminUserTwoFADisable = "admin.user.2fa.disable"
 	VerificationScopeAdminUserBindingClear = "admin.user.binding.clear"
-	verificationScopeAdminUserPrefix       = "admin.user."
+	// VerificationScopeAdminUserTokenRead lets the root user reveal one API key
+	// of another user; the proof is bound to that user and key.
+	VerificationScopeAdminUserTokenRead = "admin.user.token.read"
+	verificationScopeAdminUserPrefix    = "admin.user."
 )
 
 // adminUserManageActions are the ManageUser actions that change a user's
@@ -97,6 +100,12 @@ type AdminUserBindingContext struct {
 	UserID      int    `json:"user_id"`
 	BindingType string `json:"binding_type,omitempty"`
 	ProviderID  int    `json:"provider_id,omitempty"`
+}
+
+// AdminUserTokenContext names exactly one API key of the managed user.
+type AdminUserTokenContext struct {
+	UserID  int `json:"user_id"`
+	TokenID int `json:"token_id"`
 }
 
 type AdminUserCreateContext struct {
@@ -220,6 +229,12 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 			return VerificationBinding{}, ErrVerificationContextInvalid
 		}
 		normalized = context
+	case VerificationScopeAdminUserTokenRead:
+		var context AdminUserTokenContext
+		if len(fields) != 2 || common.Unmarshal(operation.Context, &context) != nil || context.UserID <= 0 || context.TokenID <= 0 {
+			return VerificationBinding{}, ErrVerificationContextInvalid
+		}
+		normalized = context
 	case VerificationScopeAdminUserCreate:
 		var context AdminUserCreateContext
 		if len(fields) != 1 || common.Unmarshal(fields["role"], &context.Role) != nil || context.Role < common.RoleAdminUser || !common.IsValidateRole(context.Role) {
@@ -330,7 +345,8 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 		VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 		VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 		VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
-		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
+		VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
+		VerificationScopeAdminUserTokenRead:
 		if scope == VerificationScopeAccountDelete && state.Role == common.RoleRootUser {
 			return nil, ErrVerificationForbidden
 		}
@@ -375,7 +391,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if state.Status != common.UserStatusEnabled || state.AuthVersion != identity.UserAuthVersion {
 		return nil, ErrAuthTokenInvalid
 	}
-	if scope == VerificationScopeChannelKeyRead && state.Role != common.RoleRootUser {
+	if (scope == VerificationScopeChannelKeyRead || scope == VerificationScopeAdminUserTokenRead) && state.Role != common.RoleRootUser {
 		return nil, ErrVerificationForbidden
 	}
 	if strings.HasPrefix(scope, verificationScopeAdminUserPrefix) && state.Role < common.RoleAdminUser {
@@ -395,7 +411,8 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 			case VerificationScopeAccountBind, VerificationScopeAccountUnbind, VerificationScopePasswordSet, VerificationScopePasswordChange, VerificationScopeAccountDelete,
 				VerificationScopeAdminUserCreate, VerificationScopeAdminUserUpdate, VerificationScopeAdminUserDelete,
 				VerificationScopeAdminUserManage, VerificationScopeAdminUserPasskeyReset,
-				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear:
+				VerificationScopeAdminUserTwoFADisable, VerificationScopeAdminUserBindingClear,
+				VerificationScopeAdminUserTokenRead:
 				methods[i].Available, methods[i].Reason = false, "Password authentication is disabled."
 			}
 		}

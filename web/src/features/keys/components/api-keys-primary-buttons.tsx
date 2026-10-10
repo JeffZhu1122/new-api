@@ -40,12 +40,14 @@ import {
 import { useApiInfo } from '@/features/dashboard/hooks/use-status-data'
 import { useStatus } from '@/hooks/use-status'
 
+import { useApiKeyOwner } from '../hooks/use-api-key-owner'
 import { useApiKeys } from './api-keys-provider'
 import { GroupModelsSheet } from './group-models-sheet'
 
 export function ApiKeysPrimaryButtons() {
   const { t } = useTranslation()
   const { setOpen } = useApiKeys()
+  const owner = useApiKeyOwner()
   const [groupModelsOpen, setGroupModelsOpen] = useState(false)
   const { status, loading } = useStatus()
   const { items } = useApiInfo()
@@ -62,6 +64,16 @@ export function ApiKeysPrimaryButtons() {
           description: '',
         },
       ]
+
+  // Addresses and group models describe the signed-in user's own access.
+  if (owner) {
+    return (
+      <Button size='sm' onClick={() => setOpen('create')}>
+        <Plus className='h-4 w-4' />
+        {t('Create API Key')}
+      </Button>
+    )
+  }
 
   return (
     <div className='flex flex-wrap gap-2'>

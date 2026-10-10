@@ -174,6 +174,21 @@ func SetApiRouter(router *gin.Engine) {
 				adminRoute.GET("/2fa/stats", controller.Admin2FAStats)
 				adminRoute.DELETE("/:id/2fa", controller.AdminDisable2FA)
 			}
+
+			// Root manages other users' API keys; browser sessions only.
+			userTokenRoute := userRoute.Group("/:id/tokens")
+			userTokenRoute.Use(middleware.RootAuth(), middleware.DisableCache())
+			{
+				userTokenRoute.GET("", controller.AdminGetUserTokens)
+				userTokenRoute.GET("/groups", controller.AdminGetUserTokenGroups)
+				userTokenRoute.GET("/auto-groups", controller.AdminGetUserTokenAutoGroups)
+				userTokenRoute.GET("/models", controller.AdminGetUserTokenModels)
+				userTokenRoute.GET("/:token_id", controller.AdminGetUserToken)
+				userTokenRoute.POST("", controller.AdminAddUserToken)
+				userTokenRoute.PUT("", controller.AdminUpdateUserToken)
+				userTokenRoute.DELETE("/:token_id", controller.AdminDeleteUserToken)
+				userTokenRoute.POST("/:token_id/key", middleware.CriticalRateLimit(), controller.AdminGetUserTokenKey)
+			}
 		}
 
 		// Subscription billing (plans, purchase, admin management)
