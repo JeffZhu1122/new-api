@@ -3,6 +3,7 @@
     "360": "360",
     "1000": "1000",
     "10000": "10000",
+    "{{endpoint}} call, not billed": "Lệnh gọi {{endpoint}}, không tính phí",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} kênh vẫn bị tắt vì đã đạt giới hạn hạn mức",
     "{{count}} / {{max}} fallback groups selected": "{{count}} / {{max}} fallback groups selected",
     "{{count}} discount": "{{count}} mức giảm giá",

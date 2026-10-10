@@ -3,6 +3,7 @@
     "360": "360",
     "1000": "1000",
     "10000": "10000",
+    "{{endpoint}} call, not billed": "{{endpoint}} 呼叫，不計費",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} 個管道已達額度上限，保持停用",
     "{{count}} / {{max}} fallback groups selected": "已選擇 {{count}} / {{max}} 個備用分組",
     "{{count}} discount": "{{count}} 條折扣",

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/tokenkit"
 	"github.com/gin-gonic/gin"
 	"github.com/tidwall/gjson"
 )
@@ -81,7 +82,7 @@ func estimateInputTokensFromJSON(body []byte, modelName string) (int, bool) {
 			collectRelayText(value, &sb, 0)
 		}
 	}
-	return EstimateTokenByModel(modelName, sb.String()), true
+	return tokenkit.Count(modelName, sb.String()), true
 }
 
 // collectRelayText gathers user-visible input text: plain strings, message

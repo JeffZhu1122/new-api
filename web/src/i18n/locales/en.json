@@ -3,6 +3,7 @@
     "360": "360",
     "1000": "1000",
     "10000": "10000",
+    "{{endpoint}} call, not billed": "{{endpoint}} call, not billed",
     "{{count}} channel(s) stayed disabled because they reached their quota limit": "{{count}} channel(s) stayed disabled because they reached their quota limit",
     "{{count}} / {{max}} fallback groups selected": "{{count}} / {{max}} fallback groups selected",
     "{{count}} discount": "{{count}} discount",
