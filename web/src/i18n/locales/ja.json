@@ -7426,6 +7426,21 @@
     "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "このチャネルのすべてのエラーを再試行し、ステータスコード・エラーコード・キーワードの再試行ルールを無視します。グローバルの再試行回数は引き続き適用されます（0 の場合は再試行しません）。送信を開始した応答、切断されたクライアント、固定チャネル、厳格セッション、コンテンツ違反は再試行されず、非同期タスクの送信には影響しません。",
     "Channel always retries on errors": "チャネル設定によりエラー時は常に再試行",
     "Response already started": "応答の送信が開始済み",
-    "Client disconnected": "クライアントが切断されました"
+    "Client disconnected": "クライアントが切断されました",
+    "Groups & Models": "グループとモデル",
+    "The models each group you can use is able to call. A listed model can still fail while its channels are outside their schedule, at their limits or temporarily unavailable.": "利用できる各グループが呼び出せるモデルです。一覧にあるモデルでも、チャネルが利用時間外、上限到達、または一時的に利用できない場合は失敗することがあります。",
+    "Failed to load groups and models": "グループとモデルの読み込みに失敗しました",
+    "No groups available": "利用できるグループがありません",
+    "Your account cannot use any group yet.": "お使いのアカウントはまだどのグループも利用できません。",
+    "All groups": "すべてのグループ",
+    "No matching models": "一致するモデルがありません",
+    "Try a different search term.": "別の検索語をお試しください。",
+    "Copy all model names in {{group}}": "{{group}} のすべてのモデル名をコピー",
+    "Copy all": "すべてコピー",
+    "Tries these groups in order: {{groups}}": "次の順にグループを試します：{{groups}}",
+    "No models available in this group": "このグループで利用できるモデルはありません",
+    "View models by group": "グループ別にモデルを表示",
+    "Models available in this group: {{count}}": "このグループで利用できるモデル：{{count}} 個",
+    "Models: {{count}}": "モデル：{{count}} 個"
   }
 }

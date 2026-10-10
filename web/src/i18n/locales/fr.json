@@ -7426,6 +7426,21 @@
     "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "Réessayer toute erreur de ce canal, en ignorant les règles de nouvelle tentative par code d'état, code d'erreur et mot-clé. Le nombre global de tentatives s'applique toujours (0 désactive les nouvelles tentatives). Les réponses déjà en cours d'envoi, les clients déconnectés, les canaux épinglés, les sessions strictes et les violations de contenu ne sont jamais réessayés, et les soumissions de tâches asynchrones ne sont pas concernées.",
     "Channel always retries on errors": "Le canal réessaie toujours en cas d'erreur",
     "Response already started": "Réponse déjà commencée",
-    "Client disconnected": "Client déconnecté"
+    "Client disconnected": "Client déconnecté",
+    "Groups & Models": "Groupes et modèles",
+    "The models each group you can use is able to call. A listed model can still fail while its channels are outside their schedule, at their limits or temporarily unavailable.": "Les modèles que chaque groupe auquel vous avez accès peut appeler. Un modèle listé peut tout de même échouer lorsque ses canaux sont hors de leur plage horaire, à leur limite ou temporairement indisponibles.",
+    "Failed to load groups and models": "Échec du chargement des groupes et des modèles",
+    "No groups available": "Aucun groupe disponible",
+    "Your account cannot use any group yet.": "Votre compte ne peut encore utiliser aucun groupe.",
+    "All groups": "Tous les groupes",
+    "No matching models": "Aucun modèle correspondant",
+    "Try a different search term.": "Essayez un autre terme de recherche.",
+    "Copy all model names in {{group}}": "Copier tous les noms de modèles de {{group}}",
+    "Copy all": "Tout copier",
+    "Tries these groups in order: {{groups}}": "Essaie ces groupes dans l'ordre : {{groups}}",
+    "No models available in this group": "Aucun modèle disponible dans ce groupe",
+    "View models by group": "Voir les modèles par groupe",
+    "Models available in this group: {{count}}": "Modèles disponibles dans ce groupe : {{count}}",
+    "Models: {{count}}": "Modèles : {{count}}"
   }
 }

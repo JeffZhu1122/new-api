@@ -7426,6 +7426,21 @@
     "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "此渠道的任何报错都重试，忽略状态码、错误码和关键词重试规则。仍受全局重试次数限制（为 0 时不重试）。已开始输出的响应、客户端已断开、固定渠道、严格会话和内容违规不会重试，异步任务提交不受影响。",
     "Channel always retries on errors": "渠道设置出错一律重试",
     "Response already started": "响应已开始输出",
-    "Client disconnected": "客户端已断开"
+    "Client disconnected": "客户端已断开",
+    "Groups & Models": "分组与模型",
+    "The models each group you can use is able to call. A listed model can still fail while its channels are outside their schedule, at their limits or temporarily unavailable.": "你可以使用的每个分组能调用的模型。列出的模型在其渠道处于可用时段之外、达到上限或暂时不可用时仍可能调用失败。",
+    "Failed to load groups and models": "加载分组与模型失败",
+    "No groups available": "没有可用分组",
+    "Your account cannot use any group yet.": "你的账户暂时不能使用任何分组。",
+    "All groups": "全部分组",
+    "No matching models": "没有匹配的模型",
+    "Try a different search term.": "换个关键词试试。",
+    "Copy all model names in {{group}}": "复制 {{group}} 的全部模型名称",
+    "Copy all": "全部复制",
+    "Tries these groups in order: {{groups}}": "按顺序尝试这些分组：{{groups}}",
+    "No models available in this group": "此分组暂无可用模型",
+    "View models by group": "按分组查看可用模型",
+    "Models available in this group: {{count}}": "此分组可用模型：{{count}} 个",
+    "Models: {{count}}": "模型：{{count}} 个"
   }
 }

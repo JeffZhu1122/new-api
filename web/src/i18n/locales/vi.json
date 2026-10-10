@@ -7426,6 +7426,21 @@
     "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "Thử lại mọi lỗi từ kênh này, bỏ qua các quy tắc thử lại theo mã trạng thái, mã lỗi và từ khóa. Số lần thử lại toàn cục vẫn được áp dụng (0 sẽ tắt thử lại). Phản hồi đã bắt đầu gửi, máy khách đã ngắt kết nối, kênh được ghim, phiên nghiêm ngặt và vi phạm nội dung không bao giờ được thử lại, và việc gửi tác vụ bất đồng bộ không bị ảnh hưởng.",
     "Channel always retries on errors": "Kênh luôn thử lại khi có lỗi",
     "Response already started": "Phản hồi đã bắt đầu",
-    "Client disconnected": "Máy khách đã ngắt kết nối"
+    "Client disconnected": "Máy khách đã ngắt kết nối",
+    "Groups & Models": "Nhóm và mô hình",
+    "The models each group you can use is able to call. A listed model can still fail while its channels are outside their schedule, at their limits or temporarily unavailable.": "Các mô hình mà mỗi nhóm bạn có thể dùng được phép gọi. Mô hình trong danh sách vẫn có thể thất bại khi kênh của nó nằm ngoài lịch, đạt giới hạn hoặc tạm thời không khả dụng.",
+    "Failed to load groups and models": "Không tải được nhóm và mô hình",
+    "No groups available": "Không có nhóm khả dụng",
+    "Your account cannot use any group yet.": "Tài khoản của bạn chưa thể dùng nhóm nào.",
+    "All groups": "Tất cả nhóm",
+    "No matching models": "Không có mô hình phù hợp",
+    "Try a different search term.": "Hãy thử từ khóa khác.",
+    "Copy all model names in {{group}}": "Sao chép tất cả tên mô hình trong {{group}}",
+    "Copy all": "Sao chép tất cả",
+    "Tries these groups in order: {{groups}}": "Thử các nhóm theo thứ tự: {{groups}}",
+    "No models available in this group": "Nhóm này chưa có mô hình khả dụng",
+    "View models by group": "Xem mô hình theo nhóm",
+    "Models available in this group: {{count}}": "Mô hình khả dụng trong nhóm này: {{count}}",
+    "Models: {{count}}": "Mô hình: {{count}}"
   }
 }

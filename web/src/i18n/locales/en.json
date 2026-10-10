@@ -7426,6 +7426,21 @@
     "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.": "Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.",
     "Channel always retries on errors": "Channel always retries on errors",
     "Response already started": "Response already started",
-    "Client disconnected": "Client disconnected"
+    "Client disconnected": "Client disconnected",
+    "Groups & Models": "Groups & Models",
+    "The models each group you can use is able to call. A listed model can still fail while its channels are outside their schedule, at their limits or temporarily unavailable.": "The models each group you can use is able to call. A listed model can still fail while its channels are outside their schedule, at their limits or temporarily unavailable.",
+    "Failed to load groups and models": "Failed to load groups and models",
+    "No groups available": "No groups available",
+    "Your account cannot use any group yet.": "Your account cannot use any group yet.",
+    "All groups": "All groups",
+    "No matching models": "No matching models",
+    "Try a different search term.": "Try a different search term.",
+    "Copy all model names in {{group}}": "Copy all model names in {{group}}",
+    "Copy all": "Copy all",
+    "Tries these groups in order: {{groups}}": "Tries these groups in order: {{groups}}",
+    "No models available in this group": "No models available in this group",
+    "View models by group": "View models by group",
+    "Models available in this group: {{count}}": "Models available in this group: {{count}}",
+    "Models: {{count}}": "Models: {{count}}"
   }
 }

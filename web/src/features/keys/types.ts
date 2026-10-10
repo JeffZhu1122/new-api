@@ -60,6 +60,17 @@ export interface ApiResponse<T = unknown> {
   data?: T
 }
 
+// One group the user may select and the models it can call
+export interface UserGroupModels {
+  group: string
+  desc: string
+  // The user's ratio for the group; 'auto' for the auto group
+  ratio: number | string
+  // Auto group only: the groups it tries, in order
+  auto_groups?: string[]
+  models: string[]
+}
+
 export interface GetApiKeysParams {
   p?: number
   size?: number

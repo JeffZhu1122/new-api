@@ -26,6 +26,7 @@ import type {
   SearchApiKeysParams,
   ApiKeyFormData,
   TokenAutoGroupsConfig,
+  UserGroupModels,
 } from './types'
 
 // ============================================================================
@@ -52,6 +53,14 @@ export async function searchApiKeys(
   if (p != null) queryParams.set('p', String(p))
   if (size != null) queryParams.set('size', String(size))
   const res = await api.get(`/api/token/search?${queryParams.toString()}`)
+  return res.data
+}
+
+// Groups the user may select and the models each one can call
+export async function getUserGroupModels(): Promise<
+  ApiResponse<UserGroupModels[]>
+> {
+  const res = await api.get('/api/user/self/group-models')
   return res.data
 }
 
