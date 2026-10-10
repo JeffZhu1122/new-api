@@ -7441,6 +7441,20 @@
     "No models available in this group": "No models available in this group",
     "View models by group": "View models by group",
     "Models available in this group: {{count}}": "Models available in this group: {{count}}",
-    "Models: {{count}}": "Models: {{count}}"
+    "Models: {{count}}": "Models: {{count}}",
+    "API Keys of {{username}}": "API Keys of {{username}}",
+    "Manage API Keys": "Manage API Keys",
+    "Verify to view this API key": "Verify to view this API key",
+    "Confirm your identity before revealing an API key of {{username}}.": "Confirm your identity before revealing an API key of {{username}}.",
+    "An administrator created the API key {{name}} for you": "An administrator created the API key {{name}} for you",
+    "An administrator updated your API key {{name}}": "An administrator updated your API key {{name}}",
+    "An administrator changed the status of your API key {{name}}": "An administrator changed the status of your API key {{name}}",
+    "An administrator deleted your API key {{name}}": "An administrator deleted your API key {{name}}",
+    "An administrator viewed your API key {{name}}": "An administrator viewed your API key {{name}}",
+    "Created API key {{name}} for user {{target_username}} (ID: {{target_user_id}})": "Created API key {{name}} for user {{target_username}} (ID: {{target_user_id}})",
+    "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})",
+    "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})",
+    "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})",
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})"
   }
 }

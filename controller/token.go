@@ -354,6 +354,12 @@ func GetTokenUsage(c *gin.Context) {
 }
 
 func AddToken(c *gin.Context) {
+	addTokenFor(c, c.GetInt("id"))
+}
+
+// addTokenFor creates a token owned by userId. Group bindings are checked
+// against the group getTokenRequestUserGroup resolves for the request.
+func addTokenFor(c *gin.Context, userId int) {
 	request := tokenRequest{}
 	err := c.ShouldBindJSON(&request)
 	if err != nil {
@@ -381,7 +387,7 @@ func AddToken(c *gin.Context) {
 	}
 	// 检查用户令牌数量是否已达上限
 	maxTokens := operation_setting.GetMaxUserTokens()
-	count, err := model.CountUserTokens(c.GetInt("id"))
+	count, err := model.CountUserTokens(userId)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -400,7 +406,7 @@ func AddToken(c *gin.Context) {
 		return
 	}
 	cleanToken := model.Token{
-		UserId:             c.GetInt("id"),
+		UserId:             userId,
 		Name:               token.Name,
 		Key:                key,
 		CreatedTime:        common.GetTimestamp(),
@@ -451,7 +457,11 @@ func DeleteToken(c *gin.Context) {
 }
 
 func UpdateToken(c *gin.Context) {
-	userId := c.GetInt("id")
+	updateTokenFor(c, c.GetInt("id"))
+}
+
+// updateTokenFor updates a token owned by userId; see addTokenFor.
+func updateTokenFor(c *gin.Context, userId int) {
 	statusOnly := c.Query("status_only")
 	request := tokenRequest{}
 	err := c.ShouldBindJSON(&request)

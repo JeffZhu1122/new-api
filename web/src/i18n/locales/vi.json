@@ -7441,6 +7441,20 @@
     "No models available in this group": "Nhóm này chưa có mô hình khả dụng",
     "View models by group": "Xem mô hình theo nhóm",
     "Models available in this group: {{count}}": "Mô hình khả dụng trong nhóm này: {{count}}",
-    "Models: {{count}}": "Mô hình: {{count}}"
+    "Models: {{count}}": "Mô hình: {{count}}",
+    "API Keys of {{username}}": "Khóa API của {{username}}",
+    "Manage API Keys": "Quản lý khóa API",
+    "Verify to view this API key": "Xác minh để xem khóa API này",
+    "Confirm your identity before revealing an API key of {{username}}.": "Xác nhận danh tính của bạn trước khi hiển thị khóa API của {{username}}.",
+    "An administrator created the API key {{name}} for you": "Quản trị viên đã tạo khóa API {{name}} cho bạn",
+    "An administrator updated your API key {{name}}": "Quản trị viên đã cập nhật khóa API {{name}} của bạn",
+    "An administrator changed the status of your API key {{name}}": "Quản trị viên đã thay đổi trạng thái khóa API {{name}} của bạn",
+    "An administrator deleted your API key {{name}}": "Quản trị viên đã xóa khóa API {{name}} của bạn",
+    "An administrator viewed your API key {{name}}": "Quản trị viên đã xem khóa API {{name}} của bạn",
+    "Created API key {{name}} for user {{target_username}} (ID: {{target_user_id}})": "Đã tạo khóa API {{name}} cho người dùng {{target_username}} (ID: {{target_user_id}})",
+    "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã cập nhật khóa API {{name}} của người dùng {{target_username}} (ID: {{target_user_id}})",
+    "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã thay đổi trạng thái khóa API {{name}} của người dùng {{target_username}} (ID: {{target_user_id}})",
+    "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã xóa khóa API {{name}} của người dùng {{target_username}} (ID: {{target_user_id}})",
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã xem khóa đầy đủ của khóa API {{name}} thuộc người dùng {{target_username}} (ID: {{target_user_id}})"
   }
 }

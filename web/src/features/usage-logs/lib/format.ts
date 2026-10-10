@@ -488,6 +488,16 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.topup_complete': 'Completed top-up order for the user',
   'user.reset_passkey': 'Reset the user passkey',
   'user.oauth_unbind': 'Removed an OAuth binding for the user',
+  'user.token_create':
+    'Created API key {{name}} for user {{target_username}} (ID: {{target_user_id}})',
+  'user.token_update':
+    'Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})',
+  'user.token_status_update':
+    'Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})',
+  'user.token_delete':
+    'Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})',
+  'user.token_key_view':
+    'Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})',
   // System settings
   'option.update': 'Updated system setting {{key}}',
   'option.passkey_domains':

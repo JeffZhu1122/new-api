@@ -16,12 +16,18 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import z from 'zod'
 
-import { ApiKeys } from '@/features/keys'
-import { apiKeySearchSchema } from '@/features/keys/lib/api-key-search'
+import { API_KEY_STATUS_OPTIONS } from '../constants'
 
-export const Route = createFileRoute('/_authenticated/keys/')({
-  validateSearch: apiKeySearchSchema,
-  component: ApiKeys,
+// URL search state of an API key list page
+export const apiKeySearchSchema = z.object({
+  page: z.number().optional().catch(1),
+  pageSize: z.number().optional().catch(undefined),
+  status: z
+    .array(z.enum(API_KEY_STATUS_OPTIONS.map((s) => s.value as `${number}`)))
+    .optional()
+    .catch([]),
+  filter: z.string().optional().catch(''),
+  token: z.string().optional().catch(''),
 })

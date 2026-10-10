@@ -680,6 +680,35 @@ it.each([
   }
 )
 
+it('summarizes root access to another user API key without the key value', async () => {
+  const i18n = createInstance()
+  await i18n.init({ lng: 'zh', resources: { zh } })
+  const detail = buildAuditDetails(
+    {
+      ...entry,
+      action: 'user.token_key_view',
+      route: '/api/user/:id/tokens/:token_id/key',
+      method: 'POST',
+      other: {
+        op: {
+          action: 'user.token_key_view',
+          params: {
+            id: 7,
+            name: 'alice-prod',
+            target_user_id: 42,
+            target_username: 'alice',
+            verification_method: '2fa',
+          },
+        },
+      },
+    },
+    i18n.t
+  )
+  expect(detail.summary).toBe(
+    '查看了用户 alice（ID: 42）的 API 密钥 alice-prod 的完整密钥'
+  )
+})
+
 it('shows the affected count separately from requested redemption IDs', async () => {
   const i18n = createInstance()
   await i18n.init({ lng: 'en', resources: {} })

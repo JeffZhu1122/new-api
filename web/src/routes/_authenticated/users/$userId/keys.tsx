@@ -16,12 +16,36 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
-import { createFileRoute } from '@tanstack/react-router'
+import { createFileRoute, redirect } from '@tanstack/react-router'
 
-import { ApiKeys } from '@/features/keys'
+import { UserApiKeys } from '@/features/keys'
 import { apiKeySearchSchema } from '@/features/keys/lib/api-key-search'
+import { ROLE } from '@/lib/roles'
+import { useAuthStore } from '@/stores/auth-store'
 
-export const Route = createFileRoute('/_authenticated/keys/')({
+// Root management of another user's API keys. The server enforces RootAuth;
+// this guard only keeps other roles off a page they cannot use.
+export const Route = createFileRoute('/_authenticated/users/$userId/keys')({
+  beforeLoad: () => {
+    const { auth } = useAuthStore.getState()
+
+    if (!auth.user || auth.user.role < ROLE.SUPER_ADMIN) {
+      throw redirect({
+        to: '/403',
+      })
+    }
+  },
   validateSearch: apiKeySearchSchema,
-  component: ApiKeys,
+  component: UserApiKeysRoute,
 })
+
+function UserApiKeysRoute() {
+  const params = Route.useParams()
+  return (
+    <UserApiKeys
+      userId={Number(params.userId)}
+      search={Route.useSearch()}
+      navigate={Route.useNavigate()}
+    />
+  )
+}

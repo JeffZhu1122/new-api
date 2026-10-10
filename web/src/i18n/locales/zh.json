@@ -7441,6 +7441,20 @@
     "No models available in this group": "此分组暂无可用模型",
     "View models by group": "按分组查看可用模型",
     "Models available in this group: {{count}}": "此分组可用模型：{{count}} 个",
-    "Models: {{count}}": "模型：{{count}} 个"
+    "Models: {{count}}": "模型：{{count}} 个",
+    "API Keys of {{username}}": "{{username}} 的 API 密钥",
+    "Manage API Keys": "管理 API 密钥",
+    "Verify to view this API key": "验证后查看此 API 密钥",
+    "Confirm your identity before revealing an API key of {{username}}.": "查看 {{username}} 的 API 密钥前，请先确认你的身份。",
+    "An administrator created the API key {{name}} for you": "管理员为你创建了 API 密钥 {{name}}",
+    "An administrator updated your API key {{name}}": "管理员修改了你的 API 密钥 {{name}}",
+    "An administrator changed the status of your API key {{name}}": "管理员更改了你的 API 密钥 {{name}} 的状态",
+    "An administrator deleted your API key {{name}}": "管理员删除了你的 API 密钥 {{name}}",
+    "An administrator viewed your API key {{name}}": "管理员查看了你的 API 密钥 {{name}}",
+    "Created API key {{name}} for user {{target_username}} (ID: {{target_user_id}})": "为用户 {{target_username}}（ID: {{target_user_id}}）创建了 API 密钥 {{name}}",
+    "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "更新了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}}",
+    "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "更改了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}} 的状态",
+    "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "删除了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}}",
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "查看了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}} 的完整密钥"
   }
 }

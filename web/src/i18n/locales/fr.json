@@ -7441,6 +7441,20 @@
     "No models available in this group": "Aucun modèle disponible dans ce groupe",
     "View models by group": "Voir les modèles par groupe",
     "Models available in this group: {{count}}": "Modèles disponibles dans ce groupe : {{count}}",
-    "Models: {{count}}": "Modèles : {{count}}"
+    "Models: {{count}}": "Modèles : {{count}}",
+    "API Keys of {{username}}": "Clés API de {{username}}",
+    "Manage API Keys": "Gérer les clés API",
+    "Verify to view this API key": "Vérifiez votre identité pour voir cette clé API",
+    "Confirm your identity before revealing an API key of {{username}}.": "Confirmez votre identité avant d'afficher une clé API de {{username}}.",
+    "An administrator created the API key {{name}} for you": "Un administrateur a créé la clé API {{name}} pour vous",
+    "An administrator updated your API key {{name}}": "Un administrateur a modifié votre clé API {{name}}",
+    "An administrator changed the status of your API key {{name}}": "Un administrateur a changé le statut de votre clé API {{name}}",
+    "An administrator deleted your API key {{name}}": "Un administrateur a supprimé votre clé API {{name}}",
+    "An administrator viewed your API key {{name}}": "Un administrateur a consulté votre clé API {{name}}",
+    "Created API key {{name}} for user {{target_username}} (ID: {{target_user_id}})": "Clé API {{name}} créée pour l'utilisateur {{target_username}} (ID : {{target_user_id}})",
+    "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) modifiée",
+    "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Statut de la clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) modifié",
+    "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) supprimée",
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Clé complète de la clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) consultée"
   }
 }

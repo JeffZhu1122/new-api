@@ -7441,6 +7441,20 @@
     "No models available in this group": "このグループで利用できるモデルはありません",
     "View models by group": "グループ別にモデルを表示",
     "Models available in this group: {{count}}": "このグループで利用できるモデル：{{count}} 個",
-    "Models: {{count}}": "モデル：{{count}} 個"
+    "Models: {{count}}": "モデル：{{count}} 個",
+    "API Keys of {{username}}": "{{username}} の APIキー",
+    "Manage API Keys": "APIキーを管理",
+    "Verify to view this API key": "このAPIキーを表示するには認証してください",
+    "Confirm your identity before revealing an API key of {{username}}.": "{{username}} の APIキーを表示する前に本人確認を行ってください。",
+    "An administrator created the API key {{name}} for you": "管理者があなたのために APIキー {{name}} を作成しました",
+    "An administrator updated your API key {{name}}": "管理者があなたの APIキー {{name}} を更新しました",
+    "An administrator changed the status of your API key {{name}}": "管理者があなたの APIキー {{name}} の状態を変更しました",
+    "An administrator deleted your API key {{name}}": "管理者があなたの APIキー {{name}} を削除しました",
+    "An administrator viewed your API key {{name}}": "管理者があなたの APIキー {{name}} を表示しました",
+    "Created API key {{name}} for user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} を作成しました",
+    "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} を更新しました",
+    "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} の状態を変更しました",
+    "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} を削除しました",
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} の完全なキーを表示しました"
   }
 }
