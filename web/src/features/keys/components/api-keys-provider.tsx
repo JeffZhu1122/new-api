@@ -19,11 +19,17 @@ For commercial licensing, please contact support@quantumnous.com
 import React, { useState, useCallback, useRef, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 
+import {
+  SecureVerificationDialog,
+  useSecureVerification,
+} from '@/features/auth/secure-verification'
 import useDialogState from '@/hooks/use-dialog'
 import { handleServerError } from '@/lib/handle-server-error'
+import { AuthOperationError } from '@/lib/secure-verification'
 
 import { fetchTokenKey, fetchTokenKeysBatch } from '../api'
 import { ERROR_MESSAGES } from '../constants'
+import { useApiKeyOwner } from '../hooks/use-api-key-owner'
 import type { ApiKey, ApiKeysDialogType } from '../types'
 
 type ApiKeysContextType = {
@@ -56,6 +62,11 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
   const [loadingKeys, setLoadingKeys] = useState<Record<number, boolean>>({})
   const pendingRequests = useRef<Record<number, Promise<string | null>>>({})
 
+  // Revealing another user's key needs a step-up proof bound to that key.
+  const owner = useApiKeyOwner()
+  const verification = useSecureVerification()
+  const requestVerification = verification.requestVerification
+
   const [copiedKeyId, setCopiedKeyId] = useState<number | null>(null)
   const copiedTimerRef = useRef<ReturnType<typeof setTimeout>>(undefined)
 
@@ -81,7 +92,21 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
       const request = (async () => {
         setLoadingKeys((prev) => ({ ...prev, [id]: true }))
         try {
-          const res = await fetchTokenKey(id)
+          let proof: { ownerId: number; proofToken: string } | undefined
+          if (owner) {
+            const verified = await requestVerification({
+              scope: 'admin.user.token.read',
+              context: { user_id: owner.id, token_id: id },
+              title: t('Verify to view this API key'),
+              description: t(
+                'Confirm your identity before revealing an API key of {{username}}.',
+                { username: owner.username }
+              ),
+            })
+            if (!verified) return null
+            proof = { ownerId: owner.id, proofToken: verified.proof_token }
+          }
+          const res = await fetchTokenKey(id, proof)
           if (res.success && res.data?.key) {
             const fullKey = `sk-${res.data.key}`
             setResolvedKeys((prev) => ({ ...prev, [id]: fullKey }))
@@ -90,7 +115,10 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
           handleServerError(res, t(ERROR_MESSAGES.UNEXPECTED))
           return null
         } catch (error) {
-          handleServerError(error, t(ERROR_MESSAGES.UNEXPECTED))
+          handleServerError(
+            owner ? AuthOperationError.from(error) : error,
+            t(ERROR_MESSAGES.UNEXPECTED)
+          )
           return null
         } finally {
           delete pendingRequests.current[id]
@@ -105,7 +133,7 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
       pendingRequests.current[id] = request
       return request
     },
-    [resolvedKeys, t]
+    [resolvedKeys, t, owner, requestVerification]
   )
 
   const resolveRealKeysBatch = useCallback(
@@ -174,6 +202,7 @@ export function ApiKeysProvider({ children }: { children: React.ReactNode }) {
       }}
     >
       {children}
+      {owner && <SecureVerificationDialog {...verification.dialogProps} />}
     </ApiKeysContext>
   )
 }

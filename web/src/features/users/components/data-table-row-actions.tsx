@@ -16,6 +16,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useNavigate } from '@tanstack/react-router'
 import type { Row } from '@tanstack/react-table'
 import {
   Pencil,
@@ -28,6 +29,7 @@ import {
   ShieldAlert,
   Link2,
   CreditCard,
+  KeySquare,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -49,7 +51,9 @@ import {
 import type { AdminUserManageAction } from '@/features/auth/secure-verification'
 import { UserSubscriptionsDialog } from '@/features/subscriptions/components/dialogs/user-subscriptions-dialog'
 import { handleServerError } from '@/lib/handle-server-error'
+import { ROLE } from '@/lib/roles'
 import { AuthOperationError } from '@/lib/secure-verification'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { manageUser, resetUserPasskey, resetUserTwoFA } from '../api'
 import {
@@ -88,6 +92,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const [resetTwoFAOpen, setResetTwoFAOpen] = useState(false)
   const [bindingDialogOpen, setBindingDialogOpen] = useState(false)
   const [subscriptionsDialogOpen, setSubscriptionsDialogOpen] = useState(false)
+  const navigate = useNavigate()
+  // Only the root user may manage another user's API keys.
+  const viewerIsRoot = useAuthStore(
+    (state) => state.auth.user?.role === ROLE.SUPER_ADMIN
+  )
 
   const handleEdit = () => {
     setCurrentRow(user)
@@ -274,6 +283,22 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
             <CreditCard size={16} />
           </DropdownMenuShortcut>
         </DropdownMenuItem>
+
+        {viewerIsRoot && (
+          <DropdownMenuItem
+            onClick={() =>
+              navigate({
+                to: '/users/$userId/keys',
+                params: { userId: String(user.id) },
+              })
+            }
+          >
+            {t('Manage API Keys')}
+            <DropdownMenuShortcut>
+              <KeySquare size={16} />
+            </DropdownMenuShortcut>
+          </DropdownMenuItem>
+        )}
 
         <DropdownMenuSeparator />
 

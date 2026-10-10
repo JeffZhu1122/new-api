@@ -17,7 +17,6 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useQuery } from '@tanstack/react-query'
-import { getRouteApi } from '@tanstack/react-router'
 import { flexRender, type Table as TanstackTable } from '@tanstack/react-table'
 import { Database } from 'lucide-react'
 import { useEffect, useState } from 'react'
@@ -40,7 +39,7 @@ import {
 } from '@/components/ui/empty'
 import { Input } from '@/components/ui/input'
 import { Skeleton } from '@/components/ui/skeleton'
-import { useTableUrlState } from '@/hooks/use-table-url-state'
+import { useTableUrlState, type NavigateFn } from '@/hooks/use-table-url-state'
 import { createServerError } from '@/lib/server-error-message'
 import { cn } from '@/lib/utils'
 
@@ -51,6 +50,7 @@ import {
   API_KEY_STATUSES,
   ERROR_MESSAGES,
 } from '../constants'
+import { useApiKeyOwner } from '../hooks/use-api-key-owner'
 import type { ApiKey } from '../types'
 import { ApiKeyQuotaCell } from './api-key-quota-cell'
 import { ApiKeyActivityCell } from './api-key-timestamp-cell'
@@ -64,7 +64,6 @@ import { useApiKeys } from './api-keys-provider'
 import { DataTableBulkActions } from './data-table-bulk-actions'
 import { DataTableRowActions } from './data-table-row-actions'
 
-const route = getRouteApi('/_authenticated/keys/')
 const API_KEYS_COLUMN_VISIBILITY_STORAGE_KEY = 'api-keys:column-visibility'
 const API_KEYS_MOBILE_SKELETON_IDS = Array.from(
   { length: 5 },
@@ -215,9 +214,17 @@ function ApiKeysMobileList({
   )
 }
 
-export function ApiKeysTable() {
+type ApiKeysTableProps = {
+  // URL state of the page that renders the table
+  search: Record<string, unknown>
+  navigate: NavigateFn
+}
+
+export function ApiKeysTable(props: ApiKeysTableProps) {
   const { t } = useTranslation()
   const { refreshTrigger } = useApiKeys()
+  const owner = useApiKeyOwner()
+  const ownerId = owner?.id
   const [now, setNow] = useState(() => Date.now())
   const columns = useApiKeysColumns(now)
 
@@ -238,8 +245,8 @@ export function ApiKeysTable() {
     onPaginationChange,
     ensurePageInRange,
   } = useTableUrlState({
-    search: route.useSearch(),
-    navigate: route.useNavigate(),
+    search: props.search,
+    navigate: props.navigate,
     pagination: { defaultPage: 1, defaultPageSize: 20 },
     globalFilter: { enabled: true, key: 'filter' },
     columnFilters: [
@@ -264,6 +271,7 @@ export function ApiKeysTable() {
   const { data, isLoading, isFetching } = useQuery({
     queryKey: [
       'keys',
+      ...(ownerId ? [ownerId] : []),
       pagination.pageIndex + 1,
       pagination.pageSize,
       globalFilter,
@@ -272,16 +280,22 @@ export function ApiKeysTable() {
     ],
     queryFn: async () => {
       const result = shouldSearch
-        ? await searchApiKeys({
-            keyword: globalFilter,
-            token: tokenFilter,
-            p: pagination.pageIndex + 1,
-            size: pagination.pageSize,
-          })
-        : await getApiKeys({
-            p: pagination.pageIndex + 1,
-            size: pagination.pageSize,
-          })
+        ? await searchApiKeys(
+            {
+              keyword: globalFilter,
+              token: tokenFilter,
+              p: pagination.pageIndex + 1,
+              size: pagination.pageSize,
+            },
+            ownerId
+          )
+        : await getApiKeys(
+            {
+              p: pagination.pageIndex + 1,
+              size: pagination.pageSize,
+            },
+            ownerId
+          )
 
       if (!result.success) {
         throw createServerError(
@@ -307,7 +321,7 @@ export function ApiKeysTable() {
   const { table } = useDataTable({
     data: apiKeys,
     columns,
-    enableRowSelection: true,
+    enableRowSelection: !owner,
     columnFilters,
     columnVisibilityStorageKey: API_KEYS_COLUMN_VISIBILITY_STORAGE_KEY,
     globalFilter,
@@ -377,7 +391,7 @@ export function ApiKeysTable() {
       getRowClassName={(row) =>
         isDisabledApiKeyRow(row.original) ? DISABLED_ROW_DESKTOP : undefined
       }
-      bulkActions={<DataTableBulkActions table={table} />}
+      bulkActions={owner ? undefined : <DataTableBulkActions table={table} />}
     />
   )
 }

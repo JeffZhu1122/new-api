@@ -34,11 +34,13 @@ import { handleServerError } from '@/lib/handle-server-error'
 
 import { deleteApiKey } from '../api'
 import { ERROR_MESSAGES, SUCCESS_MESSAGES } from '../constants'
+import { useApiKeyOwner } from '../hooks/use-api-key-owner'
 import { useApiKeys } from './api-keys-provider'
 
 export function ApiKeysDeleteDialog() {
   const { t } = useTranslation()
   const { open, setOpen, currentRow, triggerRefresh } = useApiKeys()
+  const owner = useApiKeyOwner()
   const [isDeleting, setIsDeleting] = useState(false)
 
   const handleDelete = async () => {
@@ -46,7 +48,7 @@ export function ApiKeysDeleteDialog() {
 
     setIsDeleting(true)
     try {
-      const result = await deleteApiKey(currentRow.id)
+      const result = await deleteApiKey(currentRow.id, owner?.id)
       if (result.success) {
         toast.success(t(SUCCESS_MESSAGES.API_KEY_DELETED))
         setOpen(null)

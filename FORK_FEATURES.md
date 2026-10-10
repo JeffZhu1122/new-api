@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
 | 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 37 个（含本文档相关提交） |
-| 变更规模 | 260 个文件，+20743 / −2006 行（不含本文档） |
+| fork 专有提交数 | 40 个（含本文档相关提交） |
+| 变更规模 | 293 个文件，+23352 / −2121 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -40,6 +40,7 @@
 23. [定时清理服务器日志文件](#23-定时清理服务器日志文件)
 24. [渠道「出错一律重试」开关](#24-渠道出错一律重试开关)
 25. [分组可用模型一览](#25-分组可用模型一览)
+26. [root 管理用户的 API 密钥](#26-root-管理用户的-api-密钥)
 
 ---
 
@@ -67,6 +68,7 @@
 | 23 | 定时清理服务器日志文件 | 与本文档同一提交 | 关闭 | options 表（`log_file_cleanup_setting.*`，7 个 key） | 后台定时任务（每个节点）、日志维护设置页 |
 | 24 | 渠道「出错一律重试」开关 | 与本文档同一提交 | 关闭 | `channel_extend` | 重试决策、重试耗尽时返回的错误 |
 | 25 | 分组可用模型一览 | 与本文档同一提交 | 始终可用（只读） | 无 | 新增只读接口、API 密钥页 |
+| 26 | root 管理用户的 API 密钥 | 与本文档同一提交 | 仅 root 可用 | 无（复用 tokens 表） | 新增 root 接口、二次验证 scope、审计、用户管理与 API 密钥页 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -827,6 +829,9 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/ability.go` | `GetChannel` 新参数、`filterAbilitiesByConstraints` 回填 extend |
 | `model/channel_constraint.go` | count_tokens 与 input_tokens 谓词 |
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
+| `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
+| `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read` 二次验证 scope |
+| `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
 | `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误 |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
 | `relay/helper/price.go` | `HandleGroupRatio` 折扣乘法 |
@@ -911,6 +916,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - **渠道额度上限**：判定在结算之后，禁用前已在飞的请求仍会结算，`BATCH_UPDATE_ENABLED` 下还会多出一个刷盘间隔（默认 5 秒）的流量；多副本各自以数据库值判定，其他副本的内存缓存最长 `SYNC_FREQUENCY`（默认 60 秒）后感知禁用；预扣费不参与判定。折算成本 = 站内计费额度 × 成本倍率，是估算值而非上游账单。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **渠道可用时段**：判定基于各副本本机时钟；窗口边界处进行中的流式响应与 WebSocket 会话不会被中断，只影响新请求；会话亲和在时段外会被放弃，该会话可能换渠道；全部渠道时段外时客户端只看到通用 503；时区运行时加载失败按全天可用处理；粒度只到周几 + 分钟，没有日期范围。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **实时 RPM / TPM 统计**：数字比当前时刻晚 4 到 14 秒；token 在请求结算时一次性计入（长流式请求的 token 全部落在结束那一分钟）；Redis 故障期间少计，实例崩溃会丢失最近 2 秒的计数；各实例按本机时钟分桶，时钟偏差超过 10 秒会明显失真；没有 Redis 的多实例部署只能看到本实例；列表只能在当前页查看，不能按 RPM / TPM 给全部渠道或用户排序；列表 RPM 按分发次数、日志页 RPM 按结算请求，两者口径不同。使用日志页不指定用户、又用多个条件或模糊匹配时，要读窗口内所有活跃用户的明细，流量很大时较慢；精确匹配区分大小写，模糊匹配不区分。
+- **root 管理用户的 API 密钥**：root 能看到任何用户的完整密钥，root 账号失守即所有用户密钥失守；用 root 查看到的密钥发起的调用记在用户名下，日志无法区分是谁调用的；只对单个密钥逐一二次验证，没有批量查看 / 批量删除；用户只在使用日志里看到"管理员做了什么"，看不到是哪位管理员。
 - **分组可用模型一览**：列表来自已启用渠道的能力表，不反映渠道的可用时段、限流、额度上限或自动禁用前的实时状态；auto 分组按全局 auto 顺序展示，不反映单个密钥自定义的 auto 顺序；不显示价格。
 - **渠道出错一律重试**：只看刚失败的那个渠道的开关；重试次数仍受全局 `RetryTimes` 限制；异步任务提交与 Responses WebSocket 不受影响；用户自身原因的错误（参数错误、上下文超长）也会被重试，等待时间与上游请求量随之放大；上游对失败请求收费时，重复调用的成本由站点承担。MySQL / PostgreSQL 上的新列迁移尚未实机验证。
 - **品牌主题层**：只有默认预设使用完整的极光配色，其他预设保留原配色、只叠加结构效果；图表（VChart）配色未替换；控制台页面内部不用真玻璃（`backdrop-filter`），`AnimatedOutlet` 的 `filter` 终态也会让它失效；夜岛在命名预设下使用 `theme.css` 的经典深色 token。
@@ -1309,4 +1315,76 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - auto 分组展示的是全局 auto 顺序；密钥自定义的 auto 顺序（§13）不在这里体现，分组提示里的数量也按全局顺序计算。
 - 不显示价格，价格仍以定价页为准。
 - 每次请求按分组各查一次能力表（与 `/api/user/models` 相同），分组很多时有少量数据库查询；前端缓存 60 秒。
+
+## 26. root 管理用户的 API 密钥
+
+### 背景
+
+上游的 API 密钥接口（`/api/token`）只作用于登录用户自己的密钥，管理员无法替用户查看、新增、修改或删除密钥。本功能让 **root（超级管理员）** 在用户管理里管理任一用户的密钥。普通管理员不可用。
+
+### 接口
+
+全部在 `/api/user/:id/tokens` 下，`RootAuth` + `DisableCache`，访问令牌（PAT）一律不可调用（`accessTokenSessionRule`，只接受浏览器登录会话）。实现在 fork 新文件 `controller/admin_token.go`。
+
+| 方法与路径 | 作用 |
+|---|---|
+| `GET /api/user/:id/tokens?p=&size=&keyword=&token=` | 列出该用户的密钥（脱敏），带 keyword / token 时按搜索 |
+| `GET /api/user/:id/tokens/:token_id` | 读取单个密钥（脱敏） |
+| `GET /api/user/:id/tokens/groups` | 该用户可绑定的分组（与 `/api/user/self/groups` 同结构） |
+| `GET /api/user/:id/tokens/auto-groups` | 该用户的全局 auto 顺序与上限 |
+| `GET /api/user/:id/tokens/models` | 该用户可调用的模型（供模型限制选择） |
+| `POST /api/user/:id/tokens` | 为该用户新建密钥 |
+| `PUT /api/user/:id/tokens`（可带 `?status_only=true`） | 修改该用户的密钥 / 只改状态 |
+| `DELETE /api/user/:id/tokens/:token_id` | 删除该用户的密钥 |
+| `POST /api/user/:id/tokens/:token_id/key` | 查看完整密钥：需要二次验证，另加 `CriticalRateLimit` |
+
+关键点：
+
+- **新增与修改走同一套校验**：`controller/token.go` 的 `AddToken` / `UpdateToken` 拆成 `addTokenFor(c, userId)` / `updateTokenFor(c, userId)`，自助接口与 root 接口共用（数量上限、额度上限、过期时间、备用分组 / auto 分组校验、状态启用条件等完全一致）。
+- **分组按密钥归属用户校验**：`adminTokenOwner` 把请求上下文里的用户分组（`ContextKeyUserGroup` 与 `group`）换成被管理用户的分组，`getTokenRequestUserGroup` 因此按归属用户判断备用分组 / auto 分组是否可选，root 不能给用户绑定其无权使用的分组。用户分组为空时按 `default`，绝不回落到 root 自己的分组。
+- **只能操作该用户自己的密钥**：读取、删除、查看都用 `GetTokenByIds(token_id, :id)`；修改走 `updateTokenFor` 同样按 (id, 归属用户) 查找。把别人的密钥 id 放到这个用户的路径下会返回"记录不存在"。
+- **查看完整密钥需要二次验证**：新增 scope `admin.user.token.read`，上下文为 `{user_id, token_id}`，证明绑定到这一个用户的这一个密钥、一次性使用；只有 root 能申请（`GetVerificationRequirements`）；验证方式与其他 `admin.user.*` 操作相同（已绑定 2FA / Passkey 时用它们，否则用密码）；PAT 不能申请该证明（`accessTokenVerificationScopes` 映射为空）。
+- 修改与删除即时生效：沿用 `Token.Update` / `Token.Delete` 的缓存失效。
+
+### 审计与通知
+
+- 成功的新建 / 修改 / 改状态 / 删除 / 查看各写一条管理审计（`user.token_create` / `user.token_update` / `user.token_status_update` / `user.token_delete` / `user.token_key_view`），记录在操作者名下，参数含密钥 id、名称、`target_user_id`、`target_username`，查看时另含 `verification_method`；**不记录密钥值与证明**。失败的写操作由 `RootAuth` 的兜底审计记录（显示为通用的"方法 + 路由"）。
+- 上游规定 root 的审计记录对非 root 不可见，所以不会在用户的审计日志里出现。改为在**被管理用户的使用日志**里写一条系统日志（`LogTypeSystem`），例如"管理员查看了你的 API 密钥 xxx"，不含管理员身份和密钥值。root 操作自己的密钥时不写这条通知。
+
+### 前端
+
+- 用户管理表格的行菜单新增「管理 API 密钥」（只有 root 可见），跳转到 `/users/$userId/keys`。该路由在前端也只允许 root 进入（`beforeLoad`），服务端仍以 `RootAuth` 为准。
+- 页面直接复用 API 密钥页的全部组件，通过 `web/src/features/keys/hooks/use-api-key-owner.ts` 的归属用户上下文切换到 root 接口：标题「{用户名} 的 API 密钥」，面包屑「用户 › 用户名」；只保留「创建 API 密钥」按钮（API 地址、分组与模型属于登录用户自己）；没有多选与批量操作；行菜单去掉 CC Switch 与聊天（它们会配置 root 自己的客户端）；密钥抽屉的分组、auto 顺序、模型列表都取被管理用户的数据。
+- 复制 / 显示完整密钥时先弹出二次验证（「验证后查看此 API 密钥」），验证成功后带 `X-Security-Proof` 请求，取消验证则不发请求。同一页面内已查看过的密钥会缓存，不再重复验证。
+- `ApiKeysTable` 改为由页面传入 URL 状态（`search` / `navigate`），自助页与 root 页各自使用自己的路由；搜索参数 schema 抽到 `web/src/features/keys/lib/api-key-search.ts`，两个路由共用。
+
+### OWASP 对照（ASVS 5.0.0）
+
+| 要求 | 实现 |
+|---|---|
+| V8.2.1 功能级授权 | 所有接口 `RootAuth`，在服务端判断；前端路由守卫与菜单可见性只是辅助 |
+| V8.2.2 数据级授权（防 IDOR / BOLA） | 每次按 (token_id, 用户 id) 查找；分组校验按归属用户 |
+| V8.3.1 在可信服务层执行授权 | 授权与分组校验都在 Go 服务端 |
+| V7.5.3 敏感操作前的额外验证 | 查看完整密钥需要 `admin.user.token.read` 证明，绑定用户与密钥、一次性 |
+| V16.2.5 / V16.3.2 敏感数据不入日志、记录授权失败 | 审计与通知不含密钥与证明；失败的写操作由兜底审计记录 |
+| 会话管理 Cheat Sheet：含机密的响应 `Cache-Control: no-store` | 整组路由挂 `DisableCache` |
+| Authentication Cheat Sheet：通知用户可疑 / 敏感操作 | 被管理用户的使用日志里有每次操作的系统通知 |
+
+未覆盖：没有对 root 权限本身做多层保护（V8.4.2 的设备 / 风险评估）；非 root 角色调用这些接口被 `RootAuth` 拒绝时是否留痕，沿用上游 `RootAuth` 的现有行为，本功能未额外记录。
+
+### 测试
+
+- `controller/admin_token_test.go`：新建的密钥归属被管理用户并写入操作者审计与用户通知；备用分组按被管理用户校验（root 自己可用的分组被拒绝）；列表只含该用户的密钥且脱敏；别人的密钥不能经由该用户路径读取 / 修改 / 删除；修改与删除生效；无证明返回 `SECURITY_PROOF_REQUIRED`，绑定其他密钥的证明返回 `SECURITY_PROOF_CONTEXT_MISMATCH`，正确证明返回密钥且审计不含密钥与证明，重复使用返回 `SECURITY_PROOF_CONSUMED`；只有 root 能申请证明；缺少 token_id 的上下文被拒绝；PAT 不能申请证明，也不能调用路由（`AUTH_SESSION_REQUIRED`）。
+- `web/src/features/keys/components/__tests__/api-key-owner.test.tsx`：root 页从 root 接口取列表、没有多选与自助按钮；改状态走 root 接口；查看密钥前申请绑定 `{user_id, token_id}` 的证明并带 `X-Security-Proof`、不出现 CC Switch；取消验证不请求密钥。
+- `web/src/features/users/components/__tests__/api-key-management.test.tsx`：root 在行菜单看到「管理 API 密钥」并跳转到 `/users/2/keys`；管理员看不到。
+- `web/src/features/usage-logs/audit/__tests__/details.test.tsx`：`user.token_key_view` 的中文摘要。
+- 本地端到端（`scratchpad/feat_e2e.py admintokens`，13 项）：root 新建、列表脱敏、无验证被拒、带证明可查看、证明不可重用、密钥可用于该用户的请求、禁用后请求失败、修改、普通用户不能调用 root 接口、删除、用户日志收到每条通知且不含密钥与管理员身份、root 审计含全部 5 种操作且不含密钥与证明。浏览器截图检查了用户行菜单、root 密钥页、验证弹窗与新建抽屉。
+
+### 已知限制
+
+- root 账号本身是单点：能看到任何用户的完整密钥，root 失守即全部用户密钥失守。二次验证、审计、限流只能降低风险。
+- 用查看到的密钥发起的调用记在用户名下，使用日志无法区分是用户还是 root 发起的。
+- 没有批量查看 / 批量删除，也没有"代用户重置密钥"（可删除后新建）。
+- 用户看到的通知不含管理员身份；需要追查是谁时由 root 查看审计日志。
+- 自助 `AddToken` 对单分组密钥本来就不校验主分组是否可用（请求时由鉴权拒绝），root 接口与之一致。
 
