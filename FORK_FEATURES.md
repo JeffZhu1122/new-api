@@ -4,12 +4,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 上游基线（merge-base） | `b48b74ab7` — 2026-10-05 `feat(jsplugin): decode hook results with moejs ToGoInto`（上游版本 `v1.0.0-rc.41` 之后） |
-| 最近一次同步 | 2026-10-06，rebase 到 `b48b74ab7`，2 处冲突（见 §19.4） |
-| fork 专有提交数 | 30 个（含本文档相关提交） |
-| 变更规模 | 180 个文件，+14440 / −1343 行（不含本文档） |
+| 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
+| 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
+| fork 专有提交数 | 37 个（含本文档相关提交） |
+| 变更规模 | 260 个文件，+20743 / −2006 行（不含本文档） |
 
-同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log b48b74ab7..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
+同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
 ---
 
@@ -874,6 +874,13 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 
 ### 19.4 同步记录
 
+- **2026-10-10，rebase 到 `1d4328e97`**（上游 22 个提交：全面国际化 #7712、token 计数移入独立模块 `tokenkit` 并重新校准、联网搜索按渠道编码与按厂商上报计费 #7690、Gemini 谷歌搜索按查询 / 带搜索请求计费、relaykit v0.3.0 协议转换修复、静态文件单独限流、高级参数覆盖支持正则、用户列表按分组筛选、Grok Imagine 视频插件等；`go.mod` 升到 Go 1.26，新增 `tokenkit/` 子模块）。
+  - 冲突（共 24 个文件）：前端 7 个语言文件（按 key 做三方合并，保留上游全部改动并加回 fork 新增 key）；`.github/workflows/` 3 个（保持删除）；`controller/relay.go`（重试耗尽的可配置状态码分支 + 上游多语言默认文案）；`relay/channel/api_request.go`（渠道超时的 `cancelTimeout` + 上游 `LogText`）；`service/quota.go` / `service/task_billing_test.go`（import 与测试初始化两侧并存）；`service/relay_error.go`（只保留仍在使用的 import）；`web/src/features/keys/components/api-key-group-cell.tsx`（保留主分组 + 备用分组结构，并采用上游 `GroupBadge type='text'` 防截断）；`web/src/features/users/components/users-table.tsx`（`getGroups` 与 `getUserRpm` 并存）；`model/log.go`（RPM/TPM 改走 Redis，删除上游仍在维护的 SQL 统计块）；`model/channel.go`（上游 `LogText` + fork 额度上限禁用逻辑）；`controller/performance.go`（采用上游多语言的部分失败文案，计数取自共用的 `service.CleanupServerLogFiles` 结果）；`i18n/keys.go` 与 3 个 yaml（取上游）。
+  - 适配上游国际化：上游把控制台接口的提示从后端翻译 key 改为英文原文 + 参数（`common.ApiErrorT` / `ApiSuccessT` / `common.NewMessage`），由前端在 7 种语言中翻译；后端 `i18n/keys.go` 只保留给 AI 客户端、邮件与通知的文案。fork 的多分组令牌校验（§13）、渠道额度上限提示（§15）、用户 / RPM 接口的参数错误改用新方式，对应翻译加在前端语言文件中；免费 count_tokens 日志（§6）的 content 改为 `common.Message`。
+  - 适配 tokenkit：§6 / §10 的输入 token 估算由已删除的 `EstimateTokenByModel` 改用 `tokenkit.Count`（GPT 模型为精确计数，其他模型用上游重新校准的估算），估算值与以前会有差异。
+  - 其他：上游把复制渠道的默认后缀从 `_复制` 改为 `_copy`，fork 测试随之调整。
+  - 验证：`go build ./...`、`go vet`、`go test ./...` 全部通过，relaykit 与 tokenkit 独立构建通过；前端类型检查、lint、格式检查通过，203 个测试文件 2349 个用例全部通过；本地端到端 38 项（§2–§17 与访问令牌 scope）全部通过，定时清理日志端到端 17 项全部通过；生产构建在浏览器中检查首页、登录、定价、控制台各页、使用日志 RPM/TPM、日志维护定时清理，无控制台报错。
+  - 部署注意：本地编译需要 Go 1.26（`GOTOOLCHAIN=auto` 会自动下载）；Docker 构建镜像本来就是 golang 1.26.1，Dockerfile 新增 `tokenkit/go.mod` 与 PGO 编译参数；上游新增环境变量 `DEFAULT_LANGUAGE`（后端翻译的默认语言）与 `GLOBAL_STATIC_RATE_LIMIT*`（静态文件单独限流，默认关闭）；无数据库表结构变更。
 - **2026-10-06，rebase 到 `b48b74ab7`**（上游 21 个提交：可授权访问令牌、管理员操作用户需二次验证、任务插件改用 moejs、Responses 自定义工具修复等）。
   - 冲突：`controller/user.go`（保留 fork 的 `rate_limit` / `model_discount` 写入，审计改用上游的 `auditParams`）；`web/src/features/users/api.ts`（两侧 import 并存）。
   - 合并后补充：`GET /api/user/rpm`、`GET /api/user/:id/rpm/channels` 声明 `user:read`；`LiveRpmCell` 在统计数据缺少 `items` 时显示"-"而不是让整张渠道表崩溃（上游新增的渠道表刷新测试暴露）；修正 fork 文件里遗留的 2 个 lint 错误与 8 处格式漂移。
