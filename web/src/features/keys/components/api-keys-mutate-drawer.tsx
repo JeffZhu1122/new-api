@@ -95,6 +95,7 @@ import {
 import { useApiKeys } from './api-keys-provider'
 import { AutoGroupOrderEditor } from './auto-group-order-editor'
 import { FallbackGroupOrderEditor } from './fallback-group-order-editor'
+import { GroupModelsLink } from './group-models-sheet'
 
 type ApiKeyMutateDrawerProps = {
   open: boolean
@@ -467,6 +468,7 @@ export function ApiKeysMutateDrawer({
                       />
                     </FormControl>
                     <FormMessage />
+                    <GroupModelsLink group={field.value} />
                   </FormItem>
                 )}
               />
