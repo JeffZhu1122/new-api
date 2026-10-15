@@ -2,7 +2,10 @@ package controller
 
 import (
 	"net/http"
+	"slices"
 	"strconv"
+	"strings"
+	"unicode"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/i18n"
@@ -13,9 +16,35 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
+// maxLogChannelFilter bounds how many channel IDs one usage-log query filters by.
+const maxLogChannelFilter = 100
+
+// parseLogChannelFilter reads the channel filter of the usage-log queries: one
+// channel ID or several separated by commas or spaces, such as "3,5 8". A 0
+// means no filter, as it always has.
+func parseLogChannelFilter(raw string) ([]int, error) {
+	fields := strings.FieldsFunc(raw, func(r rune) bool {
+		return r == ',' || r == '，' || unicode.IsSpace(r)
+	})
+	ids := make([]int, 0, len(fields))
+	for _, field := range fields {
+		id, err := strconv.Atoi(field)
+		if err != nil || id < 0 {
+			return nil, common.NewMessage("Invalid channel ID")
+		}
+		if id > 0 && !slices.Contains(ids, id) {
+			ids = append(ids, id)
+		}
+	}
+	if len(ids) > maxLogChannelFilter {
+		return nil, common.NewMessage("Search at most {{max}} channel IDs at once", map[string]any{"max": maxLogChannelFilter})
+	}
+	return ids, nil
+}
+
 // logFilterFromQuery reads the log search shared by the log list and the log
 // export. Username and channel are read only for administrators.
-func logFilterFromQuery(c *gin.Context, admin bool) model.LogFilter {
+func logFilterFromQuery(c *gin.Context, admin bool) (model.LogFilter, error) {
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
@@ -31,9 +60,13 @@ func logFilterFromQuery(c *gin.Context, admin bool) model.LogFilter {
 	}
 	if admin {
 		filter.Username = c.Query("username")
-		filter.Channel, _ = strconv.Atoi(c.Query("channel"))
+		channels, err := parseLogChannelFilter(c.Query("channel"))
+		if err != nil {
+			return filter, err
+		}
+		filter.Channels = channels
 	}
-	return filter
+	return filter, nil
 }
 
 // limitLogTimeRange returns the start of a log or dashboard search kept within
@@ -56,7 +89,12 @@ func limitLogTimeRange(startTimestamp int64, endTimestamp int64) (int64, error) 
 
 func GetAllLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	logs, total, err := model.GetAllLogs(logFilterFromQuery(c, true), pageInfo.GetStartIdx(), pageInfo.GetPageSize())
+	filter, err := logFilterFromQuery(c, true)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	logs, total, err := model.GetAllLogs(filter, pageInfo.GetStartIdx(), pageInfo.GetPageSize())
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -74,7 +112,11 @@ func GetAllLogs(c *gin.Context) {
 
 func GetUserLogs(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
-	filter := logFilterFromQuery(c, false)
+	filter, err := logFilterFromQuery(c, false)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	if c.GetInt("role") < common.RoleAdminUser {
 		startTimestamp, err := limitLogTimeRange(filter.StartTimestamp, filter.EndTimestamp)
 		if err != nil {
@@ -113,7 +155,11 @@ func ExportUserLogs(c *gin.Context) {
 // one export at a time, and every export stays within the longest log time
 // range.
 func exportLogs(c *gin.Context, all bool) {
-	filter := logFilterFromQuery(c, all)
+	filter, err := logFilterFromQuery(c, all)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	startTimestamp, err := limitLogTimeRange(filter.StartTimestamp, filter.EndTimestamp)
 	if err != nil {
 		common.ApiError(c, err)
@@ -207,18 +253,22 @@ func GetLogsStat(c *gin.Context) {
 	tokenName := c.Query("token_name")
 	username := c.Query("username")
 	modelName := c.Query("model_name")
-	channel, _ := strconv.Atoi(c.Query("channel"))
+	channels, err := parseLogChannelFilter(c.Query("channel"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	group := c.Query("group")
 	var stat model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
 	}
-	rate, err := service.LogRate(service.LogRateFilter{Username: username, TokenName: tokenName, ModelName: modelName, ChannelID: channel, Group: group})
+	rate, err := service.LogRate(service.LogRateFilter{Username: username, TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group})
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -244,18 +294,22 @@ func GetLogsSelfStat(c *gin.Context) {
 	}
 	tokenName := c.Query("token_name")
 	modelName := c.Query("model_name")
-	channel, _ := strconv.Atoi(c.Query("channel"))
+	channels, err := parseLogChannelFilter(c.Query("channel"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	group := c.Query("group")
 	var quotaNum model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channel, group)
+		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
 	}
-	rate, err := service.LogRate(service.LogRateFilter{UserID: c.GetInt("id"), TokenName: tokenName, ModelName: modelName, ChannelID: channel, Group: group})
+	rate, err := service.LogRate(service.LogRateFilter{UserID: c.GetInt("id"), TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group})
 	if err != nil {
 		common.ApiError(c, err)
 		return
