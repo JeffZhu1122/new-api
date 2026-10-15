@@ -29,7 +29,7 @@ import React, {
 } from 'react'
 
 import { useChannelUpstreamUpdates } from '../hooks/use-channel-upstream-updates'
-import { channelsQueryKeys } from '../lib'
+import { channelsQueryKeys, type ChannelFormValues } from '../lib'
 import type { Channel } from '../types'
 
 // ============================================================================
@@ -48,6 +48,8 @@ type DialogType =
   | 'tag-batch-edit'
   | 'edit-tag'
   | 'copy-channel'
+  | 'copy-channel-config'
+  | 'paste-channel-config'
   | null
 
 type UpstreamUpdateState = ReturnType<typeof useChannelUpstreamUpdates>
@@ -55,6 +57,10 @@ type UpstreamUpdateState = ReturnType<typeof useChannelUpstreamUpdates>
 type ChannelsContextType = {
   open: DialogType
   setOpen: (open: DialogType) => void
+  // Create form values from a pasted channel configuration; any other dialog
+  // change clears them so a later Add Channel starts empty.
+  channelDraft: ChannelFormValues | null
+  openChannelDraft: (draft: ChannelFormValues) => void
   currentRow: Channel | null
   setCurrentRow: (row: Channel | null) => void
   currentTag: string | null
@@ -85,7 +91,18 @@ const ChannelsContext = createContext<ChannelsContextType | undefined>(
 // ============================================================================
 
 export function ChannelsProvider({ children }: { children: React.ReactNode }) {
-  const [open, setOpen] = useState<DialogType>(null)
+  const [open, setOpenState] = useState<DialogType>(null)
+  const [channelDraft, setChannelDraft] = useState<ChannelFormValues | null>(
+    null
+  )
+  const setOpen = useCallback((next: DialogType) => {
+    setOpenState(next)
+    setChannelDraft(null)
+  }, [])
+  const openChannelDraft = useCallback((draft: ChannelFormValues) => {
+    setChannelDraft(draft)
+    setOpenState('create-channel')
+  }, [])
   const [currentRow, setCurrentRow] = useState<Channel | null>(null)
   const [currentTag, setCurrentTag] = useState<string | null>(null)
   const [enableTagMode, setEnableTagMode] = useState(() => {
@@ -121,6 +138,8 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
     () => ({
       open,
       setOpen,
+      channelDraft,
+      openChannelDraft,
       currentRow,
       setCurrentRow,
       currentTag,
@@ -139,6 +158,9 @@ export function ChannelsProvider({ children }: { children: React.ReactNode }) {
     }),
     [
       open,
+      setOpen,
+      channelDraft,
+      openChannelDraft,
       currentRow,
       currentTag,
       enableTagMode,

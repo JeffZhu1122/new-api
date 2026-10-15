@@ -218,8 +218,10 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"POST /api/plugin/task/:key/dryrun":              accessTokenScopeRule("plugin:write"),
 	"DELETE /api/plugin/task/:key/versions/:version": accessTokenScopeRule("plugin:write"),
 
-	// router/channel-router.go: the key route is RootAuth, not Casbin-guarded.
-	"POST /api/channel/:id/key": accessTokenScopeRule(service.AccessTokenScopeOf(authz.ChannelSecretView)),
+	// router/channel-router.go: the key and config routes are RootAuth, not
+	// Casbin-guarded. Copying a whole configuration needs a browser session.
+	"POST /api/channel/:id/key":    accessTokenScopeRule(service.AccessTokenScopeOf(authz.ChannelSecretView)),
+	"POST /api/channel/:id/config": accessTokenSessionRule,
 
 	// router/authz-router.go
 	"GET /api/authz/catalog": accessTokenScopeRule("user:read"),

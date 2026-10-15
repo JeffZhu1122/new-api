@@ -7523,6 +7523,20 @@
     "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "更新了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}}",
     "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "更改了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}} 的状态",
     "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "删除了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}}",
-    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "查看了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}} 的完整密钥"
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "查看了用户 {{target_username}}（ID: {{target_user_id}}）的 API 密钥 {{name}} 的完整密钥",
+    "Copy Full Configuration": "复制完整配置",
+    "Paste Channel": "粘贴渠道",
+    "Verify to copy channel configuration": "验证后复制渠道配置",
+    "Enter your 2FA code to copy the full configuration of this channel, keys included.": "输入 2FA 验证码后，即可复制此渠道的完整配置（包括密钥）。",
+    "Failed to fetch the channel configuration": "获取渠道配置失败",
+    "Copy every setting of {{name}}, keys included, then paste it with Paste Channel on another site.": "复制 {{name}} 的全部设置（包括密钥），然后在另一个站点用「粘贴渠道」粘贴。",
+    "Copy configuration": "复制配置",
+    "Verify with 2FA": "使用 2FA 验证",
+    "The configuration is ready. It contains the channel keys, so paste it only into a site you manage.": "配置已准备好。其中包含渠道密钥，请只粘贴到你自己管理的站点。",
+    "The copied configuration contains the channel keys. Two-factor authentication is required.": "复制的配置包含渠道密钥，需要通过 2FA 验证。",
+    "Codex credentials change each time they are refreshed. If two sites use the same credential, one of them will be signed out.": "Codex 凭证每次刷新都会更换。两个站点使用同一份凭证时，其中一个会掉线。",
+    "Paste a configuration copied with Copy Full Configuration. You can review every field before the channel is created.": "粘贴用「复制完整配置」复制的内容。创建渠道前可以检查每个字段。",
+    "This is not a copied channel configuration.": "这不是复制的渠道配置。",
+    "Copied the full configuration of channel {{name}} (ID: {{id}})": "复制了渠道 {{name}} 的完整配置（ID: {{id}}）"
   }
 }

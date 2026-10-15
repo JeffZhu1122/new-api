@@ -20,18 +20,27 @@ import { CHANNEL_TYPE_VLLM, CHANNEL_TYPE_SGLANG } from '../constants'
 import { useChannels } from './channels-provider'
 import { BalanceQueryDialog } from './dialogs/balance-query-dialog'
 import { ChannelTestDialog } from './dialogs/channel-test-dialog'
+import { CopyChannelConfigDialog } from './dialogs/copy-channel-config-dialog'
 import { CopyChannelDialog } from './dialogs/copy-channel-dialog'
 import { EditTagDialog } from './dialogs/edit-tag-dialog'
 import { FetchModelsDialog } from './dialogs/fetch-models-dialog'
 import { InferenceStatusDialog } from './dialogs/inference-status-dialog'
 import { MultiKeyManageDialog } from './dialogs/multi-key-manage-dialog'
 import { OllamaModelsDialog } from './dialogs/ollama-models-dialog'
+import { PasteChannelConfigDialog } from './dialogs/paste-channel-config-dialog'
 import { TagBatchEditDialog } from './dialogs/tag-batch-edit-dialog'
 import { UpstreamUpdateDialog } from './dialogs/upstream-update-dialog'
 import { ChannelMutateDrawer } from './drawers/channel-mutate-drawer'
 
 export function ChannelsDialogs() {
-  const { open, setOpen, currentRow, upstream } = useChannels()
+  const {
+    open,
+    setOpen,
+    channelDraft,
+    openChannelDraft,
+    currentRow,
+    upstream,
+  } = useChannels()
 
   return (
     <>
@@ -55,6 +64,7 @@ export function ChannelsDialogs() {
         open={open === 'create-channel' || open === 'update-channel'}
         onOpenChange={(v) => !v && setOpen(null)}
         currentRow={open === 'update-channel' ? currentRow : null}
+        initialValues={open === 'create-channel' ? channelDraft : null}
       />
 
       {/* Test Channel Dialog */}
@@ -86,6 +96,23 @@ export function ChannelsDialogs() {
         open={open === 'copy-channel'}
         onOpenChange={(v) => !v && setOpen(null)}
       />
+
+      {/* Copy Full Configuration (keys included, after 2FA) */}
+      {open === 'copy-channel-config' && currentRow && (
+        <CopyChannelConfigDialog
+          key={currentRow.id}
+          channel={currentRow}
+          onClose={() => setOpen(null)}
+        />
+      )}
+
+      {/* Paste a copied configuration into the create form */}
+      {open === 'paste-channel-config' && (
+        <PasteChannelConfigDialog
+          onPaste={openChannelDraft}
+          onClose={() => setOpen(null)}
+        />
+      )}
 
       {/* Multi-Key Management Dialog */}
       <MultiKeyManageDialog

@@ -7523,6 +7523,20 @@
     "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} を更新しました",
     "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} の状態を変更しました",
     "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} を削除しました",
-    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} の完全なキーを表示しました"
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "ユーザー {{target_username}}（ID: {{target_user_id}}）の APIキー {{name}} の完全なキーを表示しました",
+    "Copy Full Configuration": "設定をすべてコピー",
+    "Paste Channel": "チャネルを貼り付け",
+    "Verify to copy channel configuration": "チャネル設定をコピーするには認証してください",
+    "Enter your 2FA code to copy the full configuration of this channel, keys included.": "2FA コードを入力すると、このチャネルの設定をキーも含めてすべてコピーできます。",
+    "Failed to fetch the channel configuration": "チャネル設定の取得に失敗しました",
+    "Copy every setting of {{name}}, keys included, then paste it with Paste Channel on another site.": "{{name}} の設定をキーも含めてすべてコピーし、別のサイトで「チャネルを貼り付け」から貼り付けます。",
+    "Copy configuration": "設定をコピー",
+    "Verify with 2FA": "2FA で認証",
+    "The configuration is ready. It contains the channel keys, so paste it only into a site you manage.": "設定の準備ができました。チャネルのキーを含むため、ご自身が管理するサイトにだけ貼り付けてください。",
+    "The copied configuration contains the channel keys. Two-factor authentication is required.": "コピーされる設定にはチャネルのキーが含まれます。二要素認証が必要です。",
+    "Codex credentials change each time they are refreshed. If two sites use the same credential, one of them will be signed out.": "Codex の認証情報は更新のたびに変わります。2 つのサイトで同じ認証情報を使うと、どちらかがサインアウトされます。",
+    "Paste a configuration copied with Copy Full Configuration. You can review every field before the channel is created.": "「設定をすべてコピー」でコピーした内容を貼り付けてください。チャネルを作成する前に各項目を確認できます。",
+    "This is not a copied channel configuration.": "これはコピーされたチャネル設定ではありません。",
+    "Copied the full configuration of channel {{name}} (ID: {{id}})": "チャネル {{name}} の設定をすべてコピーしました（ID: {{id}}）"
   }
 }

@@ -7523,6 +7523,20 @@
     "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) modifiée",
     "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Statut de la clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) modifié",
     "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) supprimée",
-    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Clé complète de la clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) consultée"
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Clé complète de la clé API {{name}} de l'utilisateur {{target_username}} (ID : {{target_user_id}}) consultée",
+    "Copy Full Configuration": "Copier la configuration complète",
+    "Paste Channel": "Coller un canal",
+    "Verify to copy channel configuration": "Vérifiez pour copier la configuration du canal",
+    "Enter your 2FA code to copy the full configuration of this channel, keys included.": "Saisissez votre code 2FA pour copier la configuration complète de ce canal, clés comprises.",
+    "Failed to fetch the channel configuration": "Impossible de récupérer la configuration du canal",
+    "Copy every setting of {{name}}, keys included, then paste it with Paste Channel on another site.": "Copiez tous les paramètres de {{name}}, clés comprises, puis collez-les avec « Coller un canal » sur un autre site.",
+    "Copy configuration": "Copier la configuration",
+    "Verify with 2FA": "Vérifier avec la 2FA",
+    "The configuration is ready. It contains the channel keys, so paste it only into a site you manage.": "La configuration est prête. Elle contient les clés du canal : ne la collez que sur un site que vous gérez.",
+    "The copied configuration contains the channel keys. Two-factor authentication is required.": "La configuration copiée contient les clés du canal. Une authentification à deux facteurs est requise.",
+    "Codex credentials change each time they are refreshed. If two sites use the same credential, one of them will be signed out.": "Les identifiants Codex changent à chaque actualisation. Si deux sites utilisent le même identifiant, l’un d’eux sera déconnecté.",
+    "Paste a configuration copied with Copy Full Configuration. You can review every field before the channel is created.": "Collez une configuration copiée avec « Copier la configuration complète ». Vous pourrez vérifier chaque champ avant la création du canal.",
+    "This is not a copied channel configuration.": "Ceci n’est pas une configuration de canal copiée.",
+    "Copied the full configuration of channel {{name}} (ID: {{id}})": "Configuration complète du canal {{name}} copiée (ID : {{id}})"
   }
 }

@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
 | 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 40 个（含本文档相关提交） |
-| 变更规模 | 293 个文件，+23352 / −2121 行（不含本文档） |
+| fork 专有提交数 | 41 个（含本文档相关提交） |
+| 变更规模 | 304 个文件，+24780 / −2137 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -41,6 +41,7 @@
 24. [渠道「出错一律重试」开关](#24-渠道出错一律重试开关)
 25. [分组可用模型一览](#25-分组可用模型一览)
 26. [root 管理用户的 API 密钥](#26-root-管理用户的-api-密钥)
+27. [跨站复制渠道完整配置](#27-跨站复制渠道完整配置)
 
 ---
 
@@ -69,6 +70,7 @@
 | 24 | 渠道「出错一律重试」开关 | 与本文档同一提交 | 关闭 | `channel_extend` | 重试决策、重试耗尽时返回的错误 |
 | 25 | 分组可用模型一览 | 与本文档同一提交 | 始终可用（只读） | 无 | 新增只读接口、API 密钥页 |
 | 26 | root 管理用户的 API 密钥 | 与本文档同一提交 | 仅 root 可用 | 无（复用 tokens 表） | 新增 root 接口、二次验证 scope、审计、用户管理与 API 密钥页 |
+| 27 | 跨站复制渠道完整配置 | 与本文档同一提交 | 复制仅 root 且需 2FA；粘贴需新建渠道权限 | 无 | 新增 root 接口、只认 2FA 的二次验证 scope、审计、渠道页 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -830,7 +832,9 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/channel_constraint.go` | count_tokens 与 input_tokens 谓词 |
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
-| `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read` 二次验证 scope |
+| `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
+| `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
+| `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
 | `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误 |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
@@ -1388,3 +1392,57 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 用户看到的通知不含管理员身份；需要追查是谁时由 root 查看审计日志。
 - 自助 `AddToken` 对单分组密钥本来就不校验主分组是否可用（请求时由鉴权拒绝），root 接口与之一致。
 
+## 27. 跨站复制渠道完整配置
+
+### 背景
+
+在几个 new-api 站点之间搬运渠道时，原来只能逐个字段手抄，密钥还要先单独查看。本功能在渠道行菜单加「复制完整配置」，把一个渠道的全部配置（含密钥）复制成一段 JSON；到另一个站点用「粘贴渠道」打开预填好的新建表单，检查后保存。两个站点之间不直接通信，不需要跨站令牌。
+
+### 接口
+
+`POST /api/channel/:id/config`：返回渠道的完整配置，包括密钥与 `extend_config`。`RootAuth` + `CriticalRateLimit` + `DisableCache`，访问令牌（PAT）不可调用（`accessTokenSessionRule`）。处理函数是 `controller/channel.go` 的 `GetChannelConfig`。
+
+- **需要 `channel.config.copy` 证明**：新增 scope，上下文 `{channel_id}`（与 `channel.key.read` 同结构；scope 不同，两种证明不能互用）；只有 root 能申请；**只接受 2FA**（TOTP 或备用码），Passkey 与密码都不能代替，未开启 2FA 时申请返回 `TWOFA_NOT_ENABLED`；PAT 不能申请（`accessTokenVerificationScopes` 映射为空）；一次性使用。
+- `middleware.SecureVerificationRequired` 增加 scope 参数，查看密钥（`channel.key.read`）与复制配置共用。证明签发后 2FA 被关闭时，消费证明返回 `SECURITY_PROOF_METHOD_MISMATCH`（此前这种情况会落到 500）。
+- 审计：成功后写一条 `channel.config_copy`（渠道 id、名称），不含密钥与证明。
+
+### 复制的内容
+
+格式为 `{"_type":"newapi_channel_config","version":1,"channel":{…}}`，由前端 `web/src/features/channels/lib/channel-config-transfer.ts` 生成和解析。
+
+- 带上：类型、名称、密钥、组织、测试模型、权重、Base URL、other、模型、分组、模型映射、状态码映射、优先级、自动禁用、标签、备注、setting、参数 / 请求头覆盖、settings、多 Key 信息（是否多 Key、数量、轮询 / 随机）、扩展配置（超时、RPM/TPM、额度上限、可用时段、出错一律重试等）。
+- 不带：ID、状态、创建 / 测试时间、响应时间、余额、已用额度、每个 Key 的启用状态与轮询位置。
+- 接口返回的是 Go 原始模型（`remark` 可能为 null，普通渠道的多 Key 模式与 `settings` 是空串，时段的 `windows` 可能为 null），复制时先规范化，再用粘贴端同一个 schema 校验，保证复制成功的内容一定能粘贴。
+
+### 前端
+
+- 行菜单「复制完整配置」（只有 root 可见，表格与卡片视图都有）：弹窗说明内容含密钥 →「使用 2FA 验证」→ 验证通过后点「复制配置」写入剪贴板。复制是单独的一次点击，保证剪贴板写入发生在用户操作内（Safari 等浏览器在异步请求之后会拒绝写入）。Codex 订阅渠道额外提示：凭证每次刷新都会更换，两个站点共用同一份凭证会互相挤掉。
+- 渠道页「…」菜单「粘贴渠道」（需要 `channel.sensitive_write`，即能新建渠道）：文本框粘贴 → 校验 → 打开新建抽屉并预填全部字段，服务商直接选好；新渠道默认手动禁用（沿用 §12）。多 Key 渠道预填为「多 Key 合并为一个渠道」，Vertex AI 服务账号 JSON 的多 Key 转成 JSON 数组。用文本框而不是直接读剪贴板，http 站点也能用。
+- 预填值存在 `ChannelsProvider` 的 `channelDraft`，任何其他 `setOpen` 都会清掉它，之后再点「创建渠道」是空表单。
+
+### OWASP 对照（ASVS 5.0.0）
+
+| 要求 | 实现 |
+|---|---|
+| V8.2.1 功能级授权 | 接口 `RootAuth`，在服务端判断；菜单可见性只是辅助 |
+| V7.5.3 敏感操作前的额外验证 | 读取完整配置需要 `channel.config.copy` 证明：绑定渠道、一次性、只接受 2FA |
+| V16.2.5 敏感数据不入日志 | 审计只记渠道 id 与名称，不含密钥与证明 |
+| 会话管理 Cheat Sheet：含机密的响应 `Cache-Control: no-store` | 路由挂 `DisableCache` |
+
+未覆盖：复制出的 JSON 是明文，进入剪贴板、聊天工具或文件后不受站点控制，由操作者负责；粘贴端不校验内容来源，粘贴等同于一次普通的新建（保存时的校验与权限照常生效）。
+
+### 测试
+
+- `controller/security_enrollment_test.go` `TestSecurityEnrollmentChannelConfigCopyRequiresTwoFA`：未开 2FA 时申请被拒（已有 Passkey 也不行）；开 2FA 后只提供 2FA；密码验证被拒；PAT 不能申请；无证明 / 查看密钥的证明 / Passkey 签发的证明 / 绑定其他渠道的证明分别返回 `SECURITY_PROOF_REQUIRED` / `SCOPE_MISMATCH` / `METHOD_MISMATCH` / `CONTEXT_MISMATCH`；正确证明返回密钥与 `extend_config`；重放返回 `SECURITY_PROOF_CONSUMED`；证明签发后关闭 2FA 返回 `SECURITY_PROOF_METHOD_MISMATCH`；审计一条且不含密钥与证明；非 root 不能申请。
+- `web/src/features/channels/lib/__tests__/channel-config-transfer.test.ts`：往返后表单字段正确且为禁用；接口的 Go 零值能复制并粘贴；复制文本不含 ID、状态、余额与每个 Key 的状态；多 Key 预填；Vertex 多 Key 转 JSON 数组；拒绝空文本、普通文本、连接信息、新版本格式与缺少密钥的配置。
+- `web/src/features/channels/components/__tests__/channel-config-transfer.test.tsx`：2FA 之前没有复制按钮，验证后复制的是带密钥的配置且请求带 `X-Security-Proof`；取消 2FA 时不请求也不复制；Codex 提示；行菜单只对 root 显示；粘贴无效文本报错且不继续；有效配置交给新建表单；粘贴的草稿在打开其他对话框后被清掉。
+- 本地端到端（两个实例，A 的 root 开 2FA，B 未开）：API 层 12 项（只提供 2FA、密码被拒、无证明 / 查看密钥证明 / 其他渠道证明被拒、正确证明返回密钥与扩展配置、不可重放等）；无头 Chrome 走完整界面：A 登录（密码 + 2FA）→ 行菜单复制 → 2FA → 写入剪贴板，B 登录 →「粘贴渠道」中 Cmd+V → 预填抽屉 → 创建。单 Key 与多 Key 渠道在 B 数据库里的字段、密钥、扩展配置与 A 一致，状态为手动禁用；A 的审计有 `channel.config_copy` 且不含密钥。端到端发现了接口零值导致粘贴失败的问题，已修复并补了测试。
+
+### 已知限制
+
+- 复制出的是含全部密钥的明文 JSON。
+- 两个站点需运行包含本功能的 fork 版本；格式 `version` 不同会被拒绝。
+- 粘贴时不检查目标站是否已有同名渠道，也不检查分组、模型定价、任务插件是否存在（与手工新建一致）。
+- 每个 Key 的禁用状态不复制，目标站上全部 Key 都是启用的。
+- Codex 订阅渠道可以复制，但两个站点同时使用同一份凭证会互相失效（弹窗有提示）。
+- 一次只复制一个渠道。

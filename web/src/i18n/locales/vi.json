@@ -7523,6 +7523,20 @@
     "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã cập nhật khóa API {{name}} của người dùng {{target_username}} (ID: {{target_user_id}})",
     "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã thay đổi trạng thái khóa API {{name}} của người dùng {{target_username}} (ID: {{target_user_id}})",
     "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã xóa khóa API {{name}} của người dùng {{target_username}} (ID: {{target_user_id}})",
-    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã xem khóa đầy đủ của khóa API {{name}} thuộc người dùng {{target_username}} (ID: {{target_user_id}})"
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Đã xem khóa đầy đủ của khóa API {{name}} thuộc người dùng {{target_username}} (ID: {{target_user_id}})",
+    "Copy Full Configuration": "Sao chép toàn bộ cấu hình",
+    "Paste Channel": "Dán kênh",
+    "Verify to copy channel configuration": "Xác minh để sao chép cấu hình kênh",
+    "Enter your 2FA code to copy the full configuration of this channel, keys included.": "Nhập mã 2FA để sao chép toàn bộ cấu hình của kênh này, bao gồm cả khóa.",
+    "Failed to fetch the channel configuration": "Không lấy được cấu hình kênh",
+    "Copy every setting of {{name}}, keys included, then paste it with Paste Channel on another site.": "Sao chép mọi thiết lập của {{name}}, bao gồm cả khóa, rồi dán bằng «Dán kênh» trên trang khác.",
+    "Copy configuration": "Sao chép cấu hình",
+    "Verify with 2FA": "Xác minh bằng 2FA",
+    "The configuration is ready. It contains the channel keys, so paste it only into a site you manage.": "Cấu hình đã sẵn sàng. Cấu hình có chứa khóa kênh, vì vậy chỉ dán vào trang do bạn quản lý.",
+    "The copied configuration contains the channel keys. Two-factor authentication is required.": "Cấu hình sao chép có chứa khóa kênh. Cần xác thực hai yếu tố.",
+    "Codex credentials change each time they are refreshed. If two sites use the same credential, one of them will be signed out.": "Thông tin xác thực Codex thay đổi mỗi lần làm mới. Nếu hai trang dùng chung một thông tin xác thực, một trang sẽ bị đăng xuất.",
+    "Paste a configuration copied with Copy Full Configuration. You can review every field before the channel is created.": "Dán cấu hình đã sao chép bằng «Sao chép toàn bộ cấu hình». Bạn có thể xem lại từng trường trước khi tạo kênh.",
+    "This is not a copied channel configuration.": "Đây không phải là cấu hình kênh đã sao chép.",
+    "Copied the full configuration of channel {{name}} (ID: {{id}})": "Đã sao chép toàn bộ cấu hình kênh {{name}} (ID: {{id}})"
   }
 }

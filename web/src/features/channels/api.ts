@@ -384,6 +384,26 @@ export async function getChannelKey(
   return res.data
 }
 
+/**
+ * Get a channel's whole configuration, keys included, to copy it to another
+ * site (requires a 2FA-only channel.config.copy proof)
+ */
+export async function getChannelConfig(
+  id: number,
+  proofToken: string,
+  signal?: AbortSignal
+): Promise<{ success: boolean; message?: string; data?: Channel }> {
+  const res = await api.post(
+    `/api/channel/${id}/config`,
+    undefined,
+    channelActionConfig({
+      headers: { 'X-Security-Proof': proofToken },
+      signal,
+    })
+  )
+  return res.data
+}
+
 // ============================================================================
 // Codex Channel Operations
 // ============================================================================

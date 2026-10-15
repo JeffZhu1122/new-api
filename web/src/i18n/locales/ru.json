@@ -7523,6 +7523,20 @@
     "Updated API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Изменён ключ API {{name}} пользователя {{target_username}} (ID: {{target_user_id}})",
     "Changed the status of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Изменён статус ключа API {{name}} пользователя {{target_username}} (ID: {{target_user_id}})",
     "Deleted API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Удалён ключ API {{name}} пользователя {{target_username}} (ID: {{target_user_id}})",
-    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Просмотрен полный ключ API {{name}} пользователя {{target_username}} (ID: {{target_user_id}})"
+    "Viewed the key of API key {{name}} of user {{target_username}} (ID: {{target_user_id}})": "Просмотрен полный ключ API {{name}} пользователя {{target_username}} (ID: {{target_user_id}})",
+    "Copy Full Configuration": "Скопировать всю конфигурацию",
+    "Paste Channel": "Вставить канал",
+    "Verify to copy channel configuration": "Подтвердите, чтобы скопировать конфигурацию канала",
+    "Enter your 2FA code to copy the full configuration of this channel, keys included.": "Введите код 2FA, чтобы скопировать всю конфигурацию этого канала, включая ключи.",
+    "Failed to fetch the channel configuration": "Не удалось получить конфигурацию канала",
+    "Copy every setting of {{name}}, keys included, then paste it with Paste Channel on another site.": "Скопируйте все настройки {{name}}, включая ключи, и вставьте их на другом сайте через «Вставить канал».",
+    "Copy configuration": "Скопировать конфигурацию",
+    "Verify with 2FA": "Подтвердить через 2FA",
+    "The configuration is ready. It contains the channel keys, so paste it only into a site you manage.": "Конфигурация готова. Она содержит ключи канала, поэтому вставляйте её только на сайт, которым управляете вы.",
+    "The copied configuration contains the channel keys. Two-factor authentication is required.": "Скопированная конфигурация содержит ключи канала. Требуется двухфакторная аутентификация.",
+    "Codex credentials change each time they are refreshed. If two sites use the same credential, one of them will be signed out.": "Учётные данные Codex меняются при каждом обновлении. Если два сайта используют одни и те же данные, один из них будет отключён.",
+    "Paste a configuration copied with Copy Full Configuration. You can review every field before the channel is created.": "Вставьте конфигурацию, скопированную через «Скопировать всю конфигурацию». Перед созданием канала можно проверить каждое поле.",
+    "This is not a copied channel configuration.": "Это не скопированная конфигурация канала.",
+    "Copied the full configuration of channel {{name}} (ID: {{id}})": "Скопирована вся конфигурация канала {{name}} (ID: {{id}})"
   }
 }
