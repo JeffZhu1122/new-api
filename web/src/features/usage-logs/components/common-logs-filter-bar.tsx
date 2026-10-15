@@ -337,7 +337,8 @@ export function CommonLogsFilterBar<TData>(
   const modelFilter = (
     <LogsFilterField>
       <LogsFilterInput
-        placeholder={t('Model Name')}
+        placeholder={t('Model name (fuzzy)')}
+        aria-label={t('Model name (fuzzy)')}
         value={filters.model || ''}
         onChange={(e) => handleChange('model', e.target.value)}
         onKeyDown={handleKeyDown}
@@ -458,7 +459,8 @@ export function CommonLogsFilterBar<TData>(
       {isAdmin && (
         <LogsFilterField>
           <LogsFilterInput
-            placeholder={t('Channel ID')}
+            placeholder={t('Channel IDs, e.g. 1,2,3')}
+            aria-label={t('Channel IDs, e.g. 1,2,3')}
             value={filters.channel || ''}
             onChange={(e) => handleChange('channel', e.target.value)}
             onKeyDown={handleKeyDown}

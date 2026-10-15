@@ -473,7 +473,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 }
 
 // LogFilter is the usage-log search shared by the log list and the log export.
-// Username and Channel are administrator filters.
+// Username and Channels are administrator filters; an empty Channels means
+// every channel.
 type LogFilter struct {
 	Type              int
 	StartTimestamp    int64
@@ -481,7 +482,7 @@ type LogFilter struct {
 	ModelName         string
 	Username          string
 	TokenName         string
-	Channel           int
+	Channels          []int
 	Group             string
 	RequestId         string
 	UpstreamRequestId string
@@ -513,8 +514,8 @@ func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
 	if f.EndTimestamp != 0 {
 		tx = tx.Where("logs.created_at <= ?", f.EndTimestamp)
 	}
-	if f.Channel != 0 {
-		tx = tx.Where("logs.channel_id = ?", f.Channel)
+	if len(f.Channels) > 0 {
+		tx = tx.Where("logs.channel_id IN ?", f.Channels)
 	}
 	if f.Group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", f.Group)
@@ -686,7 +687,7 @@ type Stat struct {
 // SumUsedQuota sums the consumed quota matching the usage-log filters. The
 // log page's RPM / TPM come from the live statistics (service.LogRate), not
 // from this table.
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channel int, group string) (stat Stat, err error) {
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channelFilter []int, group string) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
 
 	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
@@ -704,8 +705,8 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if tx, err = applyExplicitLogTextFilter(tx, "model_name", modelName); err != nil {
 		return stat, err
 	}
-	if channel != 0 {
-		tx = tx.Where("channel_id = ?", channel)
+	if len(channelFilter) > 0 {
+		tx = tx.Where("channel_id IN ?", channelFilter)
 	}
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)
