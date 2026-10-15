@@ -563,6 +563,35 @@ func GetChannelKey(c *gin.Context) {
 	})
 }
 
+// GetChannelConfig returns one channel's whole configuration, keys and
+// extend settings included, so the root user can copy it to another site.
+// SecureVerificationRequired has consumed a channel.config.copy proof, which
+// only 2FA issues.
+func GetChannelConfig(c *gin.Context) {
+	channelId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || channelId <= 0 {
+		common.ApiErrorT(c, "Invalid channel ID")
+		return
+	}
+	channel, err := model.GetChannelById(channelId, true)
+	if errors.Is(err, gorm.ErrRecordNotFound) {
+		common.ApiErrorT(c, "Channel does not exist")
+		return
+	}
+	if err != nil {
+		writeSecurityOperationError(c, err)
+		return
+	}
+	if extendSettings, err := model.GetChannelExtend(channel.Id); err == nil && !extendSettings.IsZero() {
+		channel.ExtendConfig = &extendSettings
+	}
+	recordManageAudit(c, "channel.config_copy", map[string]any{
+		"id":   channelId,
+		"name": channel.Name,
+	})
+	common.ApiSuccess(c, channel)
+}
+
 // maxTaskExtendPluginKeys bounds the plugins one New API channel can be
 // extended with; it comfortably covers every built-in and installed plugin.
 const maxTaskExtendPluginKeys = 32

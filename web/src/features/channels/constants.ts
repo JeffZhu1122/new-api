@@ -28,6 +28,10 @@ export const CHANNEL_PRIORITY_GUIDE_KEYS = {
 
 export const CHANNEL_TYPE_OLLAMA = 4
 
+export const CHANNEL_TYPE_VERTEX_AI = 41
+
+export const CHANNEL_TYPE_CODEX = 57
+
 export const CHANNEL_TYPE_SUB2API = 59
 
 export const CHANNEL_TYPE_NEW_API = 60

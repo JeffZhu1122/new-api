@@ -28,6 +28,7 @@ import (
 	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/oauth"
+	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/fxamacker/cbor/v2"
@@ -857,6 +858,112 @@ func TestSecurityEnrollmentChannelProofRejectsMismatchesBeforeConsumption(t *tes
 	assert.ErrorIs(t, err, service.ErrProofConsumed)
 }
 
+func TestSecurityEnrollmentChannelConfigCopyRequiresTwoFA(t *testing.T) {
+	user, _ := setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleRootUser).Error)
+	require.NoError(t, model.PublishUserAuthCache(user.Id))
+	bundle, err := service.CreateLoginSession(user.Id, "password", "127.0.0.1", "config-copy")
+	require.NoError(t, err)
+	identity, err := service.ParseAccessToken(bundle.AccessToken)
+	require.NoError(t, err)
+	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}, &model.ChannelExtend{}))
+	for _, channel := range []model.Channel{
+		{Id: 123, Name: "first", Key: "first-channel-secret", Type: 1, Status: 1},
+		{Id: 456, Name: "second", Key: "second-channel-secret", Type: 1, Status: 1},
+	} {
+		require.NoError(t, model.DB.Create(&channel).Error)
+	}
+	require.NoError(t, model.UpsertChannelExtend(model.DB, 123, dto.ChannelExtendSettings{ForceRetry: true}))
+	scope := service.VerificationScopeChannelConfigCopy
+	copyFirst := service.VerificationOperation{Scope: scope, Context: []byte(`{"channel_id":123}`)}
+
+	// A Passkey or a password never stands in for 2FA.
+	require.NoError(t, model.DB.Create(&model.PasskeyCredential{UserID: user.Id, CredentialID: "enrolled-passkey", PublicKey: "public-key"}).Error)
+	_, err = service.GetVerificationRequirements(identity, scope)
+	assert.ErrorIs(t, err, model.ErrTwoFANotEnabled)
+	twoFA := &model.TwoFA{UserId: user.Id, Secret: "JBSWY3DPEHPK3PXP", IsEnabled: true}
+	require.NoError(t, model.DB.Create(twoFA).Error)
+	requirements, err := service.GetVerificationRequirements(identity, scope)
+	require.NoError(t, err)
+	assert.Equal(t, []service.VerificationMethodOption{{Method: "2fa", Available: true}}, requirements.Methods)
+	_, err = service.VerifySecurityInput(identity, service.VerificationInput{Method: "password", Scope: scope, Context: copyFirst.Context, Password: "enrollment-password"})
+	assert.ErrorIs(t, err, service.ErrProofMethod)
+	scopeForTokens, listed := service.AccessTokenVerificationScope(scope)
+	assert.True(t, listed)
+	assert.Empty(t, scopeForTokens, "access tokens can never obtain the proof")
+
+	code, err := totp.GenerateCode(twoFA.Secret, time.Now())
+	require.NoError(t, err)
+	proof, err := service.VerifySecurityInput(identity, service.VerificationInput{Method: "2fa", Scope: scope, Context: copyFirst.Context, Code: code})
+	require.NoError(t, err)
+	keyReadProof := issueSecurityEnrollmentProof(t, identity, service.VerificationOperation{Scope: service.VerificationScopeChannelKeyRead, Context: copyFirst.Context}, "2fa")
+	passkeyProof := issueSecurityEnrollmentProof(t, identity, copyFirst, "passkey")
+
+	router := gin.New()
+	router.POST("/api/channel/:id/config", middleware.RootAuth(), middleware.SecureVerificationRequired(scope), GetChannelConfig)
+	request := func(path, proof string) (*httptest.ResponseRecorder, securityEnrollmentResponse) {
+		httpRequest := httptest.NewRequest("POST", path, nil)
+		httpRequest.Header.Set("Authorization", "Bearer "+bundle.AccessToken)
+		httpRequest.Header.Set("X-Security-Proof", proof)
+		result := httptest.NewRecorder()
+		router.ServeHTTP(result, httpRequest)
+		var response securityEnrollmentResponse
+		require.NoError(t, common.Unmarshal(result.Body.Bytes(), &response))
+		return result, response
+	}
+	for _, test := range []struct {
+		name, path, proof, code string
+		status                  int
+	}{
+		{"no proof", "/api/channel/123/config", "", "SECURITY_PROOF_REQUIRED", http.StatusForbidden},
+		{"channel key proof", "/api/channel/123/config", keyReadProof, "SECURITY_PROOF_SCOPE_MISMATCH", http.StatusForbidden},
+		{"passkey proof", "/api/channel/123/config", passkeyProof, "SECURITY_PROOF_METHOD_MISMATCH", http.StatusForbidden},
+		{"other channel", "/api/channel/456/config", proof.ProofToken, "SECURITY_PROOF_CONTEXT_MISMATCH", http.StatusForbidden},
+		{"authorized channel", "/api/channel/123/config", proof.ProofToken, "", http.StatusOK},
+		{"replay", "/api/channel/123/config", proof.ProofToken, "SECURITY_PROOF_CONSUMED", http.StatusForbidden},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			result, response := request(test.path, test.proof)
+			assert.Equal(t, test.status, result.Code)
+			assert.Equal(t, test.code, response.Code)
+			if test.status != http.StatusOK {
+				assert.NotContains(t, result.Body.String(), "channel-secret")
+				return
+			}
+			var config struct {
+				Name         string                     `json:"name"`
+				Key          string                     `json:"key"`
+				ExtendConfig *dto.ChannelExtendSettings `json:"extend_config"`
+			}
+			require.NoError(t, common.Unmarshal(response.Data, &config))
+			assert.Equal(t, "first", config.Name)
+			assert.Equal(t, "first-channel-secret", config.Key)
+			require.NotNil(t, config.ExtendConfig)
+			assert.True(t, config.ExtendConfig.ForceRetry)
+		})
+	}
+
+	// Turning 2FA off voids an unused proof instead of failing the request.
+	pending := issueSecurityEnrollmentProof(t, identity, copyFirst, "2fa")
+	require.NoError(t, model.DB.Model(twoFA).Update("is_enabled", false).Error)
+	result, response := request("/api/channel/123/config", pending)
+	assert.Equal(t, http.StatusForbidden, result.Code)
+	assert.Equal(t, "SECURITY_PROOF_METHOD_MISMATCH", response.Code)
+
+	var logs []model.AuditLog
+	require.NoError(t, model.LOG_DB.Where("action = ?", "channel.config_copy").Find(&logs).Error)
+	require.Len(t, logs, 1)
+	encodedLogs, err := common.Marshal(logs)
+	require.NoError(t, err)
+	assert.NotContains(t, string(encodedLogs), "first-channel-secret")
+	assert.NotContains(t, string(encodedLogs), proof.ProofToken)
+
+	require.NoError(t, model.DB.Model(user).Update("role", common.RoleAdminUser).Error)
+	require.NoError(t, model.PublishUserAuthCache(user.Id))
+	_, err = service.GetVerificationRequirements(identity, scope)
+	assert.ErrorIs(t, err, service.ErrVerificationForbidden, "only the root user can copy a configuration")
+}
+
 func TestSecurityEnrollmentProofConcurrentConsumption(t *testing.T) {
 	_, identity := setupSecurityEnrollmentTest(t)
 	operation := service.VerificationOperation{Scope: "passkey.register"}
@@ -1106,7 +1213,7 @@ func TestSecurityEnrollmentPasskeyProofProtectsChannelKeyRead(t *testing.T) {
 	assert.Equal(t, "channel.key.read", proof.Scope, "finish cannot replace the operation approved at begin")
 
 	router := gin.New()
-	router.POST("/api/channel/:id/key", middleware.RootAuth(), middleware.SecureVerificationRequired(), GetChannelKey)
+	router.POST("/api/channel/:id/key", middleware.RootAuth(), middleware.SecureVerificationRequired(service.VerificationScopeChannelKeyRead), GetChannelKey)
 	for _, test := range []struct {
 		name, path, proof, code, key string
 		status                       int
