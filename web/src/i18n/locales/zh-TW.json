@@ -7537,6 +7537,9 @@
     "Codex credentials change each time they are refreshed. If two sites use the same credential, one of them will be signed out.": "Codex 憑證每次重新整理都會更換。兩個站點使用同一份憑證時，其中一個會被登出。",
     "Paste a configuration copied with Copy Full Configuration. You can review every field before the channel is created.": "貼上用「複製完整設定」複製的內容。建立渠道前可以檢查每個欄位。",
     "This is not a copied channel configuration.": "這不是複製的渠道設定。",
-    "Copied the full configuration of channel {{name}} (ID: {{id}})": "複製了渠道 {{name}} 的完整設定（ID: {{id}}）"
+    "Copied the full configuration of channel {{name}} (ID: {{id}})": "複製了渠道 {{name}} 的完整設定（ID: {{id}}）",
+    "Model name (fuzzy)": "模型名稱（模糊）",
+    "Channel IDs, e.g. 1,2,3": "渠道 ID，如 1,2,3",
+    "Search at most {{max}} channel IDs at once": "一次最多搜尋 {{max}} 個渠道 ID"
   }
 }

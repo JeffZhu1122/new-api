@@ -108,7 +108,8 @@ it('shows the live token split from a rate-only poll with the same filters', asy
 
   const urls = get.mock.calls.map(([url]) => String(url))
   const ratePoll = urls.find((url) => url.includes('rate_only=true'))
-  expect(ratePoll).toContain('model_name=gpt-4o')
+  // The model search box is a contains match, sent as %gpt-4o%.
+  expect(ratePoll).toContain('model_name=%25gpt-4o%25')
   expect(urls.some((url) => !url.includes('rate_only'))).toBe(true)
 })
 
