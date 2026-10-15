@@ -63,6 +63,7 @@ var auditContentTemplates = map[string]string{
 	"channel.delete_batch":       "Batch deleted ${count} channels",
 	"channel.delete_disabled":    "Deleted all disabled channels (${count})",
 	"channel.key_view":           "Viewed channel key ${name} (ID: ${id})",
+	"channel.config_copy":        "Copied the full configuration of channel ${name} (ID: ${id})",
 	"channel.tag_disable":        "Disabled channels with tag ${tag}",
 	"channel.tag_enable":         "Enabled channels with tag ${tag}",
 	"channel.tag_edit":           "Edited channels with tag ${tag}",

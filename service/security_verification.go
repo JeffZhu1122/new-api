@@ -49,6 +49,9 @@ const (
 	// of another user; the proof is bound to that user and key.
 	VerificationScopeAdminUserTokenRead = "admin.user.token.read"
 	verificationScopeAdminUserPrefix    = "admin.user."
+	// VerificationScopeChannelConfigCopy lets the root user copy one channel's
+	// whole configuration, keys included, to another site. Only 2FA issues it.
+	VerificationScopeChannelConfigCopy = "channel.config.copy"
 )
 
 // adminUserManageActions are the ManageUser actions that change a user's
@@ -71,6 +74,8 @@ type VerificationOperation struct {
 	Context json.RawMessage `json:"context,omitempty"`
 }
 
+// ChannelKeyReadContext names the one channel a channel.key.read or
+// channel.config.copy proof covers.
 type ChannelKeyReadContext struct {
 	ChannelID int `json:"channel_id"`
 }
@@ -172,7 +177,7 @@ func BindVerificationOperation(operation VerificationOperation) (VerificationBin
 	}
 	var normalized any
 	switch operation.Scope {
-	case VerificationScopeChannelKeyRead:
+	case VerificationScopeChannelKeyRead, VerificationScopeChannelConfigCopy:
 		var context ChannelKeyReadContext
 		if len(fields) != 1 || common.Unmarshal(fields["channel_id"], &context.ChannelID) != nil || context.ChannelID <= 0 {
 			return VerificationBinding{}, ErrVerificationContextInvalid
@@ -335,6 +340,13 @@ func securityVerificationPolicy(scope string, state model.UserVerificationState)
 	}
 	switch scope {
 	case VerificationScopeChannelKeyRead, VerificationScopePasskeyDelete, VerificationScopeLogin:
+	case VerificationScopeChannelConfigCopy:
+		// A copied configuration leaves the site with its keys, so a Passkey
+		// or a password is not accepted in place of 2FA.
+		if !state.HasTwoFA {
+			return nil, model.ErrTwoFANotEnabled
+		}
+		methods = []string{VerificationMethodTwoFA}
 	case VerificationScopeTwoFADisable, VerificationScopeTwoFABackupCodes:
 		if !state.HasTwoFA {
 			return nil, model.ErrTwoFANotEnabled
@@ -391,7 +403,7 @@ func GetVerificationRequirements(identity AuthIdentity, scope string) (*Verifica
 	if state.Status != common.UserStatusEnabled || state.AuthVersion != identity.UserAuthVersion {
 		return nil, ErrAuthTokenInvalid
 	}
-	if (scope == VerificationScopeChannelKeyRead || scope == VerificationScopeAdminUserTokenRead) && state.Role != common.RoleRootUser {
+	if (scope == VerificationScopeChannelKeyRead || scope == VerificationScopeChannelConfigCopy || scope == VerificationScopeAdminUserTokenRead) && state.Role != common.RoleRootUser {
 		return nil, ErrVerificationForbidden
 	}
 	if strings.HasPrefix(scope, verificationScopeAdminUserPrefix) && state.Role < common.RoleAdminUser {
