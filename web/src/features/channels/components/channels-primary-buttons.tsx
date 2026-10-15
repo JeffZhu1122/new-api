@@ -29,6 +29,7 @@ import {
   ListChecks,
   RefreshCw,
   ArrowUpFromLine,
+  ClipboardPaste,
 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -209,6 +210,22 @@ export function ChannelsPrimaryButtons() {
             </DropdownMenuCheckboxItem>
 
             <DropdownMenuSeparator className='sm:hidden' />
+
+            <DropdownMenuItem
+              onClick={() => {
+                if (!canEditSensitive) return
+                setCurrentRow(null)
+                setOpen('paste-channel-config')
+              }}
+              disabled={!canEditSensitive}
+            >
+              {t('Paste Channel')}
+              <DropdownMenuShortcut>
+                <ClipboardPaste className='h-4 w-4' />
+              </DropdownMenuShortcut>
+            </DropdownMenuItem>
+
+            <DropdownMenuSeparator />
 
             <DropdownMenuItem
               onClick={() => {

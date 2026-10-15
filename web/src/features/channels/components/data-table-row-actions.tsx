@@ -27,6 +27,7 @@ import {
   DollarSign,
   Download,
   Copy,
+  ClipboardCopy,
   Power,
   PowerOff,
   Key,
@@ -57,6 +58,7 @@ import {
   ADMIN_PERMISSION_RESOURCES,
   hasPermission,
 } from '@/lib/admin-permissions'
+import { ROLE } from '@/lib/roles'
 import { useAuthStore } from '@/stores/auth-store'
 
 import { MODEL_FETCHABLE_TYPES } from '../constants'
@@ -94,6 +96,8 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
     ADMIN_PERMISSION_RESOURCES.CHANNEL,
     ADMIN_PERMISSION_ACTIONS.SENSITIVE_WRITE
   )
+  // Copying a configuration reveals the keys, which only the root user may see.
+  const canCopyConfig = currentUser?.role === ROLE.SUPER_ADMIN
 
   const handleEdit = () => {
     setCurrentRow(channel)
@@ -135,6 +139,11 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
   const handleCopy = () => {
     setCurrentRow(channel)
     setOpen('copy-channel')
+  }
+
+  const handleCopyConfig = () => {
+    setCurrentRow(channel)
+    setOpen('copy-channel-config')
   }
 
   const handleManageKeys = () => {
@@ -333,6 +342,16 @@ export function DataTableRowActions({ row }: DataTableRowActionsProps) {
           {!canEditSensitive && (
             <DropdownMenuItem disabled className='text-xs normal-case'>
               {t('No permission to perform this action')}
+            </DropdownMenuItem>
+          )}
+
+          {/* Copy Full Configuration (root only, after 2FA) */}
+          {canCopyConfig && (
+            <DropdownMenuItem onClick={handleCopyConfig}>
+              {t('Copy Full Configuration')}
+              <DropdownMenuShortcut>
+                <ClipboardCopy size={16} />
+              </DropdownMenuShortcut>
             </DropdownMenuItem>
           )}
 

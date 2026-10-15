@@ -6,6 +6,7 @@ import (
 
 	"github.com/QuantumNous/new-api/controller"
 	"github.com/QuantumNous/new-api/middleware"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/service/authz"
 	"github.com/gin-gonic/gin"
 )
@@ -45,8 +46,15 @@ func registerChannelRoutes(apiRouter *gin.RouterGroup) {
 		middleware.RootAuth(),
 		middleware.CriticalRateLimit(),
 		middleware.DisableCache(),
-		middleware.SecureVerificationRequired(),
+		middleware.SecureVerificationRequired(service.VerificationScopeChannelKeyRead),
 		controller.GetChannelKey,
+	)
+	channelRoute.POST("/:id/config",
+		middleware.RootAuth(),
+		middleware.CriticalRateLimit(),
+		middleware.DisableCache(),
+		middleware.SecureVerificationRequired(service.VerificationScopeChannelConfigCopy),
+		controller.GetChannelConfig,
 	)
 
 	for _, route := range channelPermissionRoutes {

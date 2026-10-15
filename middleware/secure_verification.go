@@ -12,9 +12,11 @@ import (
 	"github.com/gin-gonic/gin"
 )
 
-// SecureVerificationRequired protects channel key disclosure. Other sensitive
-// operations validate their narrower proof scopes in their controller.
-func SecureVerificationRequired() gin.HandlerFunc {
+// SecureVerificationRequired protects channel secret disclosure with a proof
+// of scope bound to the :id channel: channel.key.read or channel.config.copy.
+// Other sensitive operations validate their narrower proof scopes in their
+// controller.
+func SecureVerificationRequired(scope string) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		channelID, err := strconv.Atoi(c.Param("id"))
 		if err != nil || channelID <= 0 {
@@ -26,7 +28,7 @@ func SecureVerificationRequired() gin.HandlerFunc {
 			c.AbortWithStatus(http.StatusInternalServerError)
 			return
 		}
-		if RequireSecurityProof(c, service.VerificationOperation{Scope: service.VerificationScopeChannelKeyRead, Context: context}) == nil {
+		if RequireSecurityProof(c, service.VerificationOperation{Scope: scope, Context: context}) == nil {
 			return
 		}
 		c.Set("secure_verified", true)
@@ -60,7 +62,9 @@ func RequireSecurityProof(c *gin.Context, operation service.VerificationOperatio
 			c.AbortWithStatusJSON(http.StatusBadRequest, gin.H{"success": false, "code": "SECURITY_CONTEXT_INVALID", "message": service.ErrVerificationContextInvalid.Error()})
 		case errors.Is(err, service.ErrVerificationUnavailable):
 			securityProofError(c, "SECURITY_METHOD_UNAVAILABLE", service.ErrVerificationUnavailable.Error())
-		case errors.Is(err, service.ErrProofMethod):
+		case errors.Is(err, service.ErrProofMethod), errors.Is(err, model.ErrTwoFANotEnabled):
+			// A 2FA-only scope reports a 2FA disabled after the proof was issued
+			// as ErrTwoFANotEnabled; the proof's method is no longer allowed.
 			securityProofError(c, "SECURITY_PROOF_METHOD_MISMATCH", "This verification method is not allowed for this action.")
 		case errors.Is(err, service.ErrProofConsumed):
 			securityProofError(c, "SECURITY_PROOF_CONSUMED", "This verification has already been used. Please verify again.")
