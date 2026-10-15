@@ -243,14 +243,15 @@ func settledOpenAITokens(input int, output int, details dto.InputTokenDetails) T
 }
 
 // LogRateFilter mirrors the usage-log filters. Username and ModelName accept
-// the same % patterns as the log queries; UserID pins the self view.
+// the same % patterns as the log queries; UserID pins the self view;
+// ChannelIDs matches any of the channels.
 type LogRateFilter struct {
-	UserID    int
-	Username  string
-	TokenName string
-	ModelName string
-	ChannelID int
-	Group     string
+	UserID     int
+	Username   string
+	TokenName  string
+	ModelName  string
+	ChannelIDs []int
+	Group      string
 }
 
 // LogRateReading is the usage-log RPM / TPM: settled requests and their
@@ -305,7 +306,7 @@ func (r *rpmStatsRecorder) logRate(at time.Time, f LogRateFilter) (LogRateReadin
 
 	// A single exact filter, or channel plus one user, has a summary hash.
 	filters := 0
-	for _, set := range []bool{userIDs != nil, f.TokenName != "", f.ModelName != "", f.ChannelID > 0, f.Group != ""} {
+	for _, set := range []bool{userIDs != nil, f.TokenName != "", f.ModelName != "", len(f.ChannelIDs) > 0, f.Group != ""} {
 		if set {
 			filters++
 		}
@@ -317,16 +318,20 @@ func (r *rpmStatsRecorder) logRate(at time.Time, f LogRateFilter) (LogRateReadin
 		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindAll}, fields: tokenStatsFields([]string{""})}
 	case filters == 1 && singleUser:
 		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindUser}, fields: tokenStatsFields([]string{strconv.Itoa(userIDs[0])})}
-	case filters == 1 && f.ChannelID > 0:
-		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindChannel}, fields: tokenStatsFields([]string{strconv.Itoa(f.ChannelID)})}
+	case filters == 1 && len(f.ChannelIDs) > 0:
+		channels := make([]string, len(f.ChannelIDs))
+		for i, id := range f.ChannelIDs {
+			channels[i] = strconv.Itoa(id)
+		}
+		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindChannel}, fields: tokenStatsFields(channels)}
 	case filters == 1 && f.ModelName != "" && !strings.Contains(f.ModelName, "%"):
 		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindModel}, fields: tokenStatsFields([]string{f.ModelName})}
 	case filters == 1 && f.Group != "":
 		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindGroup}, fields: tokenStatsFields([]string{f.Group})}
 	case filters == 1 && f.TokenName != "":
 		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindToken}, fields: tokenStatsFields([]string{f.TokenName})}
-	case filters == 2 && singleUser && f.ChannelID > 0:
-		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindChannelUser, owner: f.ChannelID}, fields: tokenStatsFields([]string{strconv.Itoa(userIDs[0])})}
+	case filters == 2 && singleUser && len(f.ChannelIDs) == 1:
+		summary = &rpmStatsQuery{hash: rpmStatsHash{kind: statsKindChannelUser, owner: f.ChannelIDs[0]}, fields: tokenStatsFields([]string{strconv.Itoa(userIDs[0])})}
 	}
 	if summary != nil {
 		sums, err := r.sum(w, []rpmStatsQuery{*summary})
@@ -365,7 +370,7 @@ func (r *rpmStatsRecorder) logRate(at time.Time, f LogRateFilter) (LogRateReadin
 			if f.ModelName != "" && !matchLogText(f.ModelName, detail.modelName) {
 				continue
 			}
-			if f.ChannelID > 0 && detail.channelID != f.ChannelID {
+			if len(f.ChannelIDs) > 0 && !slices.Contains(f.ChannelIDs, detail.channelID) {
 				continue
 			}
 			if f.Group != "" && detail.group != f.Group {

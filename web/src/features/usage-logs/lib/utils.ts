@@ -152,6 +152,16 @@ export function buildBaseParams(config: {
 }
 
 /**
+ * The model search box matches every model whose name contains the text. A
+ * value with % is sent unchanged as the user's own pattern.
+ */
+export function toModelNameSearch(value: string): string {
+  const text = value.trim()
+  if (!text || text.includes('%')) return text
+  return `%${text}%`
+}
+
+/**
  * Build API params from search params and column filters (for common logs)
  */
 export function buildApiParams(config: {
@@ -184,11 +194,13 @@ export function buildApiParams(config: {
     p: page,
     page_size: pageSize,
     ...(searchParams.type ? { type: processType(searchParams.type) } : {}),
-    ...(searchParams.model ? { model_name: String(searchParams.model) } : {}),
+    ...(searchParams.model
+      ? { model_name: toModelNameSearch(String(searchParams.model)) }
+      : {}),
     ...(searchParams.token ? { token_name: String(searchParams.token) } : {}),
     ...(searchParams.group ? { group: String(searchParams.group) } : {}),
     ...(isAdmin && searchParams.channel
-      ? { channel: Number(searchParams.channel) || 0 }
+      ? { channel: String(searchParams.channel).trim() }
       : {}),
     ...(isAdmin && searchParams.username
       ? { username: String(searchParams.username) }
@@ -212,7 +224,7 @@ export function buildApiParams(config: {
           params.type = processType(value)
           break
         case 'model_name':
-          params.model_name = String(value)
+          params.model_name = toModelNameSearch(String(value))
           break
         case 'token_name':
           params.token_name = String(value)
@@ -221,7 +233,7 @@ export function buildApiParams(config: {
           params.group = String(value)
           break
         case 'channel':
-          if (isAdmin) params.channel = Number(value) || 0
+          if (isAdmin) params.channel = String(value).trim()
           break
         case 'username':
           if (isAdmin) params.username = String(value)

@@ -205,7 +205,9 @@ it('downloads the streamed logs of the current filters as CSV', async () => {
   const [url] = fetchSpy.mock.calls[0]
   const params = new URL(String(url), 'http://localhost').searchParams
   expect(String(url)).toMatch(/^\/api\/log\/self\/export\?/)
-  expect(params.get('model_name')).toBe('gpt-4o')
+  // The model box matches part of a model name, so the export searches the
+  // same logs as the list.
+  expect(params.get('model_name')).toBe('%gpt-4o%')
   expect(params.get('start_timestamp')).toBe(
     String(Math.floor(range.startTime / 1000))
   )

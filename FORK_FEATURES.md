@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
 | 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 41 个（含本文档相关提交） |
-| 变更规模 | 304 个文件，+24780 / −2137 行（不含本文档） |
+| fork 专有提交数 | 42 个（含本文档相关提交） |
+| 变更规模 | 310 个文件，+25119 / −2157 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -42,6 +42,7 @@
 25. [分组可用模型一览](#25-分组可用模型一览)
 26. [root 管理用户的 API 密钥](#26-root-管理用户的-api-密钥)
 27. [跨站复制渠道完整配置](#27-跨站复制渠道完整配置)
+28. [使用日志：模型名模糊搜索与多渠道筛选](#28-使用日志模型名模糊搜索与多渠道筛选)
 
 ---
 
@@ -71,6 +72,7 @@
 | 25 | 分组可用模型一览 | 与本文档同一提交 | 始终可用（只读） | 无 | 新增只读接口、API 密钥页 |
 | 26 | root 管理用户的 API 密钥 | 与本文档同一提交 | 仅 root 可用 | 无（复用 tokens 表） | 新增 root 接口、二次验证 scope、审计、用户管理与 API 密钥页 |
 | 27 | 跨站复制渠道完整配置 | 与本文档同一提交 | 复制仅 root 且需 2FA；粘贴需新建渠道权限 | 无 | 新增 root 接口、只认 2FA 的二次验证 scope、审计、渠道页 |
+| 28 | 使用日志：模型名模糊搜索与多渠道筛选 | 与本文档同一提交 | 始终生效 | 无 | 使用日志列表与统计接口的 `channel` 参数、实时 RPM/TPM 过滤、日志页筛选框 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -833,6 +835,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
+| `model/log.go` | §28 把 `GetAllLogs` / `SumUsedQuota` 的渠道参数从 `int` 改为 `[]int`（`channel_id IN ?`） |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
@@ -1446,3 +1449,30 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 每个 Key 的禁用状态不复制，目标站上全部 Key 都是启用的。
 - Codex 订阅渠道可以复制，但两个站点同时使用同一份凭证会互相失效（弹窗有提示）。
 - 一次只复制一个渠道。
+
+## 28. 使用日志：模型名模糊搜索与多渠道筛选
+
+### 背景
+
+上游的使用日志里，模型名默认精确匹配，要模糊搜索得自己输入 `%`（如 `%claude%`），界面上没有任何提示；渠道只能填一个 ID，填 `1,2` 时前端会把它转成 `NaN` 再当作 0 发出去，等于悄悄不过滤。
+
+### 行为
+
+- **模型名默认「包含」匹配**：日志页的模型框（占位文字「模型名称（模糊）」）输入 `4o` 时，前端发送 `model_name=%4o%`，匹配所有名称里含 `4o` 的模型；输入里带 `%` 时原样发送，作为用户自己的匹配模式。转换在 `web/src/features/usage-logs/lib/utils.ts` 的 `toModelNameSearch`，列表、额度统计、实时 RPM/TPM 共用 `buildApiParams`，三者口径一致。后端对不带 `%` 的值仍是精确匹配，所以直接调接口的脚本行为不变；模式规则沿用上游（`%` 最多 2 个、关键词至少 2 个字符，`_` 按字面匹配）。
+- **渠道可填多个 ID**：管理员视图的渠道框（「渠道 ID，如 1,2,3」）可以用英文逗号、中文逗号或空格分隔，如 `1,2 5`。后端 `controller/log.go` 的 `parseLogChannelFilter` 解析：去重；`0` 表示不过滤（兼容旧行为）；负数或非数字返回「Invalid channel ID」；超过 100 个返回「Search at most {{max}} channel IDs at once」。`model.GetAllLogs` / `model.SumUsedQuota` 的渠道参数改为 `[]int`，SQL 为 `channel_id IN ?`。
+- **实时 RPM/TPM 同步支持**：`service.LogRateFilter.ChannelID` 改为 `ChannelIDs []int`。只按渠道过滤时把多个渠道的汇总字段一起求和；一个渠道 + 一个用户仍走渠道 × 用户汇总；其他组合按每个用户的明细逐条判断渠道是否在列表里。
+- 用户自己的统计接口（`/api/log/self/stat`）同样接受多个渠道；前端的用户视图不发送渠道参数。
+
+### 已知限制
+
+- 包含匹配用不上 `model_name` 索引，依赖时间范围（`created_at` 索引）收窄扫描；时间范围很大时查询会变慢。
+- 大小写：SQLite、MySQL（默认排序规则）的 `LIKE` 不区分大小写，PostgreSQL、ClickHouse 区分；实时 RPM/TPM 的匹配一律不区分。因此在 PostgreSQL / ClickHouse 上，大小写不同的模型名可能出现列表与实时统计不一致（上游已有的差异，本功能未改变）。
+- 模型框无法再做精确匹配：输入完整名称 `gpt-4o` 也会匹配 `gpt-4o-mini`（可从结果的模型列区分）。
+
+### 测试
+
+- `controller/log_filter_test.go`（新文件，数据库由 `TEST_LOG_FILTER_DIALECT` 指定，默认 SQLite，`mysql` / `postgres` 使用 `TEST_<DIALECT>_DSN` 的本机临时实例）：英文逗号、中文逗号 + 空格 + 重复、单个渠道、`0` 不过滤，列表与额度统计都只含所选渠道；非数字、负数、超过 100 个都被拒绝；`%-4o%` 匹配名称的一部分，可与多个渠道组合，统计一致；不带 `%` 仍是精确匹配。
+- `service/rpm_stats_test.go` `TestLogRateMatchesUsageLogFilters`：新增多个渠道、多个渠道 + 用户、多个渠道 + 模型模式三种组合（内存与 Redis 两种实现）。
+- `web/src/features/usage-logs/lib/__tests__/log-filter-params.test.ts`：模型搜索转为 `%text%`、去掉首尾空格、带 `%` 原样、空值不过滤；URL 与列筛选都转换；多个渠道原样发送；用户视图不发送渠道。`live-rate-stats.test.tsx` 与 `mobile-filter.test.tsx` 随行为更新。
+- 本地端到端（SQLite 实例，5 条不同模型、不同渠道的消费日志）：API 层 7 项（模糊模型、模糊 + 多渠道、空格分隔、中文逗号、单渠道、精确模型、非法渠道被拒），列表与额度统计一致；无头 Chrome 在日志页按 `channel=1,2` 打开后输入 `4o` 回车，列表只剩 gpt-4o 与 gpt-4o-mini，列表与统计请求都带 `model_name=%4o%&channel=1,2`。
+- **未完成的数据库验证**：本机没有 MySQL / PostgreSQL / ClickHouse（也没有 docker），新测试只在 SQLite 上跑过。改动的 SQL 只有 `channel_id IN ?`（GORM 展开为标准 `IN (...)`），模型匹配走上游已有的 `LIKE` 路径；在 MySQL / PostgreSQL 上用 `TEST_LOG_FILTER_DIALECT=mysql|postgres` 加对应 DSN 运行 `go test ./controller -run 'TestUsageLogs'` 即可补齐。
