@@ -20,8 +20,10 @@ import type { KeyboardEvent } from 'react'
 
 import { LogsFilterField, LogsFilterInput } from './logs-filter-toolbar'
 
-type TokenRangeFilterProps = {
+type RangeFilterProps = {
   label: string
+  /** Input step; 1 (whole numbers) by default */
+  step?: number
   minLabel: string
   maxLabel: string
   min?: string
@@ -32,10 +34,10 @@ type TokenRangeFilterProps = {
 }
 
 /**
- * Bounds a token count of the usage logs with two whole-number boxes; either
- * may stay empty for an open bound.
+ * Bounds a numeric metric of the usage logs (tokens, seconds) with a minimum
+ * and a maximum box; either may stay empty for an open bound.
  */
-export function TokenRangeFilter(props: TokenRangeFilterProps) {
+export function RangeFilter(props: RangeFilterProps) {
   return (
     <LogsFilterField wide>
       <div
@@ -47,7 +49,7 @@ export function TokenRangeFilter(props: TokenRangeFilterProps) {
           type='number'
           inputMode='numeric'
           min={0}
-          step={1}
+          step={props.step ?? 1}
           placeholder={props.minLabel}
           aria-label={props.minLabel}
           value={props.min ?? ''}
@@ -61,7 +63,7 @@ export function TokenRangeFilter(props: TokenRangeFilterProps) {
           type='number'
           inputMode='numeric'
           min={0}
-          step={1}
+          step={props.step ?? 1}
           placeholder={props.maxLabel}
           aria-label={props.maxLabel}
           value={props.max ?? ''}

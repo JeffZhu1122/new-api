@@ -28,7 +28,7 @@ func setupLogFilterTest(t *testing.T) {
 	}
 	db, _ := newAuditTestDatabase(t, dialect, os.Getenv("TEST_"+strings.ToUpper(dialect)+"_DSN"))
 	db.Logger = logger.Default.LogMode(logger.Silent)
-	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.Channel{}))
+	require.NoError(t, db.AutoMigrate(&model.Log{}, &model.Channel{}, &model.User{}))
 	dbType := common.DatabaseTypeSQLite
 	switch dialect {
 	case "mysql":
@@ -38,19 +38,19 @@ func setupLogFilterTest(t *testing.T) {
 	}
 	previousDB, previousLogDB := model.DB, model.LOG_DB
 	previousMain, previousLog := common.MainDatabaseType(), common.LogDatabaseType()
-	previousCache := common.MemoryCacheEnabled
+	previousCache, previousRedis := common.MemoryCacheEnabled, common.RedisEnabled
 	model.DB, model.LOG_DB = db, db
 	common.SetDatabaseTypes(dbType, dbType)
-	common.MemoryCacheEnabled = false
+	common.MemoryCacheEnabled, common.RedisEnabled = false, false
 	t.Cleanup(func() {
 		model.DB, model.LOG_DB = previousDB, previousLogDB
 		common.SetDatabaseTypes(previousMain, previousLog)
-		common.MemoryCacheEnabled = previousCache
+		common.MemoryCacheEnabled, common.RedisEnabled = previousCache, previousRedis
 	})
 	for _, log := range []model.Log{
-		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o", ChannelId: 1, Quota: 100, PromptTokens: 100, CompletionTokens: 10, CreatedAt: 1000},
-		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o-mini", ChannelId: 2, Quota: 200, PromptTokens: 2000, CompletionTokens: 50, CreatedAt: 1001},
-		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "claude-sonnet-4", ChannelId: 3, Quota: 400, PromptTokens: 50000, CompletionTokens: 800, CreatedAt: 1002},
+		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o", ChannelId: 1, Quota: 100, PromptTokens: 100, CompletionTokens: 10, UseTime: 1, FirstResponseMs: 200, CreatedAt: 1000},
+		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o-mini", ChannelId: 2, Quota: 200, PromptTokens: 2000, CompletionTokens: 50, UseTime: 5, CreatedAt: 1001},
+		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "claude-sonnet-4", ChannelId: 3, Quota: 400, PromptTokens: 50000, CompletionTokens: 800, UseTime: 30, FirstResponseMs: 1500, CreatedAt: 1002},
 	} {
 		require.NoError(t, db.Create(&log).Error)
 	}
@@ -216,6 +216,116 @@ func TestUsageLogsFilterByTokenRanges(t *testing.T) {
 		{"not a number", url.Values{"completion_tokens_max": {"many"}}, "Token counts must be whole numbers of 0 or more"},
 		{"fraction", url.Values{"completion_tokens_min": {"1.5"}}, "Token counts must be whole numbers of 0 or more"},
 		{"minimum above maximum", url.Values{"prompt_tokens_min": {"500"}, "prompt_tokens_max": {"100"}}, "The minimum token count cannot be greater than the maximum"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, handler := range []gin.HandlerFunc{GetAllLogs, GetLogsStat, GetUserLogs, GetLogsSelfStat} {
+				response := logFilterRequest(t, handler, test.query)
+				assert.False(t, response.Success)
+				assert.Equal(t, test.messageKey, response.MessageKey)
+			}
+		})
+	}
+}
+
+// recordLogsThroughWriters stores logs with the gateway's own writers, so the
+// filters are checked against the stored format of other and TTFT.
+func recordLogsThroughWriters(t *testing.T) {
+	t.Helper()
+	previousConsume := common.LogConsumeEnabled
+	common.LogConsumeEnabled = true
+	t.Cleanup(func() { common.LogConsumeEnabled = previousConsume })
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	c.Set("username", "alice")
+
+	for _, consume := range []struct {
+		modelName string
+		frt       float64
+	}{
+		{"gpt-4.1", 3500},
+		// A first token time that was never set yields a negative frt.
+		{"gpt-4.1-nano", -1760000000000},
+	} {
+		other := model.NewLogOther()
+		other.SetPublic("frt", consume.frt)
+		model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{ChannelId: 1, ModelName: consume.modelName, Quota: 800, UseTimeSeconds: 12, Group: "default", Other: other})
+	}
+	for _, failure := range []struct {
+		modelName  string
+		statusCode int
+	}{
+		{"error-429", 429},
+		{"error-502", 502},
+	} {
+		other := model.NewLogOther()
+		other.SetPublic("error_type", "upstream_error")
+		other.SetPublic("error_code", "bad_response_status_code")
+		other.SetPublic("status_code", failure.statusCode)
+		other.SetAdmin("is_multi_key", false)
+		model.RecordErrorLog(c, 1, 2, failure.modelName, "", "upstream failed", 0, 3, false, "default", other)
+	}
+}
+
+func TestUsageLogsFilterByUseTimeTTFTAndStatusCodes(t *testing.T) {
+	setupLogFilterTest(t)
+	recordLogsThroughWriters(t)
+
+	var written []model.Log
+	require.NoError(t, model.LOG_DB.Where("model_name LIKE ?", "gpt-4.1%").Order("model_name").Find(&written).Error)
+	require.Len(t, written, 2)
+	assert.Equal(t, 3500, written[0].FirstResponseMs, "the consume log copies other.frt")
+	assert.Zero(t, written[1].FirstResponseMs, "an unset first token time is stored as unknown")
+
+	for _, test := range []struct {
+		name   string
+		query  url.Values
+		models []string
+	}{
+		{"use time at least", url.Values{"use_time_min": {"5"}}, []string{"gpt-4o-mini", "claude-sonnet-4", "gpt-4.1", "gpt-4.1-nano"}},
+		{"use time between, bounds included", url.Values{"use_time_min": {"3"}, "use_time_max": {"12"}}, []string{"gpt-4o-mini", "gpt-4.1", "gpt-4.1-nano", "error-429", "error-502"}},
+		{"TTFT at least", url.Values{"ttft_ms_min": {"1000"}}, []string{"claude-sonnet-4", "gpt-4.1"}},
+		{"TTFT at most leaves out unknown TTFT", url.Values{"ttft_ms_max": {"1500"}}, []string{"gpt-4o", "claude-sonnet-4"}},
+		{"one status code", url.Values{"status_codes": {"429"}}, []string{"error-429"}},
+		{"several status codes", url.Values{"status_codes": {"429, 502"}}, []string{"error-429", "error-502"}},
+		{"a status code nobody returned", url.Values{"status_codes": {"500"}}, []string{}},
+		{"status code with another filter", url.Values{"status_codes": {"429,502"}, "model_name": {"%502%"}}, []string{"error-502"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for name, handlers := range map[string][2]gin.HandlerFunc{
+				"all logs": {GetAllLogs, GetLogsStat},
+				"own logs": {GetUserLogs, GetLogsSelfStat},
+			} {
+				logs := logFilterRequest(t, handlers[0], test.query)
+				require.True(t, logs.Success, logs.MessageKey)
+				models := make([]string, 0, len(logs.Data.Items))
+				for _, item := range logs.Data.Items {
+					models = append(models, item.ModelName)
+				}
+				assert.ElementsMatch(t, test.models, models, name)
+
+				stat := logFilterRequest(t, handlers[1], test.query)
+				require.True(t, stat.Success, stat.MessageKey)
+				assert.Equal(t, "filter_unsupported", stat.Data.RateSource, name)
+			}
+		})
+	}
+
+	tooMany := make([]string, maxLogStatusCodeFilter+1)
+	for i := range tooMany {
+		tooMany[i] = strconv.Itoa(400 + i)
+	}
+	for _, test := range []struct {
+		name       string
+		query      url.Values
+		messageKey string
+	}{
+		{"negative use time", url.Values{"use_time_min": {"-1"}}, "Use time must be whole seconds of 0 or more"},
+		{"use time minimum above maximum", url.Values{"use_time_min": {"9"}, "use_time_max": {"3"}}, "The minimum cannot be greater than the maximum"},
+		{"TTFT not a number", url.Values{"ttft_ms_max": {"fast"}}, "TTFT must be whole milliseconds of 0 or more"},
+		{"TTFT minimum above maximum", url.Values{"ttft_ms_min": {"900"}, "ttft_ms_max": {"100"}}, "The minimum cannot be greater than the maximum"},
+		{"status code out of range", url.Values{"status_codes": {"429,99"}}, "Status codes must be numbers from 100 to 599"},
+		{"status code not a number", url.Values{"status_codes": {"timeout"}}, "Status codes must be numbers from 100 to 599"},
+		{"too many status codes", url.Values{"status_codes": {strings.Join(tooMany, ",")}}, "Search at most {{max}} status codes at once"},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			for _, handler := range []gin.HandlerFunc{GetAllLogs, GetLogsStat, GetUserLogs, GetLogsSelfStat} {

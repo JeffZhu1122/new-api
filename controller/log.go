@@ -42,43 +42,73 @@ func parseLogChannelFilter(raw string) ([]int, error) {
 	return ids, nil
 }
 
-// parseLogTokenRange reads the input / output token bounds of the usage-log
-// queries. Each is a whole number of 0 or more, and a minimum may not exceed
-// its maximum.
-func parseLogTokenRange(c *gin.Context) (model.LogTokenRange, error) {
-	var tokens model.LogTokenRange
-	for _, bound := range []struct {
-		param  string
-		target **int
+// maxLogStatusCodeFilter bounds how many status codes one usage-log query
+// filters by.
+const maxLogStatusCodeFilter = 20
+
+// parseLogMetricsFilter reads the per-request metric filters of the usage-log
+// queries: token, use time (seconds) and TTFT (milliseconds) ranges, each
+// bound a whole number of 0 or more with the minimum not above the maximum,
+// and HTTP status codes separated by commas or spaces.
+func parseLogMetricsFilter(c *gin.Context) (model.LogMetricsFilter, error) {
+	var filter model.LogMetricsFilter
+	for _, metric := range []struct {
+		minParam, maxParam string
+		min, max           **int
+		invalid, reversed  string
 	}{
-		{"prompt_tokens_min", &tokens.PromptMin},
-		{"prompt_tokens_max", &tokens.PromptMax},
-		{"completion_tokens_min", &tokens.CompletionMin},
-		{"completion_tokens_max", &tokens.CompletionMax},
+		{"prompt_tokens_min", "prompt_tokens_max", &filter.PromptMin, &filter.PromptMax,
+			"Token counts must be whole numbers of 0 or more", "The minimum token count cannot be greater than the maximum"},
+		{"completion_tokens_min", "completion_tokens_max", &filter.CompletionMin, &filter.CompletionMax,
+			"Token counts must be whole numbers of 0 or more", "The minimum token count cannot be greater than the maximum"},
+		{"use_time_min", "use_time_max", &filter.UseTimeMin, &filter.UseTimeMax,
+			"Use time must be whole seconds of 0 or more", "The minimum cannot be greater than the maximum"},
+		{"ttft_ms_min", "ttft_ms_max", &filter.FirstResponseMsMin, &filter.FirstResponseMsMax,
+			"TTFT must be whole milliseconds of 0 or more", "The minimum cannot be greater than the maximum"},
 	} {
-		raw := strings.TrimSpace(c.Query(bound.param))
-		if raw == "" {
-			continue
+		for _, bound := range []struct {
+			param  string
+			target **int
+		}{{metric.minParam, metric.min}, {metric.maxParam, metric.max}} {
+			raw := strings.TrimSpace(c.Query(bound.param))
+			if raw == "" {
+				continue
+			}
+			value, err := strconv.Atoi(raw)
+			if err != nil || value < 0 {
+				return model.LogMetricsFilter{}, common.NewMessage(metric.invalid)
+			}
+			*bound.target = &value
 		}
-		value, err := strconv.Atoi(raw)
-		if err != nil || value < 0 {
-			return model.LogTokenRange{}, common.NewMessage("Token counts must be whole numbers of 0 or more")
+		if *metric.min != nil && *metric.max != nil && **metric.min > **metric.max {
+			return model.LogMetricsFilter{}, common.NewMessage(metric.reversed)
 		}
-		*bound.target = &value
 	}
-	for _, pair := range [][2]*int{{tokens.PromptMin, tokens.PromptMax}, {tokens.CompletionMin, tokens.CompletionMax}} {
-		if pair[0] != nil && pair[1] != nil && *pair[0] > *pair[1] {
-			return model.LogTokenRange{}, common.NewMessage("The minimum token count cannot be greater than the maximum")
+
+	fields := strings.FieldsFunc(c.Query("status_codes"), func(r rune) bool {
+		return r == ',' || r == '，' || unicode.IsSpace(r)
+	})
+	for _, field := range fields {
+		code, err := strconv.Atoi(field)
+		if err != nil || code < 100 || code > 599 {
+			return model.LogMetricsFilter{}, common.NewMessage("Status codes must be numbers from 100 to 599")
+		}
+		if !slices.Contains(filter.StatusCodes, code) {
+			filter.StatusCodes = append(filter.StatusCodes, code)
 		}
 	}
-	return tokens, nil
+	if len(filter.StatusCodes) > maxLogStatusCodeFilter {
+		return model.LogMetricsFilter{}, common.NewMessage("Search at most {{max}} status codes at once", map[string]any{"max": maxLogStatusCodeFilter})
+	}
+	return filter, nil
 }
 
 // logRate answers the live RPM / TPM for the usage-log filters. The live
-// statistics keep no per-request token counts, so a token range is reported
-// as a filter they cannot apply instead of an unfiltered reading.
-func logRate(filter service.LogRateFilter, tokens model.LogTokenRange) (service.LogRateReading, error) {
-	if !tokens.IsZero() {
+// statistics only count settled requests per minute, without per-request
+// tokens, durations or status codes, so such a filter is reported as one they
+// cannot apply instead of an unfiltered reading.
+func logRate(filter service.LogRateFilter, metrics model.LogMetricsFilter) (service.LogRateReading, error) {
+	if !metrics.IsZero() {
 		return service.LogRateReading{Source: service.RpmStatsSourceFilterUnsupported}, nil
 	}
 	return service.LogRate(filter)
@@ -100,11 +130,11 @@ func logFilterFromQuery(c *gin.Context, admin bool) (model.LogFilter, error) {
 		RequestId:         c.Query("request_id"),
 		UpstreamRequestId: c.Query("upstream_request_id"),
 	}
-	tokens, err := parseLogTokenRange(c)
+	metrics, err := parseLogMetricsFilter(c)
 	if err != nil {
 		return filter, err
 	}
-	filter.Tokens = tokens
+	filter.Metrics = metrics
 	if admin {
 		filter.Username = c.Query("username")
 		channels, err := parseLogChannelFilter(c.Query("channel"))
@@ -305,7 +335,7 @@ func GetLogsStat(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	tokens, err := parseLogTokenRange(c)
+	metrics, err := parseLogMetricsFilter(c)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -314,13 +344,13 @@ func GetLogsStat(c *gin.Context) {
 	var stat model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, tokens)
+		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, metrics)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
 	}
-	rate, err := logRate(service.LogRateFilter{Username: username, TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group}, tokens)
+	rate, err := logRate(service.LogRateFilter{Username: username, TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group}, metrics)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -351,7 +381,7 @@ func GetLogsSelfStat(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	tokens, err := parseLogTokenRange(c)
+	metrics, err := parseLogMetricsFilter(c)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -360,13 +390,13 @@ func GetLogsSelfStat(c *gin.Context) {
 	var quotaNum model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, tokens)
+		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, metrics)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
 	}
-	rate, err := logRate(service.LogRateFilter{UserID: c.GetInt("id"), TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group}, tokens)
+	rate, err := logRate(service.LogRateFilter{UserID: c.GetInt("id"), TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group}, metrics)
 	if err != nil {
 		common.ApiError(c, err)
 		return

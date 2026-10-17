@@ -425,7 +425,20 @@ func migrateClickHouseLogDB() error {
 	if err := LOG_DB.Exec(clickHouseLogCreateTableSQL(ttlDays)).Error; err != nil {
 		return err
 	}
+	// CREATE TABLE IF NOT EXISTS leaves an existing table as it was; columns
+	// added since then are added here.
+	for _, statement := range clickHouseLogAddedColumns {
+		if err := LOG_DB.Exec(statement).Error; err != nil {
+			return err
+		}
+	}
 	return syncClickHouseLogTTL(ttlDays)
+}
+
+// clickHouseLogAddedColumns adds the logs columns introduced after the table
+// was first created, so ClickHouse inserts of the full Log keep working.
+var clickHouseLogAddedColumns = []string{
+	"ALTER TABLE logs ADD COLUMN IF NOT EXISTS first_response_ms Int32 DEFAULT 0",
 }
 
 func clickHouseLogTTLDays() int {
@@ -473,7 +486,8 @@ CREATE TABLE IF NOT EXISTS logs (
 	ip String DEFAULT '',
 	request_id String DEFAULT '',
 	upstream_request_id String DEFAULT '',
-	other String DEFAULT ''
+	other String DEFAULT '',
+	first_response_ms Int32 DEFAULT 0
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(toDateTime(created_at))

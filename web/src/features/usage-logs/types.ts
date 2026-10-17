@@ -60,6 +60,12 @@ export interface CommonLogFilters extends CommonFilters {
   inputTokensMax?: string
   outputTokensMin?: string
   outputTokensMax?: string
+  /** Use time and TTFT bounds in seconds as typed */
+  useTimeMin?: string
+  useTimeMax?: string
+  ttftMin?: string
+  ttftMax?: string
+  statusCodes?: string[]
 }
 
 /**
@@ -466,6 +472,14 @@ export interface GetLogsParams {
   prompt_tokens_max?: number
   completion_tokens_min?: number
   completion_tokens_max?: number
+  /** Seconds */
+  use_time_min?: number
+  use_time_max?: number
+  /** Milliseconds */
+  ttft_ms_min?: number
+  ttft_ms_max?: number
+  /** HTTP status codes separated by commas */
+  status_codes?: string
 }
 
 export interface GetLogsResponse {
@@ -497,6 +511,14 @@ export interface GetLogStatsParams {
   prompt_tokens_max?: number
   completion_tokens_min?: number
   completion_tokens_max?: number
+  /** Seconds */
+  use_time_min?: number
+  use_time_max?: number
+  /** Milliseconds */
+  ttft_ms_min?: number
+  ttft_ms_max?: number
+  /** HTTP status codes separated by commas */
+  status_codes?: string
 }
 
 export interface GetLogStatsResponse {

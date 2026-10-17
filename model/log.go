@@ -2,6 +2,7 @@ package model
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
@@ -75,6 +76,9 @@ type Log struct {
 	RequestId         string `json:"request_id,omitempty" gorm:"type:varchar(64);index:idx_logs_request_id;default:''"`
 	UpstreamRequestId string `json:"upstream_request_id,omitempty" gorm:"type:varchar(128);index:idx_logs_upstream_request_id;default:''"`
 	Other             string `json:"other"`
+	// FirstResponseMs is the time to first token of a consume log, copied
+	// from other.frt so it can be filtered; 0 means not recorded.
+	FirstResponseMs int `json:"first_response_ms" gorm:"default:0"`
 }
 
 // don't use iota, avoid change log type value
@@ -347,6 +351,11 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	other := params.Other
 	content := other.setContent(params.Content)
 	otherStr := other.JSONString()
+	// frt is negative when the first token time was never set.
+	firstResponseMs := 0
+	if frt, ok := other.Snapshot()["frt"].(float64); ok && frt > 0 {
+		firstResponseMs = int(frt)
+	}
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -379,6 +388,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 		RequestId:         requestId,
 		UpstreamRequestId: upstreamRequestId,
 		Other:             otherStr,
+		FirstResponseMs:   firstResponseMs,
 	}
 	err := createLog(log)
 	if err != nil {
@@ -472,41 +482,81 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
-// LogTokenRange bounds the input (prompt) and output (completion) tokens of
-// the usage logs. A nil bound is open.
-type LogTokenRange struct {
-	PromptMin     *int
-	PromptMax     *int
-	CompletionMin *int
-	CompletionMax *int
+// LogMetricsFilter narrows the usage logs by per-request metrics: input
+// (prompt) and output (completion) tokens, use time in seconds, time to first
+// token in milliseconds, and HTTP status codes. A nil bound is open; bounds
+// are inclusive.
+type LogMetricsFilter struct {
+	PromptMin          *int
+	PromptMax          *int
+	CompletionMin      *int
+	CompletionMax      *int
+	UseTimeMin         *int
+	UseTimeMax         *int
+	FirstResponseMsMin *int
+	FirstResponseMsMax *int
+	// StatusCodes matches logs whose other.status_code is any of them, which
+	// error logs (and violation-fee logs) record.
+	StatusCodes []int
 }
 
-func (r LogTokenRange) IsZero() bool {
-	return r.PromptMin == nil && r.PromptMax == nil && r.CompletionMin == nil && r.CompletionMax == nil
+func (f LogMetricsFilter) IsZero() bool {
+	for _, bound := range f.bounds() {
+		if bound.value != nil {
+			return false
+		}
+	}
+	return len(f.StatusCodes) == 0
 }
 
-// applyTo adds the bounds to a logs query whose columns carry prefix ("logs."
+type logMetricBound struct {
+	condition string
+	value     *int
+}
+
+func (f LogMetricsFilter) bounds() []logMetricBound {
+	return []logMetricBound{
+		{"prompt_tokens >= ?", f.PromptMin},
+		{"prompt_tokens <= ?", f.PromptMax},
+		{"completion_tokens >= ?", f.CompletionMin},
+		{"completion_tokens <= ?", f.CompletionMax},
+		{"use_time >= ?", f.UseTimeMin},
+		{"use_time <= ?", f.UseTimeMax},
+		{"first_response_ms >= ?", f.FirstResponseMsMin},
+		{"first_response_ms <= ?", f.FirstResponseMsMax},
+	}
+}
+
+// applyTo adds the filter to a logs query whose columns carry prefix ("logs."
 // or "").
-func (r LogTokenRange) applyTo(tx *gorm.DB, prefix string) *gorm.DB {
-	for _, bound := range []struct {
-		condition string
-		value     *int
-	}{
-		{"prompt_tokens >= ?", r.PromptMin},
-		{"prompt_tokens <= ?", r.PromptMax},
-		{"completion_tokens >= ?", r.CompletionMin},
-		{"completion_tokens <= ?", r.CompletionMax},
-	} {
+func (f LogMetricsFilter) applyTo(tx *gorm.DB, prefix string) *gorm.DB {
+	for _, bound := range f.bounds() {
 		if bound.value != nil {
 			tx = tx.Where(prefix+bound.condition, *bound.value)
 		}
+	}
+	// 0 means the log has no recorded first token (older logs, errors).
+	if f.FirstResponseMsMin != nil || f.FirstResponseMsMax != nil {
+		tx = tx.Where(prefix + "first_response_ms > 0")
+	}
+	if len(f.StatusCodes) > 0 {
+		// other is compact JSON, so a code is followed by "," or "}". The
+		// "_" of status_code matching any character cannot widen the match.
+		conditions := make([]string, 0, 2*len(f.StatusCodes))
+		args := make([]any, 0, 2*len(f.StatusCodes))
+		for _, code := range f.StatusCodes {
+			conditions = append(conditions, prefix+"other LIKE ?", prefix+"other LIKE ?")
+			args = append(args, fmt.Sprintf(`%%"status_code":%d,%%`, code), fmt.Sprintf(`%%"status_code":%d}%%`, code))
+		}
+		tx = tx.Where("("+strings.Join(conditions, " OR ")+")", args...)
 	}
 	return tx
 }
 
 // LogFilter is the usage-log search shared by the log list and the log export.
 // Username and Channels are administrator filters; an empty Channels means
-// every channel. Tokens bounds the input and output tokens.
+// every channel. Metrics narrows by per-request tokens, use time, TTFT and
+// status codes.
 type LogFilter struct {
 	Type              int
 	StartTimestamp    int64
@@ -518,7 +568,7 @@ type LogFilter struct {
 	Group             string
 	RequestId         string
 	UpstreamRequestId string
-	Tokens            LogTokenRange
+	Metrics           LogMetricsFilter
 }
 
 func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
@@ -553,7 +603,7 @@ func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
 	if f.Group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", f.Group)
 	}
-	tx = f.Tokens.applyTo(tx, "logs.")
+	tx = f.Metrics.applyTo(tx, "logs.")
 	return tx, nil
 }
 
@@ -721,7 +771,7 @@ type Stat struct {
 // SumUsedQuota sums the consumed quota matching the usage-log filters. The
 // log page's RPM / TPM come from the live statistics (service.LogRate), not
 // from this table.
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channelFilter []int, group string, tokens LogTokenRange) (stat Stat, err error) {
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channelFilter []int, group string, metrics LogMetricsFilter) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
 
 	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
@@ -745,7 +795,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)
 	}
-	tx = tokens.applyTo(tx, "")
+	tx = metrics.applyTo(tx, "")
 
 	tx = tx.Where("type = ?", LogTypeConsume)
 
