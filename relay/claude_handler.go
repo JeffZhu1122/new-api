@@ -145,7 +145,9 @@ func ClaudeHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
+	guard := service.GuardEmptyOutput(c, info)
 	usage, newAPIError := adaptor.DoResponse(c, httpResp, info)
+	newAPIError = guard.Finish(newAPIError)
 	if newAPIError != nil {
 		// reset status code 重置状态码
 		service.ResetStatusCode(newAPIError, statusCodeMappingStr)

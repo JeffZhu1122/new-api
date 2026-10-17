@@ -26,14 +26,16 @@ import {
   transformFormDataToCreatePayload,
 } from '../channel-form'
 
-function retryForm(forceRetry: boolean) {
+type ExtendSwitch = 'force_retry' | 'empty_output_error'
+
+function switchForm(name: ExtendSwitch, enabled: boolean) {
   return {
     ...CHANNEL_FORM_DEFAULT_VALUES,
     name: 'flaky upstream',
     type: 1,
     key: 'test-key',
     models: 'gpt-test',
-    force_retry: forceRetry,
+    [name]: enabled,
   }
 }
 
@@ -55,37 +57,42 @@ function storedChannel(extendConfig: Record<string, unknown> | undefined) {
   })
 }
 
-describe('channel always-retry payload', () => {
-  test('an enabled switch is sent in extend_config', () => {
-    const { channel } = transformFormDataToCreatePayload(retryForm(true))
-    expect(channel.extend_config?.force_retry).toBe(true)
-  })
+// "Always Retry on Errors" and "Error on Empty Output" are boolean
+// channel_extend switches with the same round trip.
+describe.each<ExtendSwitch>(['force_retry', 'empty_output_error'])(
+  'channel extend switch %s',
+  (name) => {
+    test('an enabled switch is sent in extend_config', () => {
+      const { channel } = transformFormDataToCreatePayload(
+        switchForm(name, true)
+      )
+      expect(channel.extend_config?.[name]).toBe(true)
+    })
 
-  test('a disabled switch is sent as false so the backend clears it', () => {
-    const { channel } = transformFormDataToCreatePayload(retryForm(false))
-    expect(channel.extend_config?.force_retry).toBe(false)
-  })
-})
+    test('a disabled switch is sent as false so the backend clears it', () => {
+      const { channel } = transformFormDataToCreatePayload(
+        switchForm(name, false)
+      )
+      expect(channel.extend_config?.[name]).toBe(false)
+    })
 
-describe('channel always-retry form defaults', () => {
-  test('a stored switch is restored as enabled', () => {
-    const defaults = transformChannelToFormDefaults(
-      storedChannel({ force_retry: true })
-    )
-    expect(defaults.force_retry).toBe(true)
-  })
+    test('a stored switch is restored as enabled', () => {
+      const defaults = transformChannelToFormDefaults(
+        storedChannel({ [name]: true })
+      )
+      expect(defaults[name]).toBe(true)
+    })
 
-  test('a channel without extend_config restores the switch as disabled', () => {
-    const defaults = transformChannelToFormDefaults(storedChannel(undefined))
-    expect(defaults.force_retry).toBe(false)
-  })
-})
+    test('a channel without extend_config restores the switch as disabled', () => {
+      const defaults = transformChannelToFormDefaults(storedChannel(undefined))
+      expect(defaults[name]).toBe(false)
+    })
 
-describe('channel always-retry configuration state', () => {
-  test('an enabled switch marks the extra settings block as configured', () => {
-    expect(
-      getChannelConfigurationState(retryForm(true), {}, true).blocks
-        .extraSettings
-    ).toBe('configured')
-  })
-})
+    test('an enabled switch marks the extra settings block as configured', () => {
+      expect(
+        getChannelConfigurationState(switchForm(name, true), {}, true).blocks
+          .extraSettings
+      ).toBe('configured')
+    })
+  }
+)

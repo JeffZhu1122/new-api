@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
 | 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 44 个（含本文档相关提交） |
-| 变更规模 | 317 个文件，+26382 / −2168 行（不含本文档） |
+| fork 专有提交数 | 45 个（含本文档相关提交） |
+| 变更规模 | 323 个文件，+27211 / −2168 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -45,6 +45,7 @@
 28. [使用日志：模型名模糊搜索与多渠道筛选](#28-使用日志模型名模糊搜索与多渠道筛选)
 29. [使用日志：按输入 / 输出 token 数范围筛选](#29-使用日志按输入--输出-token-数范围筛选)
 30. [使用日志：按消耗时长、TTFT 与 HTTP 状态码筛选](#30-使用日志按消耗时长ttft-与-http-状态码筛选)
+31. [渠道「零输出时报错」开关](#31-渠道零输出时报错开关)
 
 ---
 
@@ -77,6 +78,7 @@
 | 28 | 使用日志：模型名模糊搜索与多渠道筛选 | 与本文档同一提交 | 始终生效 | 无 | 使用日志列表与统计接口的 `channel` 参数、实时 RPM/TPM 过滤、日志页筛选框 |
 | 29 | 使用日志：按输入 / 输出 token 数范围筛选 | 与本文档同一提交 | 不填即不过滤 | 无 | 使用日志列表与统计接口（管理员与用户自己）、日志页筛选框 |
 | 30 | 使用日志：按消耗时长、TTFT 与 HTTP 状态码筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.first_response_ms`（新列） | 消费日志写入、日志表迁移（含 ClickHouse）、使用日志列表与统计接口、日志页筛选框 |
+| 31 | 渠道「零输出时报错」开关 | 与本文档同一提交 | 关闭 | `channel_extend` | 文本生成请求的响应写出、重试与退款、渠道编辑抽屉 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -108,6 +110,7 @@ fork 的原则是**不修改上游 `channels` / `users` 表结构**，所有 for
 | `quota_limit` | bigint | 0 | 额度上限（quota 单位，`QuotaPerUnit` = $1），累计 `used_quota` 达到即自动禁用，0 = 不限 | §15 |
 | `schedule` | text | 无 | JSON `dto.ChannelSchedule`，每周可用时段规则；空 = 全天可用 | §16 |
 | `force_retry` | bool | 无（NULL 视为关） | 此渠道的任何报错都重试，跳过状态码 / 错误码 / 关键词规则 | §24 |
+| `empty_output_error` | bool | 无（NULL 视为关） | 文本生成回复完全没有输出时视为 `empty_response` 错误 | §31 |
 
 关键方法与行为：
 
@@ -844,7 +847,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
-| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误 |
+| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误；§31 错误已写进流时不再追加 JSON 错误 |
+| `relay/compatible_handler.go` / `relay/claude_handler.go` / `relay/gemini_handler.go` / `relay/responses_handler.go` | §31 在 `DoResponse` 前后接入 `service.GuardEmptyOutput` / `Finish` |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
 | `relay/helper/price.go` | `HandleGroupRatio` 折扣乘法 |
 | `service/http.go` | `ShouldCopyUpstreamHeader` 响应头过滤 |
@@ -1284,7 +1288,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - `service/relay_error_test.go` `TestDecideRelayRetryReasons`：开关打开时 400 / 504 / 不可重试错误都重试；重试次数用完、已开始输出、客户端断开、固定渠道时停止；内容违规不重试。
 - `model/channel_extend_test.go` `TestUpsertChannelExtendPersistsForceRetry`：只开启此开关的行完整往返，关闭后整行删除，重复 AutoMigrate 不报错（SQLite）。
 - `relaykit/dto/channel_extend_settings_test.go`：`IsZero` 不把只开了此开关的设置当作全零。
-- `web/src/features/channels/lib/__tests__/channel-force-retry.test.ts`：提交时带上 `force_retry`（关闭时发 `false` 以便清除），回填已保存的开关，开启后「渠道额外设置」标记为已配置。
+- `web/src/features/channels/lib/__tests__/channel-extend-switches.test.ts`（原 `channel-force-retry.test.ts`，§31 起两个开关共用）：提交时带上 `force_retry`（关闭时发 `false` 以便清除），回填已保存的开关，开启后「渠道额外设置」标记为已配置。
 - 本地端到端（`scratchpad/feat_e2e.py force`，7 项，另跑 `fork_e2e.py` 38 项回归）：不开开关时普通 400 不重试；开启后 400 换到下一个渠道并成功；渠道详情返回 `force_retry`；避开失败渠道开启时唯一渠道失败后返回真实的上游 400 而不是 429；避开失败渠道关闭时同一渠道按全局次数重试 3 次；`RetryTimes=0` 时只请求一次；关闭开关后设置被清除。
 
 ### 已知限制
@@ -1536,3 +1540,56 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - `web/src/features/usage-logs/components/__tests__/range-filters.test.tsx`：填写消耗时长、TTFT 小数、从列表选 429 并手动输入 418 后搜索，URL 正确，「收起」角标为 3；URL 里的状态码与 TTFT 回填到筛选框。
 - 本地端到端（SQLite，旧数据库升级启动后自动加了 `first_response_ms` 列，旧日志为 0）：自写的 OpenAI 兼容模拟上游（`mock-fast` 约 0.1 秒首字、`mock-slow` 约 2.2 秒、`mock-429`、`mock-502`），经实例真实转发流式 / 非流式请求后：快、慢流式日志的 `first_response_ms` 为 111 / 2204，非流式为 0，错误日志 `other.status_code` 为 429 / 502；API 层 6 项（TTFT 下限只命中慢的流式请求、TTFT 上限、消耗时长下限、单个 / 多个 / 无人返回的状态码）全部通过；无头 Chrome 中 TTFT 下限 1 秒、状态码多选 429 + 502 的结果与 API 一致，实时统计有说明。
 - 数据库：只在 SQLite 上验证（本机没有 MySQL / PostgreSQL / ClickHouse）。**这次有日志表加列**，上线前建议在测试环境用 MySQL / PostgreSQL 各启动两次（全新库 + 旧库升级）确认迁移，ClickHouse 确认补列语句；`TEST_LOG_FILTER_DIALECT=mysql|postgres` 加对应 DSN 运行 `go test ./controller -run TestUsageLogs` 可补测查询。
+
+## 31. 渠道「零输出时报错」开关
+
+### 行为
+
+渠道编辑抽屉 →「其他」→「渠道额外设置」中的「零输出时报错」开关，保存在 `channel_extend.empty_output_error`（§2.1），默认关闭，按敏感变更处理。开启后，这个渠道上的**文本生成请求**如果回复完全没有输出，就当作错误：
+
+- **零输出**：客户端收到的回复里既没有文本，也没有推理 / 思考内容、工具调用、拒答、图片或音频输出。按客户端格式判断（`service/empty_output_guard.go`）：
+  - **OpenAI**：`choices[].delta` / `message` 中除 `role`、`annotations` 外任何非空字段，或旧版 Completions 的 `text`。
+  - **Claude**：非空的 `text` / `thinking` 块或增量，或其他类型的块（如 `tool_use`、`redacted_thinking`）。
+  - **Gemini**：part 中非空的 `text`（含 thought），或 `functionCall`、`inlineData`、`fileData`、`executableCode`、`codeExecutionResult`。
+  - **Responses**：非空的 `*.delta`，有文本或拒答的 `message`、有文本的 `reasoning`，或其他类型的输出项（工具调用等）。
+- **作用范围**：Chat Completions（含旧版 Completions）、Claude Messages（不含 count_tokens）、Gemini generateContent、Responses（HTTP，不含 Compact）。不作用于 Embeddings、图片、音频、Rerank、异步任务、Realtime 与 Responses WebSocket。
+- **报错**：`empty_response`（项目已有的错误码，Gemini 返回空候选时也用它），HTTP 500，消息 `upstream returned no output`，受渠道「状态码映射」影响。按全局重试规则重试，开了「出错一律重试」时一定换渠道；不会触发自动禁用。开了 `ERROR_LOG_ENABLED` 时写错误日志，可按状态码 500 搜到（§30）。
+- **计费**：没有新增计费代码。请求变成错误后走已有的 `RefundFailedRequestBilling`，退还预扣额度、不结算。如果上游对空回复仍收取了输入 token 的费用，这部分由站点承担。
+
+### 实现
+
+- `relay/compatible_handler.go`、`claude_handler.go`、`gemini_handler.go`（`GeminiHelper`）、`responses_handler.go` 在 `DoResponse` 前调用 `service.GuardEmptyOutput(c, info)`，之后用 `guard.Finish(err)` 得到最终错误；渠道没开开关或请求不适用时返回 nil，`Finish` 对 nil 原样返回，没有额外开销。
+- 守卫在 `DoResponse` 期间替换 `c.Writer`，按第一次写入时的 `Content-Type` 区分：
+  - **非流式**：整个响应体先缓存，结束后检查，有输出才原样发出。
+  - **流式**：按 SSE 事件逐个检查。没有输出的事件先暂存；看到第一个有输出的事件，就把暂存的事件补发出去，之后直通，不再解析。保活 ping（`:` 注释行）直接放行。暂存期间 `Written()` 返回 false，重试判断仍把响应视为未开始。
+- 零输出且客户端什么都没收到时：恢复开始前的响应头，清掉 `event_stream_headers_set` 标记（重试到下一个渠道时会重新设置流式头），返回 `empty_response` 错误。
+- 零输出但保活 ping 已经发给客户端（响应已开始）时：按客户端格式写一个错误事件结束流，例如 OpenAI 的 `data: {"error":...}`、Claude 的 `event: error`。错误带 `ErrOptionWithSkipRetry`，因为另一个渠道的回复不能接在已开始的响应后面。同时设置 `ContextKeyRelayErrorStreamed`，让 `controller/relay.go` 不再往流里追加 JSON 错误。
+- 客户端中途断开时保持原有行为：把暂存内容照常写出，按原逻辑结算。
+
+### 已知限制
+
+- 上游返回的内容不符合客户端那种格式（守卫无法识别）时，也会被当作零输出。
+- 本来就可能为空的请求（例如 `max_tokens` 极小、或只为预热缓存的请求）在开启开关的渠道上也会报错。
+- 流式请求要等到第一个真实输出才开始发送，开头的空包（角色包、元数据事件）会晚到，首个内容到达客户端的时间基本不变。
+- 开启全局保活 ping 时，上游超过 ping 间隔还没出首字、最后又没有输出的流，无法换渠道重试，只能以错误事件结束（不扣费）。
+- 只有一个渠道能服务该模型时，重试会重新选中同一渠道（按全局重试次数），每次都会记一条错误日志。
+
+### 测试
+
+- `service/empty_output_guard_test.go`：
+  - 四种客户端格式的流事件与非流式响应体判定，共 32 个用例：空角色包、usage 块、`[DONE]`、签名增量、空文本块、只有推理、只有工具调用、拒答、Gemini thought、Responses 推理摘要、非 JSON 响应体等。
+  - 流式：有输出时逐字节原样到达，输出前暂存且 `Written()` 为 false；无输出时返回可重试的 `empty_response`，什么都没发出，响应头和流式标记已复位。
+  - ping 已发出后为空：只发出 ping 和一个错误事件，暂存的事件不会发出，错误不可重试，并设置 streamed 标记。
+  - 客户端断开时保持原行为；上游错误原样返回、不发出暂存内容。
+  - 非流式：有输出时原样发出，无输出时报错。
+  - 适用范围：Embeddings、Responses Compact、Claude count_tokens 和未开开关的渠道不启用守卫，`Writer` 不变。
+- `model/channel_extend_test.go`：开关与「出错一律重试」一起往返持久化；重复迁移幂等。`relaykit/dto` 的 `IsZero` 用例。
+- `web/src/features/channels/lib/__tests__/channel-extend-switches.test.ts`：两个开关的提交、回填、配置状态（参数化）。`channel-config-transfer.test.ts`：复制完整配置带上该开关。
+- 本地端到端（SQLite，旧库升级启动后自动加了 `empty_output_error` 列；自写模拟上游，含 Chat 与按真实事件顺序实现的 Responses 接口，16 项 + 8 项）：
+  - OpenAI 与 Claude 格式的流式 / 非流式空回复都返回 500 `empty_response`，额度不变，每次尝试一条状态码 500 的错误日志。
+  - 开启开关的渠道正常流式输出不受影响；关闭开关的渠道保持原来的 200 空流。
+  - 两个渠道时第一个（空）记错误、第二个（正常）返回内容，只结算一次。
+  - 开启 1 秒保活 ping、上游 3 秒后空结束：客户端收到 200、若干 ping 和一个错误事件，没有 `[DONE]`、没有追加 JSON、不扣费、只尝试一次。
+  - Responses 与 Gemini 格式的流式 / 非流式：有输出的 200 原样返回，空回复 500。
+  - 浏览器中渠道编辑抽屉显示该开关，已开启的渠道为开。
+- 数据库：`channel_extend` 新增布尔列，只在 SQLite 上验证（全新库与旧库升级、重复迁移）；MySQL / PostgreSQL 未验证（本机没有，用户选择不安装）。
