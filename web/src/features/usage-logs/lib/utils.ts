@@ -223,6 +223,23 @@ export function buildApiParams(config: {
     ...(searchParams.outputTokensMax != null
       ? { completion_tokens_max: Number(searchParams.outputTokensMax) }
       : {}),
+    ...(searchParams.useTimeMin != null
+      ? { use_time_min: Number(searchParams.useTimeMin) }
+      : {}),
+    ...(searchParams.useTimeMax != null
+      ? { use_time_max: Number(searchParams.useTimeMax) }
+      : {}),
+    // TTFT is typed in seconds and filtered in milliseconds.
+    ...(searchParams.ttftMin != null
+      ? { ttft_ms_min: Math.round(Number(searchParams.ttftMin) * 1000) }
+      : {}),
+    ...(searchParams.ttftMax != null
+      ? { ttft_ms_max: Math.round(Number(searchParams.ttftMax) * 1000) }
+      : {}),
+    ...(Array.isArray(searchParams.statusCodes) &&
+    searchParams.statusCodes.length > 0
+      ? { status_codes: searchParams.statusCodes.join(',') }
+      : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 

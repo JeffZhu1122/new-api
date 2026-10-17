@@ -7545,8 +7545,22 @@
     "Max input tokens": "Max input tokens",
     "Min output tokens": "Min output tokens",
     "Max output tokens": "Max output tokens",
-    "Live RPM / TPM cannot be filtered by token counts.": "Live RPM / TPM cannot be filtered by token counts.",
     "Token counts must be whole numbers of 0 or more": "Token counts must be whole numbers of 0 or more",
-    "The minimum token count cannot be greater than the maximum": "The minimum token count cannot be greater than the maximum"
+    "The minimum token count cannot be greater than the maximum": "The minimum token count cannot be greater than the maximum",
+    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.",
+    "Use time (s)": "Use time (s)",
+    "Min use time (s)": "Min use time (s)",
+    "Max use time (s)": "Max use time (s)",
+    "TTFT (s)": "TTFT (s)",
+    "Min TTFT (s)": "Min TTFT (s)",
+    "Max TTFT (s)": "Max TTFT (s)",
+    "Status codes": "Status codes",
+    "Add status code \"{{value}}\"": "Add status code \"{{value}}\"",
+    "Use time must be whole seconds of 0 or more": "Use time must be whole seconds of 0 or more",
+    "TTFT must be whole milliseconds of 0 or more": "TTFT must be whole milliseconds of 0 or more",
+    "TTFT must be 0 seconds or more": "TTFT must be 0 seconds or more",
+    "The minimum cannot be greater than the maximum": "The minimum cannot be greater than the maximum",
+    "Status codes must be numbers from 100 to 599": "Status codes must be numbers from 100 to 599",
+    "Search at most {{max}} status codes at once": "Search at most {{max}} status codes at once"
   }
 }

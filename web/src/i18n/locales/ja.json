@@ -7545,8 +7545,22 @@
     "Max input tokens": "入力トークン 最大",
     "Min output tokens": "出力トークン 最小",
     "Max output tokens": "出力トークン 最大",
-    "Live RPM / TPM cannot be filtered by token counts.": "リアルタイムの RPM / TPM はトークン数で絞り込めません。",
     "Token counts must be whole numbers of 0 or more": "トークン数は 0 以上の整数で指定してください",
-    "The minimum token count cannot be greater than the maximum": "トークン数の最小値は最大値を超えられません"
+    "The minimum token count cannot be greater than the maximum": "トークン数の最小値は最大値を超えられません",
+    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "リアルタイムの RPM / TPM には、トークン数・所要時間・TTFT・ステータスコードの絞り込みを適用できません。",
+    "Use time (s)": "所要時間（秒）",
+    "Min use time (s)": "所要時間 最小（秒）",
+    "Max use time (s)": "所要時間 最大（秒）",
+    "TTFT (s)": "TTFT（秒）",
+    "Min TTFT (s)": "TTFT 最小（秒）",
+    "Max TTFT (s)": "TTFT 最大（秒）",
+    "Status codes": "ステータスコード",
+    "Add status code \"{{value}}\"": "ステータスコード「{{value}}」を追加",
+    "Use time must be whole seconds of 0 or more": "所要時間は 0 以上の整数秒で指定してください",
+    "TTFT must be whole milliseconds of 0 or more": "TTFT は 0 以上の整数ミリ秒で指定してください",
+    "TTFT must be 0 seconds or more": "TTFT は 0 秒以上で指定してください",
+    "The minimum cannot be greater than the maximum": "最小値は最大値を超えられません",
+    "Status codes must be numbers from 100 to 599": "ステータスコードは 100〜599 の数値で指定してください",
+    "Search at most {{max}} status codes at once": "一度に検索できるステータスコードは最大 {{max}} 件です"
   }
 }

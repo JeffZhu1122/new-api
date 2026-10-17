@@ -7545,8 +7545,22 @@
     "Max input tokens": "Token vào tối đa",
     "Min output tokens": "Token ra tối thiểu",
     "Max output tokens": "Token ra tối đa",
-    "Live RPM / TPM cannot be filtered by token counts.": "Không thể lọc RPM / TPM trực tiếp theo số token.",
     "Token counts must be whole numbers of 0 or more": "Số token phải là số nguyên từ 0 trở lên",
-    "The minimum token count cannot be greater than the maximum": "Số token tối thiểu không được lớn hơn tối đa"
+    "The minimum token count cannot be greater than the maximum": "Số token tối thiểu không được lớn hơn tối đa",
+    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "Không thể áp dụng bộ lọc token, thời gian xử lý, TTFT hoặc mã trạng thái cho RPM / TPM trực tiếp.",
+    "Use time (s)": "Thời gian xử lý (giây)",
+    "Min use time (s)": "Thời gian xử lý tối thiểu (giây)",
+    "Max use time (s)": "Thời gian xử lý tối đa (giây)",
+    "TTFT (s)": "TTFT (giây)",
+    "Min TTFT (s)": "TTFT tối thiểu (giây)",
+    "Max TTFT (s)": "TTFT tối đa (giây)",
+    "Status codes": "Mã trạng thái",
+    "Add status code \"{{value}}\"": "Thêm mã trạng thái \"{{value}}\"",
+    "Use time must be whole seconds of 0 or more": "Thời gian xử lý phải là số giây nguyên từ 0 trở lên",
+    "TTFT must be whole milliseconds of 0 or more": "TTFT phải là số mili giây nguyên từ 0 trở lên",
+    "TTFT must be 0 seconds or more": "TTFT phải từ 0 giây trở lên",
+    "The minimum cannot be greater than the maximum": "Giá trị tối thiểu không được lớn hơn tối đa",
+    "Status codes must be numbers from 100 to 599": "Mã trạng thái phải là số từ 100 đến 599",
+    "Search at most {{max}} status codes at once": "Chỉ tìm tối đa {{max}} mã trạng thái mỗi lần"
   }
 }

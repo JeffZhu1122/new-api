@@ -7545,8 +7545,22 @@
     "Max input tokens": "Макс. входных токенов",
     "Min output tokens": "Мин. выходных токенов",
     "Max output tokens": "Макс. выходных токенов",
-    "Live RPM / TPM cannot be filtered by token counts.": "Текущие RPM / TPM нельзя отфильтровать по числу токенов.",
     "Token counts must be whole numbers of 0 or more": "Число токенов должно быть целым числом не меньше 0",
-    "The minimum token count cannot be greater than the maximum": "Минимальное число токенов не может быть больше максимального"
+    "The minimum token count cannot be greater than the maximum": "Минимальное число токенов не может быть больше максимального",
+    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "К текущим RPM / TPM нельзя применить фильтры по токенам, длительности, TTFT или коду статуса.",
+    "Use time (s)": "Длительность (с)",
+    "Min use time (s)": "Мин. длительность (с)",
+    "Max use time (s)": "Макс. длительность (с)",
+    "TTFT (s)": "TTFT (с)",
+    "Min TTFT (s)": "Мин. TTFT (с)",
+    "Max TTFT (s)": "Макс. TTFT (с)",
+    "Status codes": "Коды статуса",
+    "Add status code \"{{value}}\"": "Добавить код статуса «{{value}}»",
+    "Use time must be whole seconds of 0 or more": "Длительность должна быть целым числом секунд не меньше 0",
+    "TTFT must be whole milliseconds of 0 or more": "TTFT должен быть целым числом миллисекунд не меньше 0",
+    "TTFT must be 0 seconds or more": "TTFT должен быть не меньше 0 секунд",
+    "The minimum cannot be greater than the maximum": "Минимум не может быть больше максимума",
+    "Status codes must be numbers from 100 to 599": "Коды статуса должны быть числами от 100 до 599",
+    "Search at most {{max}} status codes at once": "За один раз можно искать не более {{max}} кодов статуса"
   }
 }

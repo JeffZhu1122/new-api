@@ -7545,8 +7545,22 @@
     "Max input tokens": "Tokens en entrée max.",
     "Min output tokens": "Tokens en sortie min.",
     "Max output tokens": "Tokens en sortie max.",
-    "Live RPM / TPM cannot be filtered by token counts.": "Les RPM / TPM en direct ne peuvent pas être filtrés par nombre de tokens.",
     "Token counts must be whole numbers of 0 or more": "Les nombres de tokens doivent être des entiers supérieurs ou égaux à 0",
-    "The minimum token count cannot be greater than the maximum": "Le nombre minimal de tokens ne peut pas dépasser le maximum"
+    "The minimum token count cannot be greater than the maximum": "Le nombre minimal de tokens ne peut pas dépasser le maximum",
+    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "Les RPM / TPM en direct ne peuvent pas appliquer les filtres de tokens, de durée, de TTFT ou de code de statut.",
+    "Use time (s)": "Durée (s)",
+    "Min use time (s)": "Durée min. (s)",
+    "Max use time (s)": "Durée max. (s)",
+    "TTFT (s)": "TTFT (s)",
+    "Min TTFT (s)": "TTFT min. (s)",
+    "Max TTFT (s)": "TTFT max. (s)",
+    "Status codes": "Codes de statut",
+    "Add status code \"{{value}}\"": "Ajouter le code de statut « {{value}} »",
+    "Use time must be whole seconds of 0 or more": "La durée doit être un nombre entier de secondes supérieur ou égal à 0",
+    "TTFT must be whole milliseconds of 0 or more": "Le TTFT doit être un nombre entier de millisecondes supérieur ou égal à 0",
+    "TTFT must be 0 seconds or more": "Le TTFT doit être d’au moins 0 seconde",
+    "The minimum cannot be greater than the maximum": "Le minimum ne peut pas dépasser le maximum",
+    "Status codes must be numbers from 100 to 599": "Les codes de statut doivent être des nombres de 100 à 599",
+    "Search at most {{max}} status codes at once": "Recherchez au plus {{max}} codes de statut à la fois"
   }
 }

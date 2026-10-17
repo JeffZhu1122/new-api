@@ -138,3 +138,45 @@ it('refuses a minimum above the maximum before searching', async () => {
   )
   expect(router.state.location.search).not.toHaveProperty('outputTokensMin')
 })
+
+it('searches by use time, a fraction of a second of TTFT and picked or typed status codes', async () => {
+  const router = await renderFilter()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  await user.type(screen.getByLabelText('Min use time (s)'), '5')
+  await user.type(screen.getByLabelText('Max TTFT (s)'), '2.5')
+  const statusCodes = screen.getByRole('combobox', { name: 'Status codes' })
+  await user.click(statusCodes)
+  await user.click(await screen.findByRole('option', { name: /^429/ }))
+  await user.type(statusCodes, '418{Enter}')
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).toMatchObject({
+      page: 1,
+      useTimeMin: 5,
+      ttftMax: 2.5,
+      statusCodes: [429, 418],
+    })
+  )
+  expect(screen.getByRole('button', { name: /Collapse/ })).toHaveTextContent(
+    '3'
+  )
+})
+
+it('shows the status codes of the URL as chosen', async () => {
+  await renderFilter(
+    `/usage-logs/common?statusCodes=${encodeURIComponent('[429,502]')}&ttftMin=1.5`
+  )
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  expect(screen.getByLabelText('Min TTFT (s)')).toHaveValue(1.5)
+  for (const code of ['429', '502']) {
+    expect(screen.getByText(code)).toBeVisible()
+  }
+  expect(screen.getByRole('button', { name: /Collapse/ })).toHaveTextContent(
+    '2'
+  )
+})

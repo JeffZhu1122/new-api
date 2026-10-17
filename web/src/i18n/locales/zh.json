@@ -7545,8 +7545,22 @@
     "Max input tokens": "输入 token 最大值",
     "Min output tokens": "输出 token 最小值",
     "Max output tokens": "输出 token 最大值",
-    "Live RPM / TPM cannot be filtered by token counts.": "实时 RPM / TPM 无法按 token 数量过滤。",
     "Token counts must be whole numbers of 0 or more": "token 数量必须是大于或等于 0 的整数",
-    "The minimum token count cannot be greater than the maximum": "token 数量的最小值不能大于最大值"
+    "The minimum token count cannot be greater than the maximum": "token 数量的最小值不能大于最大值",
+    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "实时 RPM / TPM 无法按 token 数量、消耗时长、TTFT 或状态码过滤。",
+    "Use time (s)": "消耗时长（秒）",
+    "Min use time (s)": "消耗时长最小值（秒）",
+    "Max use time (s)": "消耗时长最大值（秒）",
+    "TTFT (s)": "TTFT（秒）",
+    "Min TTFT (s)": "TTFT 最小值（秒）",
+    "Max TTFT (s)": "TTFT 最大值（秒）",
+    "Status codes": "状态码",
+    "Add status code \"{{value}}\"": "添加状态码 \"{{value}}\"",
+    "Use time must be whole seconds of 0 or more": "消耗时长必须是大于或等于 0 的整数秒",
+    "TTFT must be whole milliseconds of 0 or more": "TTFT 必须是大于或等于 0 的整数毫秒",
+    "TTFT must be 0 seconds or more": "TTFT 必须大于或等于 0 秒",
+    "The minimum cannot be greater than the maximum": "最小值不能大于最大值",
+    "Status codes must be numbers from 100 to 599": "状态码必须是 100 到 599 之间的数字",
+    "Search at most {{max}} status codes at once": "一次最多搜索 {{max}} 个状态码"
   }
 }
