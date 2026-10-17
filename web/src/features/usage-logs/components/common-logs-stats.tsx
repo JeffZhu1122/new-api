@@ -150,6 +150,11 @@ export function CommonLogsStats() {
           {t('Counted on this server instance only.')}
         </span>
       )}
+      {rate?.rate_source === 'filter_unsupported' && (
+        <span className='text-muted-foreground text-xs'>
+          {t('Live RPM / TPM cannot be filtered by token counts.')}
+        </span>
+      )}
     </div>
   )
 }

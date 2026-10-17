@@ -55,6 +55,11 @@ export interface CommonLogFilters extends CommonFilters {
   username?: string
   requestId?: string
   upstreamRequestId?: string
+  /** Token bounds as typed; empty means an open bound */
+  inputTokensMin?: string
+  inputTokensMax?: string
+  outputTokensMin?: string
+  outputTokensMax?: string
 }
 
 /**
@@ -295,7 +300,13 @@ export interface LogStatistics {
   tpm_cache_read?: number
   tpm_cache_write?: number
   tpm_output?: number
-  rate_source?: 'redis' | 'memory' | 'disabled' | 'unavailable'
+  /** filter_unsupported: a token range is set, which live statistics cannot apply */
+  rate_source?:
+    | 'redis'
+    | 'memory'
+    | 'disabled'
+    | 'unavailable'
+    | 'filter_unsupported'
   rate_window_start?: number
   rate_window_end?: number
 }
@@ -451,6 +462,10 @@ export interface GetLogsParams {
   group?: string
   request_id?: string
   upstream_request_id?: string
+  prompt_tokens_min?: number
+  prompt_tokens_max?: number
+  completion_tokens_min?: number
+  completion_tokens_max?: number
 }
 
 export interface GetLogsResponse {
@@ -478,6 +493,10 @@ export interface GetLogStatsParams {
   group?: string
   request_id?: string
   upstream_request_id?: string
+  prompt_tokens_min?: number
+  prompt_tokens_max?: number
+  completion_tokens_min?: number
+  completion_tokens_max?: number
 }
 
 export interface GetLogStatsResponse {
