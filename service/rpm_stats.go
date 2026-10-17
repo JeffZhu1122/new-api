@@ -58,6 +58,10 @@ const (
 	RpmStatsSourceDisabled = "disabled"
 	// RpmStatsSourceUnavailable marks a reading Redis could not serve.
 	RpmStatsSourceUnavailable = "unavailable"
+	// RpmStatsSourceFilterUnsupported marks a usage-log filter the live
+	// statistics cannot apply, such as a token range: they keep no per-request
+	// token counts.
+	RpmStatsSourceFilterUnsupported = "filter_unsupported"
 )
 
 const (

@@ -129,3 +129,15 @@ it('notes counts that cover this server instance only', async () => {
   ).toBeInTheDocument()
   expect(badgeValue('RPM')).toHaveTextContent('3')
 })
+
+it('explains the dashes when a token range filters the logs', async () => {
+  renderStats({ rpm: 0, tpm: 0, rate_source: 'filter_unsupported' })
+
+  expect(
+    await screen.findByText(
+      'Live RPM / TPM cannot be filtered by token counts.'
+    )
+  ).toBeInTheDocument()
+  expect(badgeValue('RPM')).toHaveTextContent('-')
+  expect(badgeValue('Output TPM')).toHaveTextContent('-')
+})

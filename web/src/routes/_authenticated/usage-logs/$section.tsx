@@ -45,6 +45,10 @@ const usageLogsSearchSchema = z.object({
   username: z.string().optional().catch(''),
   requestId: z.string().optional().catch(''),
   upstreamRequestId: z.string().optional().catch(''),
+  inputTokensMin: z.number().optional().catch(undefined),
+  inputTokensMax: z.number().optional().catch(undefined),
+  outputTokensMin: z.number().optional().catch(undefined),
+  outputTokensMax: z.number().optional().catch(undefined),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
 })

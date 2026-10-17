@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
 | 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 42 个（含本文档相关提交） |
-| 变更规模 | 310 个文件，+25119 / −2157 行（不含本文档） |
+| fork 专有提交数 | 43 个（含本文档相关提交） |
+| 变更规模 | 315 个文件，+25762 / −2165 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -43,6 +43,7 @@
 26. [root 管理用户的 API 密钥](#26-root-管理用户的-api-密钥)
 27. [跨站复制渠道完整配置](#27-跨站复制渠道完整配置)
 28. [使用日志：模型名模糊搜索与多渠道筛选](#28-使用日志模型名模糊搜索与多渠道筛选)
+29. [使用日志：按输入 / 输出 token 数范围筛选](#29-使用日志按输入--输出-token-数范围筛选)
 
 ---
 
@@ -73,6 +74,7 @@
 | 26 | root 管理用户的 API 密钥 | 与本文档同一提交 | 仅 root 可用 | 无（复用 tokens 表） | 新增 root 接口、二次验证 scope、审计、用户管理与 API 密钥页 |
 | 27 | 跨站复制渠道完整配置 | 与本文档同一提交 | 复制仅 root 且需 2FA；粘贴需新建渠道权限 | 无 | 新增 root 接口、只认 2FA 的二次验证 scope、审计、渠道页 |
 | 28 | 使用日志：模型名模糊搜索与多渠道筛选 | 与本文档同一提交 | 始终生效 | 无 | 使用日志列表与统计接口的 `channel` 参数、实时 RPM/TPM 过滤、日志页筛选框 |
+| 29 | 使用日志：按输入 / 输出 token 数范围筛选 | 与本文档同一提交 | 不填即不过滤 | 无 | 使用日志列表与统计接口（管理员与用户自己）、日志页筛选框 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -835,7 +837,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
-| `model/log.go` | §28 把 `GetAllLogs` / `SumUsedQuota` 的渠道参数从 `int` 改为 `[]int`（`channel_id IN ?`） |
+| `model/log.go` | §28 把 `GetAllLogs` / `SumUsedQuota` 的渠道参数从 `int` 改为 `[]int`（`channel_id IN ?`）；§29 给 `GetAllLogs` / `GetUserLogs` / `SumUsedQuota` 末尾加了 `LogTokenRange` 参数 |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
@@ -1476,3 +1478,27 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - `web/src/features/usage-logs/lib/__tests__/log-filter-params.test.ts`：模型搜索转为 `%text%`、去掉首尾空格、带 `%` 原样、空值不过滤；URL 与列筛选都转换；多个渠道原样发送；用户视图不发送渠道。`live-rate-stats.test.tsx` 与 `mobile-filter.test.tsx` 随行为更新。
 - 本地端到端（SQLite 实例，5 条不同模型、不同渠道的消费日志）：API 层 7 项（模糊模型、模糊 + 多渠道、空格分隔、中文逗号、单渠道、精确模型、非法渠道被拒），列表与额度统计一致；无头 Chrome 在日志页按 `channel=1,2` 打开后输入 `4o` 回车，列表只剩 gpt-4o 与 gpt-4o-mini，列表与统计请求都带 `model_name=%4o%&channel=1,2`。
 - **未完成的数据库验证**：本机没有 MySQL / PostgreSQL / ClickHouse（也没有 docker），新测试只在 SQLite 上跑过。改动的 SQL 只有 `channel_id IN ?`（GORM 展开为标准 `IN (...)`），模型匹配走上游已有的 `LIKE` 路径；在 MySQL / PostgreSQL 上用 `TEST_LOG_FILTER_DIALECT=mysql|postgres` 加对应 DSN 运行 `go test ./controller -run 'TestUsageLogs'` 即可补齐。
+
+## 29. 使用日志：按输入 / 输出 token 数范围筛选
+
+### 行为
+
+- 日志页「展开」后的高级筛选里有两组范围：「输入 token」（`prompt_tokens`）和「输出 token」（`completion_tokens`），每组有最小值、最大值两个框，可以只填一个，边界值包含在内。管理员视图与用户自己的视图都有。
+- 接口参数：`prompt_tokens_min`、`prompt_tokens_max`、`completion_tokens_min`、`completion_tokens_max`，作用于 `GET /api/log/`、`/api/log/self`、`/api/log/stat`、`/api/log/self/stat`。后端 `controller/log.go` 的 `parseLogTokenRange` 解析：必须是大于或等于 0 的整数，否则返回「Token counts must be whole numbers of 0 or more」；最小值大于最大值返回「The minimum token count cannot be greater than the maximum」。查询条件由 `model.LogTokenRange.applyTo` 加到列表、计数与额度统计上。
+- 前端点「搜索」前用同样的规则先校验（`lib/filter.ts` 的 `getTokenRangeError`），不合法时直接提示、不发请求；否则服务端的业务错误会被查询自动重试，几秒后才提示。
+- URL 搜索参数为 `inputTokensMin`、`inputTokensMax`、`outputTokensMin`、`outputTokensMax`（数字）；「展开」角标把每组范围算作一个筛选。
+- **实时 RPM / TPM 不支持这个筛选**：实时统计只按分钟汇总，不保存每条请求的 token 数。设置了任一 token 范围时，统计接口不读实时统计，`rate_source` 返回 `filter_unsupported`，日志页的 RPM / TPM 显示「-」并注明「实时 RPM / TPM 无法按 token 数量过滤」。用量（额度）统计照常按范围计算。
+- 范围筛选组件 `web/src/features/usage-logs/components/token-range-filter.tsx`：项目里没有现成的数值范围输入，用已有的 `LogsFilterField` / `LogsFilterInput` 组合，两组范围共用。
+
+### 已知限制
+
+- `prompt_tokens` 与 `completion_tokens` 没有索引，范围条件依赖时间范围收窄扫描。
+- 「输入 token」就是日志记录的 `prompt_tokens`，各渠道对缓存 token 是否计入其中的口径与日志表本身一致。
+
+### 测试
+
+- `controller/log_filter_test.go` `TestUsageLogsFilterByTokenRanges`：输入下限、输入上限（含边界）、输出区间、输入输出组合，在管理员与用户自己两个视图下列表与额度统计一致，且 `rate_source` 为 `filter_unsupported`；与多个渠道组合（仅管理员视图）；不设范围时实时统计照常；负数、非数字、小数、最小值大于最大值在 4 个接口上都被拒绝。
+- `web/src/features/usage-logs/lib/__tests__/log-filter-params.test.ts`：范围转为接口参数（含 0）；输入框文本转为 URL 数字、空框不带；`getTokenRangeError` 的 6 种情况。
+- `web/src/features/usage-logs/components/__tests__/token-range-filter.test.tsx`：展开后填写并搜索，URL 带上范围、未填的不带，「收起」角标为 2；从 URL 回填输入框；最小值大于最大值时提示且不搜索。`live-rate-stats.test.tsx`：`filter_unsupported` 时显示「-」与说明。
+- 本地端到端（SQLite 实例，5 条不同 token 数的消费日志）：API 层 8 项（输入下限、输入下限 + 输出上限、输出区间含边界、与模糊模型和多渠道组合、用户自己的视图、两种非法输入、不设范围时实时统计照常）；无头 Chrome 展开筛选、填写「输入 ≥ 1000、输出 ≤ 500」后只剩两条日志，用量为两条之和，RPM / TPM 显示「-」并有说明；最小值大于最大值时立即提示且不发请求。
+- 数据库：只在 SQLite 上验证（本机没有 MySQL / PostgreSQL / ClickHouse）。新增的 SQL 是 `prompt_tokens >= ?` 一类的普通比较；用 `TEST_LOG_FILTER_DIALECT=mysql|postgres` 加对应 DSN 运行 `go test ./controller -run TestUsageLogs` 可补齐。

@@ -33,6 +33,31 @@ import type {
 // ============================================================================
 
 /**
+ * Check the typed token bounds before searching, with the same rules and
+ * messages as the server: whole numbers of 0 or more, minimum not above
+ * maximum. Returns the message key of the first problem, or null.
+ */
+export function getTokenRangeError(filters: CommonLogFilters): string | null {
+  const ranges = [
+    [filters.inputTokensMin, filters.inputTokensMax],
+    [filters.outputTokensMin, filters.outputTokensMax],
+  ].map((range) =>
+    range.map((value) => (value?.trim() ? Number(value) : undefined))
+  )
+  for (const bound of ranges.flat()) {
+    if (bound !== undefined && !(Number.isInteger(bound) && bound >= 0)) {
+      return 'Token counts must be whole numbers of 0 or more'
+    }
+  }
+  for (const [min, max] of ranges) {
+    if (min !== undefined && max !== undefined && min > max) {
+      return 'The minimum token count cannot be greater than the maximum'
+    }
+  }
+  return null
+}
+
+/**
  * Build search params from filters based on log category
  */
 export function buildSearchParams(
@@ -57,6 +82,18 @@ export function buildSearchParams(
         ...(commonFilters.requestId && { requestId: commonFilters.requestId }),
         ...(commonFilters.upstreamRequestId && {
           upstreamRequestId: commonFilters.upstreamRequestId,
+        }),
+        ...(commonFilters.inputTokensMin && {
+          inputTokensMin: Number(commonFilters.inputTokensMin),
+        }),
+        ...(commonFilters.inputTokensMax && {
+          inputTokensMax: Number(commonFilters.inputTokensMax),
+        }),
+        ...(commonFilters.outputTokensMin && {
+          outputTokensMin: Number(commonFilters.outputTokensMin),
+        }),
+        ...(commonFilters.outputTokensMax && {
+          outputTokensMax: Number(commonFilters.outputTokensMax),
         }),
       }
     }

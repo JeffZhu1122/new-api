@@ -42,6 +42,48 @@ func parseLogChannelFilter(raw string) ([]int, error) {
 	return ids, nil
 }
 
+// parseLogTokenRange reads the input / output token bounds of the usage-log
+// queries. Each is a whole number of 0 or more, and a minimum may not exceed
+// its maximum.
+func parseLogTokenRange(c *gin.Context) (model.LogTokenRange, error) {
+	var tokens model.LogTokenRange
+	for _, bound := range []struct {
+		param  string
+		target **int
+	}{
+		{"prompt_tokens_min", &tokens.PromptMin},
+		{"prompt_tokens_max", &tokens.PromptMax},
+		{"completion_tokens_min", &tokens.CompletionMin},
+		{"completion_tokens_max", &tokens.CompletionMax},
+	} {
+		raw := strings.TrimSpace(c.Query(bound.param))
+		if raw == "" {
+			continue
+		}
+		value, err := strconv.Atoi(raw)
+		if err != nil || value < 0 {
+			return model.LogTokenRange{}, common.NewMessage("Token counts must be whole numbers of 0 or more")
+		}
+		*bound.target = &value
+	}
+	for _, pair := range [][2]*int{{tokens.PromptMin, tokens.PromptMax}, {tokens.CompletionMin, tokens.CompletionMax}} {
+		if pair[0] != nil && pair[1] != nil && *pair[0] > *pair[1] {
+			return model.LogTokenRange{}, common.NewMessage("The minimum token count cannot be greater than the maximum")
+		}
+	}
+	return tokens, nil
+}
+
+// logRate answers the live RPM / TPM for the usage-log filters. The live
+// statistics keep no per-request token counts, so a token range is reported
+// as a filter they cannot apply instead of an unfiltered reading.
+func logRate(filter service.LogRateFilter, tokens model.LogTokenRange) (service.LogRateReading, error) {
+	if !tokens.IsZero() {
+		return service.LogRateReading{Source: service.RpmStatsSourceFilterUnsupported}, nil
+	}
+	return service.LogRate(filter)
+}
+
 // logFilterFromQuery reads the log search shared by the log list and the log
 // export. Username and channel are read only for administrators.
 func logFilterFromQuery(c *gin.Context, admin bool) (model.LogFilter, error) {
@@ -58,6 +100,11 @@ func logFilterFromQuery(c *gin.Context, admin bool) (model.LogFilter, error) {
 		RequestId:         c.Query("request_id"),
 		UpstreamRequestId: c.Query("upstream_request_id"),
 	}
+	tokens, err := parseLogTokenRange(c)
+	if err != nil {
+		return filter, err
+	}
+	filter.Tokens = tokens
 	if admin {
 		filter.Username = c.Query("username")
 		channels, err := parseLogChannelFilter(c.Query("channel"))
@@ -258,17 +305,22 @@ func GetLogsStat(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	tokens, err := parseLogTokenRange(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	group := c.Query("group")
 	var stat model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group)
+		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, tokens)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
 	}
-	rate, err := service.LogRate(service.LogRateFilter{Username: username, TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group})
+	rate, err := logRate(service.LogRateFilter{Username: username, TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group}, tokens)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -299,17 +351,22 @@ func GetLogsSelfStat(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
+	tokens, err := parseLogTokenRange(c)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
 	group := c.Query("group")
 	var quotaNum model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group)
+		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, tokens)
 		if err != nil {
 			common.ApiError(c, err)
 			return
 		}
 	}
-	rate, err := service.LogRate(service.LogRateFilter{UserID: c.GetInt("id"), TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group})
+	rate, err := logRate(service.LogRateFilter{UserID: c.GetInt("id"), TokenName: tokenName, ModelName: modelName, ChannelIDs: channels, Group: group}, tokens)
 	if err != nil {
 		common.ApiError(c, err)
 		return

@@ -211,6 +211,18 @@ export function buildApiParams(config: {
     ...(searchParams.upstreamRequestId
       ? { upstream_request_id: String(searchParams.upstreamRequestId) }
       : {}),
+    ...(searchParams.inputTokensMin != null
+      ? { prompt_tokens_min: Number(searchParams.inputTokensMin) }
+      : {}),
+    ...(searchParams.inputTokensMax != null
+      ? { prompt_tokens_max: Number(searchParams.inputTokensMax) }
+      : {}),
+    ...(searchParams.outputTokensMin != null
+      ? { completion_tokens_min: Number(searchParams.outputTokensMin) }
+      : {}),
+    ...(searchParams.outputTokensMax != null
+      ? { completion_tokens_max: Number(searchParams.outputTokensMax) }
+      : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 
