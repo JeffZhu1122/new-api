@@ -10,6 +10,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/setting"
@@ -607,4 +608,103 @@ func TestGetUserGroupModelsListsEachUsableGroup(t *testing.T) {
 	groups := request()
 	require.Len(t, groups, 3)
 	assert.Equal(t, []string{"zz-default-model", "zz-shared-model", "zz-unpriced-model"}, groups[0].Models)
+}
+
+// The models listed for an API key are exactly what GET /v1/models returns
+// when called with that key: its routing groups (fallback groups included),
+// its model limits and the price filter.
+func TestTokenCallableModelsMatchModelListOfTheKey(t *testing.T) {
+	originalMax := setting.GetMaxTokenAutoGroups()
+	originalUsableGroups := setting.UserUsableGroups2JSONString()
+	originalGroupRatio := ratio_setting.GroupRatio2JSONString()
+	originalModelRatio := ratio_setting.ModelRatio2JSONString()
+	t.Cleanup(func() {
+		require.NoError(t, setting.UpdateMaxTokenAutoGroups(fmt.Sprintf("%d", originalMax)))
+		require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(originalUsableGroups))
+		require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(originalGroupRatio))
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(originalModelRatio))
+	})
+	withSelfUseModeDisabled(t)
+	require.NoError(t, setting.UpdateMaxTokenAutoGroups("5"))
+	require.NoError(t, setting.UpdateUserUsableGroupsByJSONString(`{"default":"Default","vip":"VIP"}`))
+	require.NoError(t, ratio_setting.UpdateGroupRatioByJSONString(`{"default":1,"vip":1}`))
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"zz-vip-model":1,"zz-shared-model":1,"zz-default-model":1}`))
+
+	db := setupModelListControllerTestDB(t)
+	require.NoError(t, db.AutoMigrate(&model.Token{}))
+	for _, user := range []model.User{
+		{Id: 1005, Username: "key-models-user", Password: "password", Group: "default", Status: common.UserStatusEnabled, AffCode: "km1005"},
+		{Id: 1006, Username: "key-models-other", Password: "password", Group: "default", Status: common.UserStatusEnabled, AffCode: "km1006"},
+	} {
+		require.NoError(t, db.Create(&user).Error)
+	}
+	require.NoError(t, db.Create(&[]model.Ability{
+		{Group: "vip", Model: "zz-vip-model", ChannelId: 1, Enabled: true},
+		{Group: "vip", Model: "zz-shared-model", ChannelId: 1, Enabled: true},
+		{Group: "default", Model: "zz-shared-model", ChannelId: 2, Enabled: true},
+		{Group: "default", Model: "zz-default-model", ChannelId: 2, Enabled: true},
+		{Group: "default", Model: "zz-unpriced-model", ChannelId: 2, Enabled: true},
+	}).Error)
+	userGroupKey := seedToken(t, db, 1005, "user group", "keymodelsusergroup000000000000000000000000000000")
+	fallbackKey := seedToken(t, db, 1005, "vip then default", "keymodelsfallback0000000000000000000000000000000")
+	require.NoError(t, db.Model(fallbackKey).Updates(map[string]any{"group": "vip", "auto_groups": `["default"]`}).Error)
+	limitedKey := seedToken(t, db, 1005, "vip limited", "keymodelslimited00000000000000000000000000000000")
+	require.NoError(t, db.Model(limitedKey).Updates(map[string]any{"group": "vip", "model_limits_enabled": true, "model_limits": "zz-vip-model,zz-default-model"}).Error)
+	otherKey := seedToken(t, db, 1006, "someone else", "keymodelsotheruser0000000000000000000000000000000")
+
+	type modelsResponse struct {
+		Success bool     `json:"success"`
+		Data    []string `json:"data"`
+	}
+	call := func(handler gin.HandlerFunc, callerID int, params gin.Params) modelsResponse {
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/api/token/models", nil)
+		context.Params = params
+		context.Set("id", callerID)
+		handler(context)
+		assert.Equal(t, callerID, context.GetInt("id"), "the caller's context is untouched")
+		var payload modelsResponse
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &payload))
+		return payload
+	}
+	listedWithKey := func(token *model.Token) []string {
+		stored, err := model.GetTokenById(token.Id)
+		require.NoError(t, err)
+		recorder := httptest.NewRecorder()
+		context, _ := gin.CreateTestContext(recorder)
+		context.Request = httptest.NewRequest(http.MethodGet, "/v1/models", nil)
+		common.SetContextKey(context, constant.ContextKeyUserGroup, "default")
+		require.NoError(t, middleware.SetupContextForToken(context, stored))
+		ListModels(context, constant.ChannelTypeOpenAI)
+		ids := make([]string, 0)
+		for id := range decodeListModelsResponse(t, recorder) {
+			ids = append(ids, id)
+		}
+		return ids
+	}
+
+	for _, test := range []struct {
+		name   string
+		token  *model.Token
+		models []string
+	}{
+		{"the user's group, priced models only", userGroupKey, []string{"zz-default-model", "zz-shared-model"}},
+		{"primary and fallback groups together", fallbackKey, []string{"zz-default-model", "zz-shared-model", "zz-vip-model"}},
+		{"model limits narrow the groups' models", limitedKey, []string{"zz-vip-model"}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			self := call(GetTokenCallableModels, 1005, gin.Params{{Key: "id", Value: fmt.Sprint(test.token.Id)}})
+			require.True(t, self.Success)
+			assert.Equal(t, test.models, self.Data)
+			assert.ElementsMatch(t, listedWithKey(test.token), self.Data, "same as GET /v1/models with the key")
+
+			root := call(AdminGetUserTokenCallableModels, 1, gin.Params{{Key: "id", Value: "1005"}, {Key: "token_id", Value: fmt.Sprint(test.token.Id)}})
+			require.True(t, root.Success)
+			assert.Equal(t, test.models, root.Data)
+		})
+	}
+
+	assert.False(t, call(GetTokenCallableModels, 1005, gin.Params{{Key: "id", Value: fmt.Sprint(otherKey.Id)}}).Success, "another user's key is not found")
+	assert.False(t, call(AdminGetUserTokenCallableModels, 1, gin.Params{{Key: "id", Value: "1005"}, {Key: "token_id", Value: fmt.Sprint(otherKey.Id)}}).Success, "a key of someone else cannot be read through this user")
 }

@@ -87,6 +87,19 @@ export async function getApiKey(
   return res.data
 }
 
+// Models the key can call: its groups' models narrowed by its model limits,
+// the same list GET /v1/models returns for it.
+export async function getApiKeyCallableModels(
+  id: number,
+  ownerId?: number
+): Promise<ApiResponse<string[]>> {
+  const path = ownerId
+    ? `${ownerTokensPath(ownerId)}/${id}/models`
+    : `/api/token/${id}/models`
+  const res = await api.get(path)
+  return res.data
+}
+
 // Get the key owner's global Auto order and the per-token selection limit.
 export async function getTokenAutoGroups(
   ownerId?: number

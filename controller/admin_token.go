@@ -124,6 +124,25 @@ func AdminGetUserToken(c *gin.Context) {
 	common.ApiSuccess(c, buildMaskedTokenResponse(token))
 }
 
+// AdminGetUserTokenCallableModels lists the models one API key of the managed
+// user can call, as GET /api/token/:id/models does for the signed-in user.
+func AdminGetUserTokenCallableModels(c *gin.Context) {
+	owner, ok := adminTokenOwner(c)
+	if !ok {
+		return
+	}
+	token, ok := adminOwnedToken(c, owner)
+	if !ok {
+		return
+	}
+	models, err := tokenCallableModels(c, token)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, models)
+}
+
 // AdminGetUserTokenGroups returns the groups the managed user may bind a key
 // to, in the shape of GET /api/user/self/groups.
 func AdminGetUserTokenGroups(c *gin.Context) {

@@ -35,6 +35,7 @@ import { ConfirmDialog } from '@/components/confirm-dialog'
 import { BadgeListCell } from '@/components/data-table'
 import { GroupBadge } from '@/components/group-badge'
 import { LiveRpmCell, LiveTpmCell } from '@/components/live-rpm'
+import { ModelListPopover } from '@/components/model-list-popover'
 import { ProviderBadge } from '@/components/provider-badge'
 import { StatusBadge, type StatusBadgeProps } from '@/components/status-badge'
 import { TableId } from '@/components/table-id'
@@ -1197,23 +1198,29 @@ export function useChannelsColumns(
         header: t('Models'),
         meta: { mobileHidden: true },
         cell: ({ row }) => {
-          const models = row.getValue('models') as string
-          const modelArray = parseModelsList(models)
+          const modelArray = parseModelsList(row.getValue('models') as string)
+          if (modelArray.length === 0) {
+            return <span className='text-muted-foreground text-xs'>-</span>
+          }
+          const countLabel = t('{{count}} models', {
+            count: modelArray.length,
+          })
           return (
-            <BadgeListCell
-              items={modelArray.map((model) => (
-                <StatusBadge
-                  key={model}
-                  label={model}
-                  autoColor={model}
-                  size='sm'
-                  className='font-mono'
-                />
-              ))}
-            />
+            <ModelListPopover
+              models={modelArray}
+              title={t('Models: {{count}}', { count: modelArray.length })}
+              label={`${t('Models')}: ${countLabel}`}
+              triggerClassName='-ml-1.5'
+            >
+              <StatusBadge
+                label={countLabel}
+                variant='neutral'
+                copyable={false}
+              />
+            </ModelListPopover>
           )
         },
-        size: 200,
+        size: 120,
         enableSorting: false,
       },
 
