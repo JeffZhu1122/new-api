@@ -48,9 +48,9 @@ func setupLogFilterTest(t *testing.T) {
 		common.MemoryCacheEnabled = previousCache
 	})
 	for _, log := range []model.Log{
-		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o", ChannelId: 1, Quota: 100, CreatedAt: 1000},
-		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o-mini", ChannelId: 2, Quota: 200, CreatedAt: 1001},
-		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "claude-sonnet-4", ChannelId: 3, Quota: 400, CreatedAt: 1002},
+		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o", ChannelId: 1, Quota: 100, PromptTokens: 100, CompletionTokens: 10, CreatedAt: 1000},
+		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o-mini", ChannelId: 2, Quota: 200, PromptTokens: 2000, CompletionTokens: 50, CreatedAt: 1001},
+		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "claude-sonnet-4", ChannelId: 3, Quota: 400, PromptTokens: 50000, CompletionTokens: 800, CreatedAt: 1002},
 	} {
 		require.NoError(t, db.Create(&log).Error)
 	}
@@ -65,17 +65,20 @@ type logFilterResponse struct {
 			ChannelId int    `json:"channel"`
 			ModelName string `json:"model_name"`
 		} `json:"items"`
-		Quota int `json:"quota"`
+		Quota      int    `json:"quota"`
+		RateSource string `json:"rate_source"`
 	} `json:"data"`
 }
 
-// logFilterRequest calls a root usage-log handler with the query.
+// logFilterRequest calls a usage-log handler as the root user alice (id 1).
 func logFilterRequest(t *testing.T, handler gin.HandlerFunc, query url.Values) logFilterResponse {
 	t.Helper()
 	recorder := httptest.NewRecorder()
 	c, _ := gin.CreateTestContext(recorder)
 	c.Request = httptest.NewRequest("GET", "/api/log/?"+query.Encode(), nil)
 	c.Set("role", common.RoleRootUser)
+	c.Set("id", 1)
+	c.Set("username", "alice")
 	handler(c)
 	var response logFilterResponse
 	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response), recorder.Body.String())
@@ -156,6 +159,70 @@ func TestUsageLogsModelSearchMatchesPartOfTheName(t *testing.T) {
 			stat := logFilterRequest(t, GetLogsStat, query)
 			require.True(t, stat.Success, stat.MessageKey)
 			assert.Equal(t, test.quota, stat.Data.Quota)
+		})
+	}
+}
+
+func TestUsageLogsFilterByTokenRanges(t *testing.T) {
+	setupLogFilterTest(t)
+	for _, test := range []struct {
+		name      string
+		query     url.Values
+		models    []string
+		quota     int
+		adminOnly bool
+	}{
+		{"input at least", url.Values{"prompt_tokens_min": {"1000"}}, []string{"gpt-4o-mini", "claude-sonnet-4"}, 600, false},
+		{"input at most, bound included", url.Values{"prompt_tokens_max": {"2000"}}, []string{"gpt-4o", "gpt-4o-mini"}, 300, false},
+		{"output between", url.Values{"completion_tokens_min": {"20"}, "completion_tokens_max": {"500"}}, []string{"gpt-4o-mini"}, 200, false},
+		{"input and output together", url.Values{"prompt_tokens_min": {"100"}, "completion_tokens_max": {"50"}}, []string{"gpt-4o", "gpt-4o-mini"}, 300, false},
+		// Only the admin view filters by channel.
+		{"with several channels", url.Values{"prompt_tokens_min": {"1000"}, "channel": {"1,3"}}, []string{"claude-sonnet-4"}, 400, true},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			test.query.Set("type", "2")
+			views := map[string][2]gin.HandlerFunc{"all logs": {GetAllLogs, GetLogsStat}}
+			if !test.adminOnly {
+				views["own logs"] = [2]gin.HandlerFunc{GetUserLogs, GetLogsSelfStat}
+			}
+			for name, handlers := range views {
+				logs := logFilterRequest(t, handlers[0], test.query)
+				require.True(t, logs.Success, logs.MessageKey)
+				models := make([]string, 0, len(logs.Data.Items))
+				for _, item := range logs.Data.Items {
+					models = append(models, item.ModelName)
+				}
+				assert.ElementsMatch(t, test.models, models, name)
+
+				stat := logFilterRequest(t, handlers[1], test.query)
+				require.True(t, stat.Success, stat.MessageKey)
+				assert.Equal(t, test.quota, stat.Data.Quota, name)
+				// The live RPM / TPM keep no per-request token counts.
+				assert.Equal(t, "filter_unsupported", stat.Data.RateSource, name)
+			}
+		})
+	}
+
+	stat := logFilterRequest(t, GetLogsStat, url.Values{"type": {"2"}})
+	require.True(t, stat.Success, stat.MessageKey)
+	assert.NotEqual(t, "filter_unsupported", stat.Data.RateSource, "without a token range the live statistics apply")
+
+	for _, test := range []struct {
+		name       string
+		query      url.Values
+		messageKey string
+	}{
+		{"negative", url.Values{"prompt_tokens_min": {"-1"}}, "Token counts must be whole numbers of 0 or more"},
+		{"not a number", url.Values{"completion_tokens_max": {"many"}}, "Token counts must be whole numbers of 0 or more"},
+		{"fraction", url.Values{"completion_tokens_min": {"1.5"}}, "Token counts must be whole numbers of 0 or more"},
+		{"minimum above maximum", url.Values{"prompt_tokens_min": {"500"}, "prompt_tokens_max": {"100"}}, "The minimum token count cannot be greater than the maximum"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, handler := range []gin.HandlerFunc{GetAllLogs, GetLogsStat, GetUserLogs, GetLogsSelfStat} {
+				response := logFilterRequest(t, handler, test.query)
+				assert.False(t, response.Success)
+				assert.Equal(t, test.messageKey, response.MessageKey)
+			}
 		})
 	}
 }

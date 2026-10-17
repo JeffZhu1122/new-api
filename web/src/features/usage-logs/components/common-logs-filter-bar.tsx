@@ -22,6 +22,7 @@ import type { Table } from '@tanstack/react-table'
 import { Eye, EyeOff } from 'lucide-react'
 import { useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -45,7 +46,7 @@ import { getUserGroups } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
-import { buildSearchParams } from '../lib/filter'
+import { buildSearchParams, getTokenRangeError } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
@@ -56,6 +57,7 @@ import {
   LogsFilterInput,
   LogsFilterToolbar,
 } from './logs-filter-toolbar'
+import { TokenRangeFilter } from './token-range-filter'
 import { useLogsViewScope, useUsageLogsContext } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
@@ -94,6 +96,10 @@ function buildSearchSourceKey(values: {
   username?: unknown
   requestId?: unknown
   upstreamRequestId?: unknown
+  inputTokensMin?: unknown
+  inputTokensMax?: unknown
+  outputTokensMin?: unknown
+  outputTokensMax?: unknown
   type?: unknown
 }) {
   return [
@@ -106,6 +112,10 @@ function buildSearchSourceKey(values: {
     values.username,
     values.requestId,
     values.upstreamRequestId,
+    values.inputTokensMin,
+    values.inputTokensMax,
+    values.outputTokensMin,
+    values.outputTokensMax,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -158,6 +168,10 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username,
       requestId: searchParams.requestId,
       upstreamRequestId: searchParams.upstreamRequestId,
+      inputTokensMin: searchParams.inputTokensMin,
+      inputTokensMax: searchParams.inputTokensMax,
+      outputTokensMin: searchParams.outputTokensMin,
+      outputTokensMax: searchParams.outputTokensMax,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -172,6 +186,10 @@ export function CommonLogsFilterBar<TData>(
       username: searchParams.username || undefined,
       requestId: searchParams.requestId || undefined,
       upstreamRequestId: searchParams.upstreamRequestId || undefined,
+      inputTokensMin: searchParams.inputTokensMin?.toString(),
+      inputTokensMax: searchParams.inputTokensMax?.toString(),
+      outputTokensMin: searchParams.outputTokensMin?.toString(),
+      outputTokensMax: searchParams.outputTokensMax?.toString(),
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -188,6 +206,10 @@ export function CommonLogsFilterBar<TData>(
     searchParams.username,
     searchParams.requestId,
     searchParams.upstreamRequestId,
+    searchParams.inputTokensMin,
+    searchParams.inputTokensMax,
+    searchParams.outputTokensMin,
+    searchParams.outputTokensMax,
     searchParams.type,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
@@ -213,6 +235,11 @@ export function CommonLogsFilterBar<TData>(
 
   const handleApply = useCallback(
     (nextFilters: CommonLogFilters = filters) => {
+      const tokenRangeError = getTokenRangeError(nextFilters)
+      if (tokenRangeError) {
+        toast.error(t(tokenRangeError))
+        return
+      }
       const filterParams = buildSearchParams(nextFilters, 'common')
       navigate({
         to: '/usage-logs/$section',
@@ -226,7 +253,7 @@ export function CommonLogsFilterBar<TData>(
       queryClient.invalidateQueries({ queryKey: ['logs'] })
       queryClient.invalidateQueries({ queryKey: ['usage-logs-stats'] })
     },
-    [filters, logType, navigate, queryClient]
+    [filters, logType, navigate, queryClient, t]
   )
 
   const handleReset = useCallback(() => {
@@ -262,12 +289,18 @@ export function CommonLogsFilterBar<TData>(
     [handleApply]
   )
 
+  const hasInputTokenRange =
+    !!filters.inputTokensMin || !!filters.inputTokensMax
+  const hasOutputTokenRange =
+    !!filters.outputTokensMin || !!filters.outputTokensMax
   const hasExpandedFilters =
     !!filters.token ||
     !!filters.username ||
     !!filters.channel ||
     !!filters.requestId ||
-    !!filters.upstreamRequestId
+    !!filters.upstreamRequestId ||
+    hasInputTokenRange ||
+    hasOutputTokenRange
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -279,6 +312,8 @@ export function CommonLogsFilterBar<TData>(
     isAdmin ? filters.channel : undefined,
     filters.requestId,
     filters.upstreamRequestId,
+    hasInputTokenRange,
+    hasOutputTokenRange,
   ].filter(Boolean).length
   const sensitiveInputClass = sensitiveVisible
     ? undefined
@@ -483,6 +518,26 @@ export function CommonLogsFilterBar<TData>(
           onKeyDown={handleKeyDown}
         />
       </LogsFilterField>
+      <TokenRangeFilter
+        label={t('Input tokens')}
+        minLabel={t('Min input tokens')}
+        maxLabel={t('Max input tokens')}
+        min={filters.inputTokensMin}
+        max={filters.inputTokensMax}
+        onMinChange={(value) => handleChange('inputTokensMin', value)}
+        onMaxChange={(value) => handleChange('inputTokensMax', value)}
+        onKeyDown={handleKeyDown}
+      />
+      <TokenRangeFilter
+        label={t('Output tokens')}
+        minLabel={t('Min output tokens')}
+        maxLabel={t('Max output tokens')}
+        min={filters.outputTokensMin}
+        max={filters.outputTokensMax}
+        onMinChange={(value) => handleChange('outputTokensMin', value)}
+        onMaxChange={(value) => handleChange('outputTokensMax', value)}
+        onKeyDown={handleKeyDown}
+      />
     </>
   )
 
