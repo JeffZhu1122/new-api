@@ -312,6 +312,10 @@ function KeysPage() {
 async function renderKeysPage(status = 1, overrides: Partial<ApiKey> = {}) {
   let currentKey = { ...key, status, ...overrides }
   vi.mocked(api.get).mockImplementation(async (url) => {
+    // The key's groups serve only one of its limited models.
+    if (url === `/api/token/${currentKey.id}/models`) {
+      return { data: { success: true, data: ['model-alpha'] } }
+    }
     if (url.startsWith('/api/token/')) {
       return {
         data: { success: true, data: { items: [currentKey], total: 1 } },
@@ -485,7 +489,7 @@ it('keeps full mobile information without group or quota section headings', asyn
   }
 })
 
-it('keeps mobile quota readable and opens complete model and IP restrictions by tapping', async () => {
+it('keeps mobile quota readable and opens the callable models and IP restrictions by tapping', async () => {
   const matchMedia = window.matchMedia
   vi.spyOn(window, 'matchMedia').mockImplementation((query) => ({
     ...matchMedia(query),
@@ -519,10 +523,14 @@ it('keeps mobile quota readable and opens complete model and IP restrictions by 
     'font-normal',
     'text-right'
   )
-  await userEvent.click(screen.getByRole('button', { name: /Models: 2 model/ }))
+  await userEvent.click(
+    screen.getByRole('button', { name: 'Callable models: 2 models' })
+  )
   let details = await screen.findByRole('dialog')
-  expect(within(details).getByText('model-alpha')).toBeVisible()
-  expect(within(details).getByText('model-beta-with-a-long-name')).toBeVisible()
+  expect(await within(details).findByText('model-alpha')).toBeVisible()
+  expect(
+    within(details).queryByText('model-beta-with-a-long-name')
+  ).not.toBeInTheDocument()
   await userEvent.keyboard('{Escape}')
   await userEvent.click(
     screen.getByRole('button', { name: /IP Restriction: 2 IP/ })
