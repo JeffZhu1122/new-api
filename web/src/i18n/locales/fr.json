@@ -7540,6 +7540,13 @@
     "Copied the full configuration of channel {{name}} (ID: {{id}})": "Configuration complète du canal {{name}} copiée (ID : {{id}})",
     "Model name (fuzzy)": "Nom du modèle (partiel)",
     "Channel IDs, e.g. 1,2,3": "ID de canaux, ex. 1,2,3",
-    "Search at most {{max}} channel IDs at once": "Recherchez au plus {{max}} ID de canaux à la fois"
+    "Search at most {{max}} channel IDs at once": "Recherchez au plus {{max}} ID de canaux à la fois",
+    "Min input tokens": "Tokens en entrée min.",
+    "Max input tokens": "Tokens en entrée max.",
+    "Min output tokens": "Tokens en sortie min.",
+    "Max output tokens": "Tokens en sortie max.",
+    "Live RPM / TPM cannot be filtered by token counts.": "Les RPM / TPM en direct ne peuvent pas être filtrés par nombre de tokens.",
+    "Token counts must be whole numbers of 0 or more": "Les nombres de tokens doivent être des entiers supérieurs ou égaux à 0",
+    "The minimum token count cannot be greater than the maximum": "Le nombre minimal de tokens ne peut pas dépasser le maximum"
   }
 }

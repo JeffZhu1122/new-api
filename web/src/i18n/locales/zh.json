@@ -7540,6 +7540,13 @@
     "Copied the full configuration of channel {{name}} (ID: {{id}})": "复制了渠道 {{name}} 的完整配置（ID: {{id}}）",
     "Model name (fuzzy)": "模型名称（模糊）",
     "Channel IDs, e.g. 1,2,3": "渠道 ID，如 1,2,3",
-    "Search at most {{max}} channel IDs at once": "一次最多搜索 {{max}} 个渠道 ID"
+    "Search at most {{max}} channel IDs at once": "一次最多搜索 {{max}} 个渠道 ID",
+    "Min input tokens": "输入 token 最小值",
+    "Max input tokens": "输入 token 最大值",
+    "Min output tokens": "输出 token 最小值",
+    "Max output tokens": "输出 token 最大值",
+    "Live RPM / TPM cannot be filtered by token counts.": "实时 RPM / TPM 无法按 token 数量过滤。",
+    "Token counts must be whole numbers of 0 or more": "token 数量必须是大于或等于 0 的整数",
+    "The minimum token count cannot be greater than the maximum": "token 数量的最小值不能大于最大值"
   }
 }

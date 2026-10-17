@@ -7540,6 +7540,13 @@
     "Copied the full configuration of channel {{name}} (ID: {{id}})": "Đã sao chép toàn bộ cấu hình kênh {{name}} (ID: {{id}})",
     "Model name (fuzzy)": "Tên mô hình (một phần)",
     "Channel IDs, e.g. 1,2,3": "ID kênh, vd. 1,2,3",
-    "Search at most {{max}} channel IDs at once": "Chỉ tìm tối đa {{max}} ID kênh mỗi lần"
+    "Search at most {{max}} channel IDs at once": "Chỉ tìm tối đa {{max}} ID kênh mỗi lần",
+    "Min input tokens": "Token vào tối thiểu",
+    "Max input tokens": "Token vào tối đa",
+    "Min output tokens": "Token ra tối thiểu",
+    "Max output tokens": "Token ra tối đa",
+    "Live RPM / TPM cannot be filtered by token counts.": "Không thể lọc RPM / TPM trực tiếp theo số token.",
+    "Token counts must be whole numbers of 0 or more": "Số token phải là số nguyên từ 0 trở lên",
+    "The minimum token count cannot be greater than the maximum": "Số token tối thiểu không được lớn hơn tối đa"
   }
 }

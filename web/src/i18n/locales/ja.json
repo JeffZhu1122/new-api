@@ -7540,6 +7540,13 @@
     "Copied the full configuration of channel {{name}} (ID: {{id}})": "チャネル {{name}} の設定をすべてコピーしました（ID: {{id}}）",
     "Model name (fuzzy)": "モデル名（部分一致）",
     "Channel IDs, e.g. 1,2,3": "チャネル ID（例: 1,2,3）",
-    "Search at most {{max}} channel IDs at once": "一度に検索できるチャネル ID は最大 {{max}} 件です"
+    "Search at most {{max}} channel IDs at once": "一度に検索できるチャネル ID は最大 {{max}} 件です",
+    "Min input tokens": "入力トークン 最小",
+    "Max input tokens": "入力トークン 最大",
+    "Min output tokens": "出力トークン 最小",
+    "Max output tokens": "出力トークン 最大",
+    "Live RPM / TPM cannot be filtered by token counts.": "リアルタイムの RPM / TPM はトークン数で絞り込めません。",
+    "Token counts must be whole numbers of 0 or more": "トークン数は 0 以上の整数で指定してください",
+    "The minimum token count cannot be greater than the maximum": "トークン数の最小値は最大値を超えられません"
   }
 }

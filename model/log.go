@@ -463,9 +463,41 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 	}
 }
 
+// LogTokenRange bounds the input (prompt) and output (completion) tokens of
+// the usage logs. A nil bound is open.
+type LogTokenRange struct {
+	PromptMin     *int
+	PromptMax     *int
+	CompletionMin *int
+	CompletionMax *int
+}
+
+func (r LogTokenRange) IsZero() bool {
+	return r.PromptMin == nil && r.PromptMax == nil && r.CompletionMin == nil && r.CompletionMax == nil
+}
+
+// applyTo adds the bounds to a logs query whose columns carry prefix ("logs."
+// or "").
+func (r LogTokenRange) applyTo(tx *gorm.DB, prefix string) *gorm.DB {
+	for _, bound := range []struct {
+		condition string
+		value     *int
+	}{
+		{"prompt_tokens >= ?", r.PromptMin},
+		{"prompt_tokens <= ?", r.PromptMax},
+		{"completion_tokens >= ?", r.CompletionMin},
+		{"completion_tokens <= ?", r.CompletionMax},
+	} {
+		if bound.value != nil {
+			tx = tx.Where(prefix+bound.condition, *bound.value)
+		}
+	}
+	return tx
+}
+
 // LogFilter is the usage-log search shared by the log list and the log export.
 // Username and Channels are administrator filters; an empty Channels means
-// every channel.
+// every channel. Tokens bounds the input and output tokens.
 type LogFilter struct {
 	Type              int
 	StartTimestamp    int64
@@ -477,6 +509,7 @@ type LogFilter struct {
 	Group             string
 	RequestId         string
 	UpstreamRequestId string
+	Tokens            LogTokenRange
 }
 
 func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
@@ -511,6 +544,7 @@ func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
 	if f.Group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", f.Group)
 	}
+	tx = f.Tokens.applyTo(tx, "logs.")
 	return tx, nil
 }
 
@@ -678,7 +712,7 @@ type Stat struct {
 // SumUsedQuota sums the consumed quota matching the usage-log filters. The
 // log page's RPM / TPM come from the live statistics (service.LogRate), not
 // from this table.
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channelFilter []int, group string) (stat Stat, err error) {
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channelFilter []int, group string, tokens LogTokenRange) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
 
 	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
@@ -702,6 +736,7 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)
 	}
+	tx = tokens.applyTo(tx, "")
 
 	tx = tx.Where("type = ?", LogTypeConsume)
 
