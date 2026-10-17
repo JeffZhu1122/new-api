@@ -66,7 +66,11 @@ function sourceChannel(overrides: Partial<Channel> = {}): Channel {
       multi_key_mode: 'random',
     },
     settings: '{}',
-    extend_config: { force_retry: true, rpm_limit: 60 },
+    extend_config: {
+      force_retry: true,
+      empty_output_error: true,
+      rpm_limit: 60,
+    },
     ...overrides,
   }
 }
@@ -94,6 +98,7 @@ describe('channel configuration transfer', () => {
       test_model: 'gpt-4o-mini',
       proxy: 'http://proxy.internal:8080',
       force_retry: true,
+      empty_output_error: true,
       rpm_limit: 60,
       status: CHANNEL_STATUS.MANUAL_DISABLED,
       multi_key_mode: 'single',

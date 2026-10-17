@@ -284,6 +284,11 @@ type ChannelExtendSettings struct {
 	// disconnected clients and content violations still stop the retry.
 	// Async task submissions are not affected.
 	ForceRetry bool `json:"force_retry,omitempty"`
+	// EmptyOutputError turns a text generation response without any output
+	// (text, reasoning, tool call, refusal, image or audio) into an
+	// empty_response error, so it is retried on another channel and not
+	// billed. Streams are held back until their first output for this.
+	EmptyOutputError bool `json:"empty_output_error,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -370,7 +375,8 @@ func (s *ChannelExtendSettings) IsZero() bool {
 		s.RpmLimit == 0 && s.TpmLimit == 0 &&
 		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey) &&
 		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0 &&
-		s.CostRatio == 0 && s.QuotaLimit == 0 && s.Schedule == nil && !s.ForceRetry)
+		s.CostRatio == 0 && s.QuotaLimit == 0 && s.Schedule == nil && !s.ForceRetry &&
+		!s.EmptyOutputError)
 }
 
 // AvailableAt reports whether the channel may be selected at the given

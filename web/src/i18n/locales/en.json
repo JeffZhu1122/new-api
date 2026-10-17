@@ -7561,6 +7561,8 @@
     "TTFT must be 0 seconds or more": "TTFT must be 0 seconds or more",
     "The minimum cannot be greater than the maximum": "The minimum cannot be greater than the maximum",
     "Status codes must be numbers from 100 to 599": "Status codes must be numbers from 100 to 599",
-    "Search at most {{max}} status codes at once": "Search at most {{max}} status codes at once"
+    "Search at most {{max}} status codes at once": "Search at most {{max}} status codes at once",
+    "Error on Empty Output": "Error on Empty Output",
+    "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry."
   }
 }

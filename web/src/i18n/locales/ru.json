@@ -7561,6 +7561,8 @@
     "TTFT must be 0 seconds or more": "TTFT должен быть не меньше 0 секунд",
     "The minimum cannot be greater than the maximum": "Минимум не может быть больше максимума",
     "Status codes must be numbers from 100 to 599": "Коды статуса должны быть числами от 100 до 599",
-    "Search at most {{max}} status codes at once": "За один раз можно искать не более {{max}} кодов статуса"
+    "Search at most {{max}} status codes at once": "За один раз можно искать не более {{max}} кодов статуса",
+    "Error on Empty Output": "Ошибка при пустом ответе",
+    "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "Считать ошибкой ответ чата, Claude, Gemini или Responses без какого-либо вывода (без текста, рассуждений, вызова инструмента или отказа): запрос повторяется на другом канале и не тарифицируется. Потоки удерживаются до первого вывода. Если клиенту уже ушёл keepalive-пинг, пустой поток завершается событием ошибки вместо повтора."
   }
 }

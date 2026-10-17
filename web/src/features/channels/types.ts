@@ -99,6 +99,7 @@ export const channelSchema = z.object({
         })
         .nullish(),
       force_retry: z.boolean().optional(),
+      empty_output_error: z.boolean().optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -145,6 +146,8 @@ export interface ChannelExtendSettings {
   schedule?: ChannelSchedule
   // Retry every relay error from this channel, ignoring the retry rules
   force_retry?: boolean
+  // Turn a text generation response without any output into an error
+  empty_output_error?: boolean
 }
 
 // One weekly availability window: start inclusive, end exclusive (HH:MM in
