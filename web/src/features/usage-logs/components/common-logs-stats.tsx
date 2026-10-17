@@ -152,7 +152,9 @@ export function CommonLogsStats() {
       )}
       {rate?.rate_source === 'filter_unsupported' && (
         <span className='text-muted-foreground text-xs'>
-          {t('Live RPM / TPM cannot be filtered by token counts.')}
+          {t(
+            'Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.'
+          )}
         </span>
       )}
     </div>

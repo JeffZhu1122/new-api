@@ -3,12 +3,14 @@ package model
 import (
 	"os"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"gorm.io/gorm/schema"
 )
 
 func TestIsClickHouseDSN(t *testing.T) {
@@ -151,4 +153,23 @@ func TestAssignDisplayLogIds(t *testing.T) {
 	assert.Equal(t, []int{21, 22, 23}, []int{logs[0].Id, logs[1].Id, logs[2].Id})
 
 	assert.NotPanics(t, func() { assignDisplayLogIds(nil, 0) })
+}
+
+// ClickHouse inserts the whole Log, so its table needs every writable column;
+// columns added after release also need an ALTER for existing tables.
+func TestClickHouseLogTableCoversEveryLogColumn(t *testing.T) {
+	logSchema, err := schema.Parse(&Log{}, &sync.Map{}, schema.NamingStrategy{})
+	require.NoError(t, err)
+	createSQL := clickHouseLogCreateTableSQL(0)
+	for _, field := range logSchema.Fields {
+		if field.DBName == "" || !field.Creatable {
+			continue
+		}
+		column := field.DBName
+		if column == "group" {
+			column = "`group`"
+		}
+		assert.Contains(t, createSQL, "\t"+column+" ", "CREATE TABLE lacks %s", field.DBName)
+	}
+	assert.Contains(t, clickHouseLogAddedColumns, "ALTER TABLE logs ADD COLUMN IF NOT EXISTS first_response_ms Int32 DEFAULT 0")
 }

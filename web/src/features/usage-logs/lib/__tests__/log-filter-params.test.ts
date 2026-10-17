@@ -18,7 +18,7 @@ For commercial licensing, please contact support@quantumnous.com
 */
 import { describe, expect, it } from 'vitest'
 
-import { buildSearchParams, getTokenRangeError } from '../filter'
+import { buildSearchParams, getMetricFilterError } from '../filter'
 import { buildApiParams, toModelNameSearch } from '../utils'
 
 function params(
@@ -123,7 +123,69 @@ describe('usage log filter params', () => {
       { inputTokensMax: '1.5' },
       'Token counts must be whole numbers of 0 or more',
     ],
-  ])('checks token bounds before searching: %s', (_, filters, expected) => {
-    expect(getTokenRangeError(filters)).toBe(expected)
+    ['a TTFT fraction of a second', { ttftMin: '0.5', ttftMax: '2.5' }, null],
+    [
+      'a fraction of a second of use time',
+      { useTimeMin: '2.5' },
+      'Use time must be whole seconds of 0 or more',
+    ],
+    [
+      'use time minimum above maximum',
+      { useTimeMin: '30', useTimeMax: '3' },
+      'The minimum cannot be greater than the maximum',
+    ],
+    ['a negative TTFT', { ttftMax: '-0.1' }, 'TTFT must be 0 seconds or more'],
+    [
+      'TTFT minimum above maximum',
+      { ttftMin: '3', ttftMax: '1.5' },
+      'The minimum cannot be greater than the maximum',
+    ],
+    ['known status codes', { statusCodes: ['429', '502'] }, null],
+    [
+      'a status code outside 100-599',
+      { statusCodes: ['429', '99'] },
+      'Status codes must be numbers from 100 to 599',
+    ],
+    [
+      'a status code that is not a number',
+      { statusCodes: ['timeout'] },
+      'Status codes must be numbers from 100 to 599',
+    ],
+  ])('checks metric filters before searching: %s', (_, filters, expected) => {
+    expect(getMetricFilterError(filters)).toBe(expected)
+  })
+
+  it('sends use time in seconds, TTFT in milliseconds and status codes as a list', () => {
+    expect(
+      params({
+        useTimeMin: 5,
+        useTimeMax: 60,
+        ttftMin: 1.5,
+        ttftMax: 0.25,
+        statusCodes: [429, 502],
+      })
+    ).toMatchObject({
+      use_time_min: 5,
+      use_time_max: 60,
+      ttft_ms_min: 1500,
+      ttft_ms_max: 250,
+      status_codes: '429,502',
+    })
+    expect(params({ statusCodes: [] })).not.toHaveProperty('status_codes')
+  })
+
+  it('turns the typed durations and picked status codes into URL values', () => {
+    expect(
+      buildSearchParams(
+        {
+          useTimeMin: '0',
+          useTimeMax: '',
+          ttftMax: '2.5',
+          statusCodes: ['429', '524'],
+        },
+        'common'
+      )
+    ).toEqual({ useTimeMin: 0, ttftMax: 2.5, statusCodes: [429, 524] })
+    expect(buildSearchParams({ statusCodes: [] }, 'common')).toEqual({})
   })
 })

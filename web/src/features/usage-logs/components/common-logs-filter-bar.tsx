@@ -24,6 +24,7 @@ import { useState, useCallback, useMemo } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 
+import { MultiSelect } from '@/components/multi-select'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Combobox } from '@/components/ui/combobox'
@@ -45,8 +46,12 @@ import { useMediaQuery } from '@/hooks'
 import { getUserGroups } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
-import { LOG_TYPE_ALL_VALUE, LOG_TYPE_FILTERS } from '../constants'
-import { buildSearchParams, getTokenRangeError } from '../lib/filter'
+import {
+  LOG_STATUS_CODE_OPTIONS,
+  LOG_TYPE_ALL_VALUE,
+  LOG_TYPE_FILTERS,
+} from '../constants'
+import { buildSearchParams, getMetricFilterError } from '../lib/filter'
 import { getDefaultTimeRange } from '../lib/utils'
 import type { CommonLogFilters } from '../types'
 import { CommonLogsStats } from './common-logs-stats'
@@ -57,7 +62,7 @@ import {
   LogsFilterInput,
   LogsFilterToolbar,
 } from './logs-filter-toolbar'
-import { TokenRangeFilter } from './token-range-filter'
+import { RangeFilter } from './range-filter'
 import { useLogsViewScope, useUsageLogsContext } from './usage-logs-provider'
 
 const route = getRouteApi('/_authenticated/usage-logs/$section')
@@ -100,6 +105,11 @@ function buildSearchSourceKey(values: {
   inputTokensMax?: unknown
   outputTokensMin?: unknown
   outputTokensMax?: unknown
+  useTimeMin?: unknown
+  useTimeMax?: unknown
+  ttftMin?: unknown
+  ttftMax?: unknown
+  statusCodes?: unknown
   type?: unknown
 }) {
   return [
@@ -116,6 +126,13 @@ function buildSearchSourceKey(values: {
     values.inputTokensMax,
     values.outputTokensMin,
     values.outputTokensMax,
+    values.useTimeMin,
+    values.useTimeMax,
+    values.ttftMin,
+    values.ttftMax,
+    Array.isArray(values.statusCodes)
+      ? values.statusCodes.join(',')
+      : values.statusCodes,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -172,6 +189,11 @@ export function CommonLogsFilterBar<TData>(
       inputTokensMax: searchParams.inputTokensMax,
       outputTokensMin: searchParams.outputTokensMin,
       outputTokensMax: searchParams.outputTokensMax,
+      useTimeMin: searchParams.useTimeMin,
+      useTimeMax: searchParams.useTimeMax,
+      ttftMin: searchParams.ttftMin,
+      ttftMax: searchParams.ttftMax,
+      statusCodes: searchParams.statusCodes,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -190,6 +212,11 @@ export function CommonLogsFilterBar<TData>(
       inputTokensMax: searchParams.inputTokensMax?.toString(),
       outputTokensMin: searchParams.outputTokensMin?.toString(),
       outputTokensMax: searchParams.outputTokensMax?.toString(),
+      useTimeMin: searchParams.useTimeMin?.toString(),
+      useTimeMax: searchParams.useTimeMax?.toString(),
+      ttftMin: searchParams.ttftMin?.toString(),
+      ttftMax: searchParams.ttftMax?.toString(),
+      statusCodes: searchParams.statusCodes?.map(String),
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -210,6 +237,11 @@ export function CommonLogsFilterBar<TData>(
     searchParams.inputTokensMax,
     searchParams.outputTokensMin,
     searchParams.outputTokensMax,
+    searchParams.useTimeMin,
+    searchParams.useTimeMax,
+    searchParams.ttftMin,
+    searchParams.ttftMax,
+    searchParams.statusCodes,
     searchParams.type,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
@@ -219,7 +251,10 @@ export function CommonLogsFilterBar<TData>(
   const logType = activeDraft.logType
 
   const handleChange = useCallback(
-    (field: keyof CommonLogFilters, value: Date | string | undefined) => {
+    (
+      field: keyof CommonLogFilters,
+      value: Date | string | string[] | undefined
+    ) => {
       setDraft((current) => {
         const base =
           current.sourceKey === searchState.sourceKey ? current : searchState
@@ -235,9 +270,9 @@ export function CommonLogsFilterBar<TData>(
 
   const handleApply = useCallback(
     (nextFilters: CommonLogFilters = filters) => {
-      const tokenRangeError = getTokenRangeError(nextFilters)
-      if (tokenRangeError) {
-        toast.error(t(tokenRangeError))
+      const metricFilterError = getMetricFilterError(nextFilters)
+      if (metricFilterError) {
+        toast.error(t(metricFilterError))
         return
       }
       const filterParams = buildSearchParams(nextFilters, 'common')
@@ -293,6 +328,9 @@ export function CommonLogsFilterBar<TData>(
     !!filters.inputTokensMin || !!filters.inputTokensMax
   const hasOutputTokenRange =
     !!filters.outputTokensMin || !!filters.outputTokensMax
+  const hasUseTimeRange = !!filters.useTimeMin || !!filters.useTimeMax
+  const hasTtftRange = !!filters.ttftMin || !!filters.ttftMax
+  const hasStatusCodes = (filters.statusCodes?.length ?? 0) > 0
   const hasExpandedFilters =
     !!filters.token ||
     !!filters.username ||
@@ -300,7 +338,10 @@ export function CommonLogsFilterBar<TData>(
     !!filters.requestId ||
     !!filters.upstreamRequestId ||
     hasInputTokenRange ||
-    hasOutputTokenRange
+    hasOutputTokenRange ||
+    hasUseTimeRange ||
+    hasTtftRange ||
+    hasStatusCodes
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -314,6 +355,9 @@ export function CommonLogsFilterBar<TData>(
     filters.upstreamRequestId,
     hasInputTokenRange,
     hasOutputTokenRange,
+    hasUseTimeRange,
+    hasTtftRange,
+    hasStatusCodes,
   ].filter(Boolean).length
   const sensitiveInputClass = sensitiveVisible
     ? undefined
@@ -518,7 +562,7 @@ export function CommonLogsFilterBar<TData>(
           onKeyDown={handleKeyDown}
         />
       </LogsFilterField>
-      <TokenRangeFilter
+      <RangeFilter
         label={t('Input tokens')}
         minLabel={t('Min input tokens')}
         maxLabel={t('Max input tokens')}
@@ -528,7 +572,7 @@ export function CommonLogsFilterBar<TData>(
         onMaxChange={(value) => handleChange('inputTokensMax', value)}
         onKeyDown={handleKeyDown}
       />
-      <TokenRangeFilter
+      <RangeFilter
         label={t('Output tokens')}
         minLabel={t('Min output tokens')}
         maxLabel={t('Max output tokens')}
@@ -538,6 +582,39 @@ export function CommonLogsFilterBar<TData>(
         onMaxChange={(value) => handleChange('outputTokensMax', value)}
         onKeyDown={handleKeyDown}
       />
+      <RangeFilter
+        label={t('Use time (s)')}
+        minLabel={t('Min use time (s)')}
+        maxLabel={t('Max use time (s)')}
+        min={filters.useTimeMin}
+        max={filters.useTimeMax}
+        onMinChange={(value) => handleChange('useTimeMin', value)}
+        onMaxChange={(value) => handleChange('useTimeMax', value)}
+        onKeyDown={handleKeyDown}
+      />
+      <RangeFilter
+        label={t('TTFT (s)')}
+        minLabel={t('Min TTFT (s)')}
+        maxLabel={t('Max TTFT (s)')}
+        step={0.1}
+        min={filters.ttftMin}
+        max={filters.ttftMax}
+        onMinChange={(value) => handleChange('ttftMin', value)}
+        onMaxChange={(value) => handleChange('ttftMax', value)}
+        onKeyDown={handleKeyDown}
+      />
+      <LogsFilterField wide>
+        <MultiSelect
+          options={LOG_STATUS_CODE_OPTIONS}
+          selected={filters.statusCodes ?? []}
+          onChange={(values) => handleChange('statusCodes', values)}
+          placeholder={t('Status codes')}
+          allowCreate
+          createLabel='Add status code "{{value}}"'
+          maxVisibleChips={4}
+          className='min-h-8'
+        />
+      </LogsFilterField>
     </>
   )
 

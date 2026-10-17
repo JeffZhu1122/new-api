@@ -357,3 +357,23 @@ export const DISPLAYABLE_LOG_TYPES = [0, 2, 5, 6] as const
  * Log types that show timing info
  */
 export const TIMING_LOG_TYPES = [2, 5] as const
+
+/**
+ * HTTP status codes offered by the usage-log status code filter; others can
+ * be typed in. They carry no hint: MultiSelect marks hinted chips with an
+ * alias icon, which would misread here.
+ */
+export const LOG_STATUS_CODE_OPTIONS = [
+  '400',
+  '401',
+  '403',
+  '404',
+  '408',
+  '413',
+  '429',
+  '500',
+  '502',
+  '503',
+  '504',
+  '524',
+].map((code) => ({ value: code, label: code }))
