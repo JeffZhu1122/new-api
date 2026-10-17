@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
 | 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 45 个（含本文档相关提交） |
-| 变更规模 | 323 个文件，+27211 / −2168 行（不含本文档） |
+| fork 专有提交数 | 46 个（含本文档相关提交） |
+| 变更规模 | 329 个文件，+28087 / −2222 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -46,6 +46,7 @@
 29. [使用日志：按输入 / 输出 token 数范围筛选](#29-使用日志按输入--输出-token-数范围筛选)
 30. [使用日志：按消耗时长、TTFT 与 HTTP 状态码筛选](#30-使用日志按消耗时长ttft-与-http-状态码筛选)
 31. [渠道「零输出时报错」开关](#31-渠道零输出时报错开关)
+32. [渠道模型数量与 API 密钥可调用模型](#32-渠道模型数量与-api-密钥可调用模型)
 
 ---
 
@@ -79,6 +80,7 @@
 | 29 | 使用日志：按输入 / 输出 token 数范围筛选 | 与本文档同一提交 | 不填即不过滤 | 无 | 使用日志列表与统计接口（管理员与用户自己）、日志页筛选框 |
 | 30 | 使用日志：按消耗时长、TTFT 与 HTTP 状态码筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.first_response_ms`（新列） | 消费日志写入、日志表迁移（含 ClickHouse）、使用日志列表与统计接口、日志页筛选框 |
 | 31 | 渠道「零输出时报错」开关 | 与本文档同一提交 | 关闭 | `channel_extend` | 文本生成请求的响应写出、重试与退款、渠道编辑抽屉 |
+| 32 | 渠道模型数量与 API 密钥可调用模型 | 与本文档同一提交 | 始终生效（只读） | 无 | `/v1/models` 的模型计算（拆出共用函数）、新增两个只读接口、渠道列表模型列（改为默认显示）、API 密钥模型列 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -847,6 +849,9 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
+| `controller/model.go` | §32 把 `ListModels` 计算模型名的部分拆成 `listableModels`，`/v1/models` 与 Key 可调用模型接口共用；上游改 `ListModels` 的过滤规则时要改在 `listableModels` 里 |
+| `web/src/features/channels/components/channels-columns.tsx` / `channel-card.tsx` | §32 模型列改为数量 + `ModelListPopover`，卡片底部分组旁显示同一单元格 |
+| `web/src/features/keys/components/api-keys-cells.tsx` | §32 `ModelLimitsCell` 改为打开时加载可调用模型的 `ModelListPopover`（IP 限制单元格不变） |
 | `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误；§31 错误已写进流时不再追加 JSON 错误 |
 | `relay/compatible_handler.go` / `relay/claude_handler.go` / `relay/gemini_handler.go` / `relay/responses_handler.go` | §31 在 `DoResponse` 前后接入 `service.GuardEmptyOutput` / `Finish` |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
@@ -864,7 +869,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/request_policy.go` | `BeginAttempt` 中的实时 RPM 计数、`userID` 字段 |
 | `service/text_quota.go` / `service/quota.go` / `service/task_billing.go` / `relay/mjproxy_handler.go` | 消费日志参数改为先赋给 `logParams`，再调用 `RecordSettledUsage` 与 `RecordConsumeLog` |
 | `model/log.go` / `controller/log.go` | `SumUsedQuota` 只算额度、`ValidateLogTextPattern`；日志统计接口改读 `service.LogRate` |
-| `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹 |
+| `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹；§32 去掉渠道表 `initialColumnVisibility` 中的 `models: false` |
 | `controller/user.go` | `UpdateUser` 中 `rate_limit` / `model_discount` 写入紧挨上游的审计调用 |
 | `middleware/access_token_routes.go` | fork 新增的管理接口若不经 `RequirePermission`，必须在这里声明访问令牌权限，否则上游的覆盖测试失败、令牌被拒 |
 | `web/src/features/users/api.ts` | 文件头 import |
@@ -1593,3 +1598,85 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
   - Responses 与 Gemini 格式的流式 / 非流式：有输出的 200 原样返回，空回复 500。
   - 浏览器中渠道编辑抽屉显示该开关，已开启的渠道为开。
 - 数据库：`channel_extend` 新增布尔列，只在 SQLite 上验证（全新库与旧库升级、重复迁移）；MySQL / PostgreSQL 未验证（本机没有，用户选择不安装）。
+
+---
+
+## 32. 渠道模型数量与 API 密钥可调用模型
+
+### 行为
+
+- **渠道**：
+  - 渠道列表的「模型」列改为显示模型数量（如「3 个模型」），没有模型时显示 `-`，标签聚合行不显示。
+  - 鼠标悬停（触屏点按、键盘回车也可以）弹出全部模型和「全部复制」按钮。复制的是逗号分隔的一行，可以直接粘贴到渠道或 Key 的模型字段；点单个模型只复制这一个。
+  - 表格视图里这一列改为默认显示。上游默认隐藏它，因为原来要铺开一排模型徽标。已经在「视图」中保存过列设置的浏览器保持原设置。
+  - 卡片视图在底部分组的右侧显示同样的数量。
+- **API 密钥**：
+  - 「模型」列（手机卡片中的「模型」）仍显示模型限制（「不限」或「N 个模型」）。
+  - 悬停或点按后弹出「可调用模型」：这个 Key 实际能调用的模型和「全部复制」按钮。
+  - 列表与该 Key 请求 `GET /v1/models` 的结果一致：
+    - 取 Key 的分组（含 auto 与备用分组，§13）提供的模型，再按模型限制过滤；
+    - 用户没有开启「接受未设置价格的模型」时，再去掉没有定价配置的模型；
+    - 所以模型限制里写了、但分组里没有渠道提供的模型不会出现。
+  - 第一次打开时才请求。Key 的分组或模型限制改动后会重新请求。
+
+### 接口
+
+| 方法 | 路径 | 权限 | 返回 |
+|---|---|---|---|
+| GET | `/api/token/:id/models` | 登录用户，只能查自己的 Key；访问令牌需 `api_key:read` | 排好序的模型名数组 |
+| GET | `/api/user/:id/tokens/:token_id/models` | root 会话（§26 管理用户密钥的页面使用），访问令牌不可用 | 同上，按 Key 的归属用户计算 |
+
+Key 不属于该用户时返回失败。两条规则都在 `middleware/access_token_routes.go` 中声明。
+
+### 实现
+
+- `controller/model.go`：把 `ListModels` 中计算模型名的部分拆成 `listableModels(c)`，`/v1/models` 与新接口共用，避免两处口径不一致。
+- `controller/group_models.go` 的 `tokenCallableModels`：
+  - 在请求上下文的副本上写入归属用户的分组；
+  - 调用 `middleware.SetupContextForToken`，与中继鉴权一样处理 Key 的分组与模型限制；
+  - 再调用 `listableModels`。
+  - 副本不影响调用者自己的上下文。`controller/admin_token.go` 的 root 版本先用 §26 的 `adminTokenOwner` / `adminOwnedToken` 取出 Key。
+- 前端新增共享组件 `web/src/components/model-list-popover.tsx`（`ModelListPopover`）：
+  - 用 Base UI Popover 的 `openOnHover`，内容由 `CopyButton` 与 `StatusBadge` 列表组成，有加载、失败、空三种状态。
+  - 没有复用已有组件的原因：`BadgeListCell` 的溢出详情是 Tooltip，内容里不能放可聚焦的按钮；`PluginModelList` 只能点击打开、没有复制，并且属于 task-plugins 模块；`QuotaDetailsPopover` 是键值列表。
+- 接入位置：
+  - `channels-columns.tsx`：模型列，列宽 200 → 120。
+  - `channel-card.tsx`：底部。
+  - `api-keys-cells.tsx` 的 `ModelLimitsCell`：
+    - `useQuery` 只在打开时启用，query key 包含 Key 的 `group`、`auto_groups` 与模型限制；
+    - 失败时不弹 toast，在弹层里显示服务端原因，并且只重试 1 次。
+- 表格单元格的 `-ml-1.5` 对齐偏移加在触发按钮上，而不是徽标上。加在徽标上会让按钮按内容算出的宽度少 6px，数量被截成「3 mod…」。
+
+### 已知限制
+
+- 渠道显示的是 `models` 字段里的模型数，不考虑渠道是否启用、所属分组或模型映射。
+- 可调用模型只看分组与模型限制，不检查 Key 是否过期、额度是否用完、IP 限制或用户的 RPM / TPM 限制。
+- 英文界面沿用项目已有的 `{{count}} models` 文案，1 个模型时显示「1 models」（项目的 i18n 没有用复数形式）。
+
+### 测试
+
+- `controller/model_list_test.go` 的 `TestTokenCallableModelsMatchModelListOfTheKey`：
+  - 三个 Key：继承用户分组；vip + auto 备用分组 default；vip + 模型限制。
+  - 新接口的结果与该 Key 的 `ListModels` 一致，没有定价的模型被排除。
+  - root 路由按归属用户计算；别人的 Key 返回失败；调用者的 `id` 不变。
+- `web/src/components/__tests__/model-list-popover.test.tsx`：
+  - 悬停后列出全部模型；
+  - 「全部复制」写入逗号分隔的一行，按钮变为已复制；
+  - 键盘回车可以打开；
+  - 加载、失败、空状态下没有复制按钮。
+- `web/src/features/channels/components/__tests__/channel-models-cell.test.tsx`：
+  - 数量计算会去掉空项与空白，悬停后列出并复制；对齐偏移在按钮上；
+  - 没有模型时显示 `-`；
+  - 表格视图默认显示模型列（恢复 `models: false` 时这个用例失败）。
+- `web/src/features/keys/components/__tests__/callable-models.test.tsx`：
+  - 打开前不发请求，悬停后请求 `/api/token/7/models`，列出并复制；
+  - root 管理他人 Key 时请求 `/api/user/42/tokens/7/models`；
+  - 失败时显示服务端原因，没有复制按钮。
+- `api-key-listing.test.tsx`：手机卡片的用例改为点开可调用模型。Key 限制了 2 个模型，分组只提供其中 1 个。
+- 本地端到端（SQLite，实例 B）：
+  - 接口：一个不限模型的 Key（9 个模型），一个限制 3 个模型、其中 1 个没有渠道提供的 Key。两者的新接口结果都与该 Key 自己调用 `/v1/models` 的结果相同。root 路由结果相同，归属用户不对时返回失败。不存在的 Key id 返回失败，未登录返回 401。
+  - 浏览器（无头 Chrome）：
+    - 渠道卡片显示「3 models」，悬停列出 3 个模型；「全部复制」后剪贴板为 `mock-empty,mock-empty-slow,mock-good-guarded`；指针移开后弹层关闭。
+    - 表格视图默认有「模型」列，所有数量完整显示，没有截断。
+    - Key 列表悬停列出 `mock-fast`、`mock-slow`，复制结果相同。
+- 数据库：没有表结构变化，也没有新的查询写法（只用已有的 Key、用户分组与能力缓存读取），所以没有单独做三库验证。

@@ -16,12 +16,14 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 
 For commercial licensing, please contact support@quantumnous.com
 */
+import { useQuery } from '@tanstack/react-query'
 import { Check, Copy, Loader2 } from 'lucide-react'
 import { useState, useCallback } from 'react'
 import { useTranslation } from 'react-i18next'
 
 import { BadgeCell } from '@/components/data-table'
 import { MaskedValueTrigger } from '@/components/masked-value-display'
+import { ModelListPopover } from '@/components/model-list-popover'
 import { StatusBadge } from '@/components/status-badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -36,7 +38,13 @@ import {
   TooltipTrigger,
 } from '@/components/ui/tooltip'
 import { copyToClipboard } from '@/lib/copy-to-clipboard'
+import {
+  getServerErrorMessage,
+  requireServerSuccess,
+} from '@/lib/server-error-message'
 
+import { getApiKeyCallableModels } from '../api'
+import { useApiKeyOwner } from '../hooks/use-api-key-owner'
 import type { ApiKey } from '../types'
 import { useApiKeys } from './api-keys-provider'
 
@@ -140,20 +148,68 @@ type ApiKeyRestrictionProps = {
   detailsTrigger?: 'hover' | 'click'
 }
 
+// Shows the key's model limit; opening it lists the models the key can call,
+// loaded on demand, with a button that copies them all.
 export function ModelLimitsCell(props: ApiKeyRestrictionProps) {
   const { t } = useTranslation()
-  const models = props.apiKey.model_limits_enabled
+  const owner = useApiKeyOwner()
+  const [open, setOpen] = useState(false)
+  const limits = props.apiKey.model_limits_enabled
     ? (props.apiKey.model_limits || '').split(',').filter(Boolean)
     : []
+  const label = limits.length
+    ? t('{{count}} models', { count: limits.length })
+    : t('Unlimited')
+  const callableModels = useQuery({
+    queryKey: [
+      ...(owner ? ['api-key-owner', owner.id] : []),
+      'api-key-callable-models',
+      props.apiKey.id,
+      // An edited key lists its new models at once.
+      props.apiKey.group,
+      props.apiKey.auto_groups,
+      props.apiKey.model_limits_enabled,
+      props.apiKey.model_limits,
+    ],
+    queryFn: async () =>
+      requireServerSuccess(
+        await getApiKeyCallableModels(props.apiKey.id, owner?.id)
+      ).data ?? [],
+    enabled: open,
+    retry: 1,
+    meta: { errorToast: false },
+  })
 
   return (
-    <ApiKeyRestrictionCell
-      items={models}
-      label={t('{{count}} models', { count: models.length })}
-      title={t('Models')}
-      emptyLabel={t('Unlimited')}
-      detailsTrigger={props.detailsTrigger}
-    />
+    <ModelListPopover
+      models={callableModels.data}
+      loading={callableModels.isPending && open}
+      error={
+        callableModels.isError
+          ? getServerErrorMessage(
+              callableModels.error,
+              t('Failed to load models')
+            )
+          : undefined
+      }
+      title={t('Callable models')}
+      label={`${t('Callable models')}: ${label}`}
+      onOpenChange={setOpen}
+      triggerClassName={
+        props.detailsTrigger === 'click' ? undefined : '-ml-1.5'
+      }
+    >
+      {props.detailsTrigger === 'click' ? (
+        <span className='inline-flex items-center gap-1.5 text-xs'>
+          <span className='text-muted-foreground'>{t('Models')}</span>
+          <span className='underline decoration-dotted underline-offset-4'>
+            {label}
+          </span>
+        </span>
+      ) : (
+        <StatusBadge label={label} variant='neutral' copyable={false} />
+      )}
+    </ModelListPopover>
   )
 }
 
