@@ -10,6 +10,10 @@ const (
 	ContextKeyOriginalModel    ContextKey = "original_model"
 	ContextKeyRequestStartTime ContextKey = "request_start_time"
 
+	// ContextKeyRelayErrorStreamed marks a relay error already sent inside a
+	// started stream, so the relay does not append a JSON error after it.
+	ContextKeyRelayErrorStreamed ContextKey = "relay_error_streamed"
+
 	/* token related keys */
 	ContextKeyTokenUnlimited         ContextKey = "token_unlimited_quota"
 	ContextKeyTokenKey               ContextKey = "token_key"
