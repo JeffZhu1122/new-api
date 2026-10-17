@@ -33,25 +33,56 @@ import type {
 // ============================================================================
 
 /**
- * Check the typed token bounds before searching, with the same rules and
- * messages as the server: whole numbers of 0 or more, minimum not above
- * maximum. Returns the message key of the first problem, or null.
+ * Check the typed metric filters before searching, with the server's rules
+ * and messages: token counts and use time are whole numbers of 0 or more,
+ * TTFT (seconds) is 0 or more, a minimum is not above its maximum, and status
+ * codes are 100-599. Returns the message key of the first problem, or null.
  */
-export function getTokenRangeError(filters: CommonLogFilters): string | null {
+export function getMetricFilterError(filters: CommonLogFilters): string | null {
+  const tokenRule = {
+    wholeNumbers: true,
+    invalid: 'Token counts must be whole numbers of 0 or more',
+    reversed: 'The minimum token count cannot be greater than the maximum',
+  }
   const ranges = [
-    [filters.inputTokensMin, filters.inputTokensMax],
-    [filters.outputTokensMin, filters.outputTokensMax],
-  ].map((range) =>
-    range.map((value) => (value?.trim() ? Number(value) : undefined))
-  )
-  for (const bound of ranges.flat()) {
-    if (bound !== undefined && !(Number.isInteger(bound) && bound >= 0)) {
-      return 'Token counts must be whole numbers of 0 or more'
+    { ...tokenRule, bounds: [filters.inputTokensMin, filters.inputTokensMax] },
+    {
+      ...tokenRule,
+      bounds: [filters.outputTokensMin, filters.outputTokensMax],
+    },
+    {
+      bounds: [filters.useTimeMin, filters.useTimeMax],
+      wholeNumbers: true,
+      invalid: 'Use time must be whole seconds of 0 or more',
+      reversed: 'The minimum cannot be greater than the maximum',
+    },
+    {
+      bounds: [filters.ttftMin, filters.ttftMax],
+      wholeNumbers: false,
+      invalid: 'TTFT must be 0 seconds or more',
+      reversed: 'The minimum cannot be greater than the maximum',
+    },
+  ]
+  for (const range of ranges) {
+    const [min, max] = range.bounds.map((value) =>
+      value?.trim() ? Number(value) : undefined
+    )
+    for (const bound of [min, max]) {
+      if (bound === undefined) continue
+      const valid =
+        Number.isFinite(bound) &&
+        bound >= 0 &&
+        (!range.wholeNumbers || Number.isInteger(bound))
+      if (!valid) return range.invalid
+    }
+    if (min !== undefined && max !== undefined && min > max) {
+      return range.reversed
     }
   }
-  for (const [min, max] of ranges) {
-    if (min !== undefined && max !== undefined && min > max) {
-      return 'The minimum token count cannot be greater than the maximum'
+  for (const code of filters.statusCodes ?? []) {
+    const value = Number(code)
+    if (!Number.isInteger(value) || value < 100 || value > 599) {
+      return 'Status codes must be numbers from 100 to 599'
     }
   }
   return null
@@ -94,6 +125,21 @@ export function buildSearchParams(
         }),
         ...(commonFilters.outputTokensMax && {
           outputTokensMax: Number(commonFilters.outputTokensMax),
+        }),
+        ...(commonFilters.useTimeMin && {
+          useTimeMin: Number(commonFilters.useTimeMin),
+        }),
+        ...(commonFilters.useTimeMax && {
+          useTimeMax: Number(commonFilters.useTimeMax),
+        }),
+        ...(commonFilters.ttftMin && {
+          ttftMin: Number(commonFilters.ttftMin),
+        }),
+        ...(commonFilters.ttftMax && {
+          ttftMax: Number(commonFilters.ttftMax),
+        }),
+        ...(commonFilters.statusCodes?.length && {
+          statusCodes: commonFilters.statusCodes.map(Number),
         }),
       }
     }

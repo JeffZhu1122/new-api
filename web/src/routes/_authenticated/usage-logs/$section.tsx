@@ -49,6 +49,11 @@ const usageLogsSearchSchema = z.object({
   inputTokensMax: z.number().optional().catch(undefined),
   outputTokensMin: z.number().optional().catch(undefined),
   outputTokensMax: z.number().optional().catch(undefined),
+  useTimeMin: z.number().optional().catch(undefined),
+  useTimeMax: z.number().optional().catch(undefined),
+  ttftMin: z.number().optional().catch(undefined),
+  ttftMax: z.number().optional().catch(undefined),
+  statusCodes: z.array(z.number()).optional().catch(undefined),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
 })
