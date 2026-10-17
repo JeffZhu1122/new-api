@@ -343,6 +343,7 @@ const SENSITIVE_FORM_FIELDS = [
   'cost_ratio',
   'quota_limit_amount',
   'force_retry',
+  'empty_output_error',
   'schedule_enabled',
   'schedule_timezone',
   'schedule_windows',
@@ -2579,6 +2580,29 @@ export function ChannelMutateDrawer({
               <FormDescription>
                 {t(
                   'Retry every error from this channel, ignoring the status code, error code and keyword retry rules. The global retry count still applies (0 turns retries off). Responses already being sent, disconnected clients, pinned channels, strict sessions and content violations are never retried, and async task submissions are not affected.'
+                )}
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                disabled={sensitiveLocked}
+                checked={field.value ?? false}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='empty_output_error'
+        render={({ field }) => (
+          <FormItem className='flex items-center justify-between gap-3'>
+            <div className='space-y-0.5'>
+              <FormLabel>{t('Error on Empty Output')}</FormLabel>
+              <FormDescription>
+                {t(
+                  'Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.'
                 )}
               </FormDescription>
             </div>

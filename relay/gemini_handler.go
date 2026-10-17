@@ -146,7 +146,9 @@ func GeminiHelper(c *gin.Context, info *relaycommon.RelayInfo) (newAPIError *typ
 		}
 	}
 
+	guard := service.GuardEmptyOutput(c, info)
 	usage, openaiErr := adaptor.DoResponse(c, resp.(*http.Response), info)
+	openaiErr = guard.Finish(openaiErr)
 	if openaiErr != nil {
 		service.ResetStatusCode(openaiErr, statusCodeMappingStr)
 		return openaiErr

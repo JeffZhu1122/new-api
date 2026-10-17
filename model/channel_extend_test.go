@@ -85,6 +85,13 @@ func TestUpsertChannelExtendPersistsForceRetry(t *testing.T) {
 	require.NoError(t, DB.Model(&ChannelExtend{}).Where("channel_id = ?", 9).Count(&count).Error)
 	assert.Equal(t, int64(0), count)
 
+	// 零输出报错同样完整往返，并可与出错一律重试同时开启
+	both := dto.ChannelExtendSettings{ForceRetry: true, EmptyOutputError: true}
+	require.NoError(t, UpsertChannelExtend(nil, 9, both))
+	settings, err = GetChannelExtend(9)
+	require.NoError(t, err)
+	assert.Equal(t, both, settings)
+
 	// 迁移重复执行不得报错（新增列幂等）
 	require.NoError(t, DB.AutoMigrate(&ChannelExtend{}))
 }
