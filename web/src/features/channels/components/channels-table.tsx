@@ -416,7 +416,6 @@ export function ChannelsTable() {
     totalCount,
     sorting,
     initialColumnVisibility: {
-      models: false,
       tag: false,
     },
     columnVisibilityStorageKey: CHANNELS_COLUMN_VISIBILITY_STORAGE_KEY,

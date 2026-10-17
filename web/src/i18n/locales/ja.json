@@ -7563,6 +7563,8 @@
     "Status codes must be numbers from 100 to 599": "ステータスコードは 100〜599 の数値で指定してください",
     "Search at most {{max}} status codes at once": "一度に検索できるステータスコードは最大 {{max}} 件です",
     "Error on Empty Output": "出力が空ならエラー",
-    "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "チャット・Claude・Gemini・Responses の応答に出力がまったくない（テキスト、推論、ツール呼び出し、拒否のいずれもない）場合はエラーとして扱い、別のチャネルで再試行し課金しません。ストリームは最初の出力が出るまで保留します。キープアライブの ping がすでにクライアントに届いている場合、空のストリームは再試行せずエラーイベントで終了します。"
+    "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "チャット・Claude・Gemini・Responses の応答に出力がまったくない（テキスト、推論、ツール呼び出し、拒否のいずれもない）場合はエラーとして扱い、別のチャネルで再試行し課金しません。ストリームは最初の出力が出るまで保留します。キープアライブの ping がすでにクライアントに届いている場合、空のストリームは再試行せずエラーイベントで終了します。",
+    "Callable models": "呼び出し可能なモデル",
+    "No models": "モデルがありません"
   }
 }

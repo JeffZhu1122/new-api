@@ -3,9 +3,12 @@ package controller
 import (
 	"net/http"
 	"slices"
+	"strconv"
 	"strings"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/relay/helper"
 	"github.com/QuantumNous/new-api/service"
@@ -96,4 +99,46 @@ func GetUserGroupModels(c *gin.Context) {
 		"message": "",
 		"data":    result,
 	})
+}
+
+// tokenCallableModels lists the models an API key can call: what GET
+// /v1/models returns when it is called with that key. The key is applied to
+// a copy of the request context, so the caller's own context is untouched.
+func tokenCallableModels(c *gin.Context, token *model.Token) ([]string, error) {
+	userGroup, err := model.GetUserGroup(token.UserId, false)
+	if err != nil {
+		return nil, err
+	}
+	keyContext := c.Copy()
+	common.SetContextKey(keyContext, constant.ContextKeyUserGroup, userGroup)
+	if err := middleware.SetupContextForToken(keyContext, token); err != nil {
+		return nil, err
+	}
+	models, _, err := listableModels(keyContext)
+	if err != nil {
+		return nil, err
+	}
+	slices.Sort(models)
+	return models, nil
+}
+
+// GetTokenCallableModels returns the models one of the signed-in user's API
+// keys can call.
+func GetTokenCallableModels(c *gin.Context) {
+	tokenId, err := strconv.Atoi(c.Param("id"))
+	if err != nil || tokenId <= 0 {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	token, err := model.GetTokenByIds(tokenId, c.GetInt("id"))
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	models, err := tokenCallableModels(c, token)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	common.ApiSuccess(c, models)
 }

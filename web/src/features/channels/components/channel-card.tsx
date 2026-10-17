@@ -39,9 +39,9 @@ const SENSITIVE_MASK = '••••'
  * Bespoke channel card for the card view. Reuses every column's existing cell
  * renderer via `flexRender`, so the table's information and interactions are
  * preserved: row selection, provider/multi-key/IO.NET type badge, id,
- * name/remark + warning icons, status (with tooltips), groups, inline
- * priority/weight spinners, balance refresh, response/test times, live RPM,
- * tag expand-collapse, and the per-row (or per-tag) actions menu.
+ * name/remark + warning icons, status (with tooltips), groups, model count,
+ * inline priority/weight spinners, balance refresh, response/test times, live
+ * RPM, tag expand-collapse, and the per-row (or per-tag) actions menu.
  */
 function ChannelCardComponent({
   row,
@@ -80,6 +80,7 @@ function ChannelCardComponent({
   const testCell = renderCell('test_time')
   const rpmCell = renderCell('rpm')
   const tpmCell = renderCell('tpm')
+  const modelsCell = renderCell('models')
 
   const labelClass = 'text-muted-foreground text-[11px] font-medium select-none'
 
@@ -181,21 +182,26 @@ function ChannelCardComponent({
           </div>
         </StatusBadgeTypeContext.Provider>
 
-        {/* Groups retain their compact, full-width footer. */}
-        <div className='min-w-0'>
-          {groups.length > 0 ? (
-            <div className='-ml-1.5 flex min-w-0 flex-wrap gap-1'>
-              {groups.map((g) => (
-                <GroupBadge
-                  key={g}
-                  group={g}
-                  label={sensitiveVisible ? undefined : SENSITIVE_MASK}
-                  size='sm'
-                />
-              ))}
-            </div>
-          ) : (
-            <span className='text-muted-foreground text-sm'>-</span>
+        {/* Groups keep the compact footer, with the model count beside them. */}
+        <div className='flex min-w-0 items-start justify-between gap-3'>
+          <div className='min-w-0 flex-1'>
+            {groups.length > 0 ? (
+              <div className='-ml-1.5 flex min-w-0 flex-wrap gap-1'>
+                {groups.map((g) => (
+                  <GroupBadge
+                    key={g}
+                    group={g}
+                    label={sensitiveVisible ? undefined : SENSITIVE_MASK}
+                    size='sm'
+                  />
+                ))}
+              </div>
+            ) : (
+              <span className='text-muted-foreground text-sm'>-</span>
+            )}
+          </div>
+          {!isTagRow && modelsCell && (
+            <div className='shrink-0 [&>button]:!ml-0'>{modelsCell}</div>
           )}
         </div>
       </div>

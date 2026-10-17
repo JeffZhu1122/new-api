@@ -7563,6 +7563,8 @@
     "Status codes must be numbers from 100 to 599": "状态码必须是 100 到 599 之间的数字",
     "Search at most {{max}} status codes at once": "一次最多搜索 {{max}} 个状态码",
     "Error on Empty Output": "零输出时报错",
-    "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "对话、Claude、Gemini 或 Responses 请求的回复完全没有输出（没有文本、推理、工具调用或拒答）时视为错误，会换渠道重试且不扣费。流式回复会先暂存，直到出现第一个输出才发给客户端。如果保活 ping 已经发给了客户端，空的流会以一个错误事件结束，不再重试。"
+    "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "对话、Claude、Gemini 或 Responses 请求的回复完全没有输出（没有文本、推理、工具调用或拒答）时视为错误，会换渠道重试且不扣费。流式回复会先暂存，直到出现第一个输出才发给客户端。如果保活 ping 已经发给了客户端，空的流会以一个错误事件结束，不再重试。",
+    "Callable models": "可调用模型",
+    "No models": "没有模型"
   }
 }

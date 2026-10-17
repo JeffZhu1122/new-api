@@ -215,7 +215,11 @@ func getModelListGroups(c *gin.Context) (modelListGroups, error) {
 	}, nil
 }
 
-func ListModels(c *gin.Context, modelType int) {
+// listableModels returns the models GET /v1/models lists for the request's
+// API key: the enabled models of its routing groups, narrowed by its model
+// limits and, unless self-use mode or the user's setting accepts them, to
+// models with a price. ownerGroups are those routing groups.
+func listableModels(c *gin.Context) (modelNames []string, ownerGroups []string, err error) {
 	acceptUnsetRatioModel := operation_setting.SelfUseModeEnabled
 	if !acceptUnsetRatioModel {
 		userId := c.GetInt("id")
@@ -227,16 +231,10 @@ func ListModels(c *gin.Context, modelType int) {
 		}
 	}
 
-	userModelNames := make([]string, 0)
 	groups, err := getModelListGroups(c)
 	if err != nil {
-		c.JSON(http.StatusOK, gin.H{
-			"success": false,
-			"message": "get user group failed",
-		})
-		return
+		return nil, nil, err
 	}
-	ownerGroups := groups.ownerGroups
 	modelLimitEnable := common.GetContextKeyBool(c, constant.ContextKeyTokenModelLimitEnabled)
 	var tokenModelLimit map[string]bool
 	if modelLimitEnable {
@@ -248,8 +246,8 @@ func ListModels(c *gin.Context, modelType int) {
 			tokenModelLimit = map[string]bool{}
 		}
 	}
-	models := service.GetGroupsEnabledModels(ownerGroups)
-	for _, modelName := range models {
+	modelNames = make([]string, 0)
+	for _, modelName := range service.GetGroupsEnabledModels(groups.ownerGroups) {
 		if modelLimitEnable {
 			matchingName := ratio_setting.RoutingMatchModelName(modelName)
 			if !tokenModelLimit[modelName] && !tokenModelLimit[matchingName] {
@@ -259,7 +257,19 @@ func ListModels(c *gin.Context, modelType int) {
 		if !acceptUnsetRatioModel && !helper.HasModelBillingConfig(modelName) {
 			continue
 		}
-		userModelNames = append(userModelNames, modelName)
+		modelNames = append(modelNames, modelName)
+	}
+	return modelNames, groups.ownerGroups, nil
+}
+
+func ListModels(c *gin.Context, modelType int) {
+	userModelNames, ownerGroups, err := listableModels(c)
+	if err != nil {
+		c.JSON(http.StatusOK, gin.H{
+			"success": false,
+			"message": "get user group failed",
+		})
+		return
 	}
 
 	ownerByModel := map[string]string{}
