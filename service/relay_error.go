@@ -93,11 +93,12 @@ func ProcessChannelError(c *gin.Context, channelError types.ChannelError, err *t
 	}
 	upstreamURLs := common.UpstreamAddresses(c)
 	message := common.LocalLogPreview(err.MaskSensitiveErrorWithStatusCode(upstreamURLs...))
+	group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
 	// The same upstream request id the error log in the database records.
 	if upstreamRequestId := c.GetString(common.UpstreamRequestIdKey); upstreamRequestId != "" {
-		logger.LogError(c, common.LogText("channel error (channel #%d, status code: %d, upstream request id: %s): %s", channelError.ChannelId, err.StatusCode, upstreamRequestId, message))
+		logger.LogError(c, common.LogText("channel error (channel #%d %q, group %q, status code: %d, upstream request id: %s): %s", channelError.ChannelId, channelError.ChannelName, group, err.StatusCode, upstreamRequestId, message))
 	} else {
-		logger.LogError(c, common.LogText("channel error (channel #%d, status code: %d): %s", channelError.ChannelId, err.StatusCode, message))
+		logger.LogError(c, common.LogText("channel error (channel #%d %q, group %q, status code: %d): %s", channelError.ChannelId, channelError.ChannelName, group, err.StatusCode, message))
 	}
 	if ShouldDisableChannel(err) && channelError.AutoBan {
 		reason := err.MaskSensitiveErrorWithStatusCode(upstreamURLs...)
