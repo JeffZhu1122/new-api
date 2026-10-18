@@ -48,6 +48,8 @@ import { requireServerSuccess } from '@/lib/server-error-message'
 
 import {
   LOG_STATUS_CODE_OPTIONS,
+  LOG_STREAM_MODE_ALL_VALUE,
+  LOG_STREAM_MODE_FILTERS,
   LOG_TYPE_ALL_VALUE,
   LOG_TYPE_FILTERS,
 } from '../constants'
@@ -110,6 +112,7 @@ function buildSearchSourceKey(values: {
   ttftMin?: unknown
   ttftMax?: unknown
   statusCodes?: unknown
+  stream?: unknown
   type?: unknown
 }) {
   return [
@@ -133,6 +136,7 @@ function buildSearchSourceKey(values: {
     Array.isArray(values.statusCodes)
       ? values.statusCodes.join(',')
       : values.statusCodes,
+    values.stream,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -194,6 +198,7 @@ export function CommonLogsFilterBar<TData>(
       ttftMin: searchParams.ttftMin,
       ttftMax: searchParams.ttftMax,
       statusCodes: searchParams.statusCodes,
+      stream: searchParams.stream,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -217,6 +222,7 @@ export function CommonLogsFilterBar<TData>(
       ttftMin: searchParams.ttftMin?.toString(),
       ttftMax: searchParams.ttftMax?.toString(),
       statusCodes: searchParams.statusCodes?.map(String),
+      stream: searchParams.stream,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -242,6 +248,7 @@ export function CommonLogsFilterBar<TData>(
     searchParams.ttftMin,
     searchParams.ttftMax,
     searchParams.statusCodes,
+    searchParams.stream,
     searchParams.type,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
@@ -331,6 +338,7 @@ export function CommonLogsFilterBar<TData>(
   const hasUseTimeRange = !!filters.useTimeMin || !!filters.useTimeMax
   const hasTtftRange = !!filters.ttftMin || !!filters.ttftMax
   const hasStatusCodes = (filters.statusCodes?.length ?? 0) > 0
+  const hasStreamMode = !!filters.stream
   const hasExpandedFilters =
     !!filters.token ||
     !!filters.username ||
@@ -341,7 +349,8 @@ export function CommonLogsFilterBar<TData>(
     hasOutputTokenRange ||
     hasUseTimeRange ||
     hasTtftRange ||
-    hasStatusCodes
+    hasStatusCodes ||
+    hasStreamMode
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -358,6 +367,7 @@ export function CommonLogsFilterBar<TData>(
     hasUseTimeRange,
     hasTtftRange,
     hasStatusCodes,
+    hasStreamMode,
   ].filter(Boolean).length
   const sensitiveInputClass = sensitiveVisible
     ? undefined
@@ -372,6 +382,14 @@ export function CommonLogsFilterBar<TData>(
     [t]
   )
   const selectedLogType = logTypeItems.find((type) => type.value === logType)
+  const streamModeItems = useMemo(
+    () =>
+      LOG_STREAM_MODE_FILTERS.map((mode) => ({
+        value: mode.value,
+        label: t(mode.label),
+      })),
+    [t]
+  )
   const deprecatedTypeDescription = t(
     'Only used to find historical logs. New records are available in Audit Logs.'
   )
@@ -614,6 +632,31 @@ export function CommonLogsFilterBar<TData>(
           maxVisibleChips={4}
           className='min-h-8'
         />
+      </LogsFilterField>
+      <LogsFilterField>
+        <Select
+          items={streamModeItems}
+          value={filters.stream ?? LOG_STREAM_MODE_ALL_VALUE}
+          onValueChange={(value) =>
+            handleChange(
+              'stream',
+              value === 'stream' || value === 'non_stream' ? value : undefined
+            )
+          }
+        >
+          <SelectTrigger aria-label={t('Stream mode')}>
+            <SelectValue className='min-w-0' />
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {streamModeItems.map((mode) => (
+                <SelectItem key={mode.value} value={mode.value}>
+                  {mode.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
       </LogsFilterField>
     </>
   )

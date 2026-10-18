@@ -188,4 +188,22 @@ describe('usage log filter params', () => {
     ).toEqual({ useTimeMin: 0, ttftMax: 2.5, statusCodes: [429, 524] })
     expect(buildSearchParams({ statusCodes: [] }, 'common')).toEqual({})
   })
+
+  it.each([
+    ['stream', 'true'],
+    ['non_stream', 'false'],
+  ])('sends the stream mode %s as is_stream=%s', (stream, expected) => {
+    expect(params({ stream })).toMatchObject({ is_stream: expected })
+  })
+
+  it('sends no stream mode for either mode or an unknown value', () => {
+    expect(params({})).not.toHaveProperty('is_stream')
+    expect(params({ stream: 'sometimes' })).not.toHaveProperty('is_stream')
+  })
+
+  it('keeps the picked stream mode in the URL', () => {
+    expect(buildSearchParams({ stream: 'non_stream' }, 'common')).toEqual({
+      stream: 'non_stream',
+    })
+  })
 })
