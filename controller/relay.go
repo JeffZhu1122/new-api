@@ -93,7 +93,11 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			service.RecordRequestPolicyTermination(c, newAPIError)
-			logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			if upstreamRequestId := c.GetString(common.UpstreamRequestIdKey); upstreamRequestId != "" {
+				logger.LogError(c, common.LogText("relay error (upstream request id: %s): %s", upstreamRequestId, common.LocalLogPreview(newAPIError.Error())))
+			} else {
+				logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			}
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			if common.GetContextKeyBool(c, constant.ContextKeyRelayErrorStreamed) {
 				return
@@ -183,6 +187,9 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	forcedRetry := false
 
 	for ; retryParam.GetRetry() <= common.RetryTimes; retryParam.IncreaseRetry() {
+		// Each attempt records the upstream request id of its own channel, not
+		// the one an earlier attempt's upstream returned.
+		c.Set(common.UpstreamRequestIdKey, "")
 		relayInfo.StreamStatus = nil
 		relayInfo.PerformanceBusinessRejection = false
 		relayInfo.PerformanceOutputTokens = 0

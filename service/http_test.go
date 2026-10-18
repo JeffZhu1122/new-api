@@ -3,6 +3,7 @@ package service
 import (
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -62,4 +63,26 @@ func TestIOCopyBytesGracefullyAppliesChannelResponseHeaderFilter(t *testing.T) {
 	assert.Empty(t, recorder.Header().Get("OpenAI-Organization"))
 	assert.Empty(t, recorder.Header().Get("Set-Cookie"))
 	assert.Equal(t, `{"ok":true}`, recorder.Body.String())
+}
+
+func TestUpstreamRequestIdFromHeader(t *testing.T) {
+	long := strings.Repeat("a", 200)
+	for _, tc := range []struct {
+		name   string
+		header http.Header
+		want   string
+	}{
+		{"another new-api wins over its own upstream's id", http.Header{"X-Oneapi-Request-Id": {"newapi-1"}, "X-Request-Id": {"req_openai"}}, "newapi-1"},
+		{"Anthropic", http.Header{"Request-Id": {"req_011CTest"}}, "req_011CTest"},
+		{"OpenAI and compatible APIs", http.Header{"X-Request-Id": {"req_abc"}}, "req_abc"},
+		{"Azure", http.Header{"Apim-Request-Id": {"0f2c-azure"}}, "0f2c-azure"},
+		{"AWS", http.Header{"X-Amzn-Requestid": {"aws-123"}}, "aws-123"},
+		{"blank values are skipped", http.Header{"X-Oneapi-Request-Id": {"  "}, "X-Request-Id": {"req_next"}}, "req_next"},
+		{"no request id", http.Header{"Content-Type": {"application/json"}}, ""},
+		{"cut to the logs column size", http.Header{"X-Request-Id": {long}}, long[:128]},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert.Equal(t, tc.want, UpstreamRequestIdFromHeader(tc.header))
+		})
+	}
 }

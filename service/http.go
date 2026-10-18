@@ -25,6 +25,36 @@ func CloseResponseBodyGracefully(httpResponse *http.Response) {
 	}
 }
 
+// upstreamRequestIdHeaders are the response headers that carry an upstream's
+// own request id, most specific first: another new-api (or one-api) instance,
+// Anthropic, OpenAI and most OpenAI-compatible APIs, Azure, AWS.
+var upstreamRequestIdHeaders = []string{
+	common.RequestIdKey,
+	"Request-Id",
+	"X-Request-Id",
+	"Apim-Request-Id",
+	"X-Amzn-Requestid",
+}
+
+// maxUpstreamRequestIdLength is the size of logs.upstream_request_id.
+const maxUpstreamRequestIdLength = 128
+
+// UpstreamRequestIdFromHeader returns the request id an upstream response
+// carries, cut to the size the logs keep, or "" when it carries none.
+func UpstreamRequestIdFromHeader(header http.Header) string {
+	for _, name := range upstreamRequestIdHeaders {
+		id := strings.TrimSpace(header.Get(name))
+		if id == "" {
+			continue
+		}
+		if len(id) > maxUpstreamRequestIdLength {
+			id = strings.ToValidUTF8(id[:maxUpstreamRequestIdLength], "")
+		}
+		return id
+	}
+	return ""
+}
+
 // ShouldCopyUpstreamHeader checks whether a given upstream response header
 // should be copied to the client response. It returns false for Content-Length
 // (managed separately) and X-Oneapi-Request-Id (to preserve the local instance
