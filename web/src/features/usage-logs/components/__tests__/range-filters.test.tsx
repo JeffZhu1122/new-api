@@ -180,3 +180,55 @@ it('shows the status codes of the URL as chosen', async () => {
     '2'
   )
 })
+
+it('searches by stream mode and counts it as an expanded filter', async () => {
+  const router = await renderFilter()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  await user.click(screen.getByRole('combobox', { name: 'Stream mode' }))
+  await user.click(
+    await screen.findByRole('option', { name: 'Non-stream requests' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).toMatchObject({
+      page: 1,
+      stream: 'non_stream',
+    })
+  )
+  expect(screen.getByRole('button', { name: /Collapse/ })).toHaveTextContent(
+    '1'
+  )
+})
+
+it('shows the stream mode of the URL as chosen', async () => {
+  await renderFilter('/usage-logs/common?stream=stream')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  expect(
+    screen.getByRole('combobox', { name: 'Stream mode' })
+  ).toHaveTextContent('Stream requests')
+  expect(screen.getByRole('button', { name: /Collapse/ })).toHaveTextContent(
+    '1'
+  )
+})
+
+it('searches every log again after choosing all stream modes', async () => {
+  const router = await renderFilter('/usage-logs/common?stream=non_stream')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  await user.click(screen.getByRole('combobox', { name: 'Stream mode' }))
+  await user.click(await screen.findByRole('option', { name: 'Stream: All' }))
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).not.toHaveProperty('stream')
+  )
+  expect(
+    screen.getByRole('combobox', { name: 'Stream mode' })
+  ).toHaveTextContent('Stream: All')
+})

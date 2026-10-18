@@ -141,6 +141,7 @@ export function buildSearchParams(
         ...(commonFilters.statusCodes?.length && {
           statusCodes: commonFilters.statusCodes.map(Number),
         }),
+        ...(commonFilters.stream && { stream: commonFilters.stream }),
       }
     }
     case 'drawing': {
