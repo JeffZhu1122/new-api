@@ -240,6 +240,9 @@ export function buildApiParams(config: {
     searchParams.statusCodes.length > 0
       ? { status_codes: searchParams.statusCodes.join(',') }
       : {}),
+    ...(searchParams.stream === 'stream' || searchParams.stream === 'non_stream'
+      ? { is_stream: String(searchParams.stream === 'stream') }
+      : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 

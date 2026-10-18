@@ -49,7 +49,8 @@ const maxLogStatusCodeFilter = 20
 // parseLogMetricsFilter reads the per-request metric filters of the usage-log
 // queries: token, use time (seconds) and TTFT (milliseconds) ranges, each
 // bound a whole number of 0 or more with the minimum not above the maximum,
-// and HTTP status codes separated by commas or spaces.
+// HTTP status codes separated by commas or spaces, and is_stream (true or
+// false).
 func parseLogMetricsFilter(c *gin.Context) (model.LogMetricsFilter, error) {
 	var filter model.LogMetricsFilter
 	for _, metric := range []struct {
@@ -100,13 +101,21 @@ func parseLogMetricsFilter(c *gin.Context) (model.LogMetricsFilter, error) {
 	if len(filter.StatusCodes) > maxLogStatusCodeFilter {
 		return model.LogMetricsFilter{}, common.NewMessage("Search at most {{max}} status codes at once", map[string]any{"max": maxLogStatusCodeFilter})
 	}
+
+	if raw := strings.TrimSpace(c.Query("is_stream")); raw != "" {
+		stream, err := strconv.ParseBool(raw)
+		if err != nil {
+			return model.LogMetricsFilter{}, common.NewMessage("Stream mode must be true or false")
+		}
+		filter.Stream = &stream
+	}
 	return filter, nil
 }
 
 // logRate answers the live RPM / TPM for the usage-log filters. The live
 // statistics only count settled requests per minute, without per-request
-// tokens, durations or status codes, so such a filter is reported as one they
-// cannot apply instead of an unfiltered reading.
+// tokens, durations, status codes or stream mode, so such a filter is reported
+// as one they cannot apply instead of an unfiltered reading.
 func logRate(filter service.LogRateFilter, metrics model.LogMetricsFilter) (service.LogRateReading, error) {
 	if !metrics.IsZero() {
 		return service.LogRateReading{Source: service.RpmStatsSourceFilterUnsupported}, nil

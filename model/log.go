@@ -484,8 +484,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 
 // LogMetricsFilter narrows the usage logs by per-request metrics: input
 // (prompt) and output (completion) tokens, use time in seconds, time to first
-// token in milliseconds, and HTTP status codes. A nil bound is open; bounds
-// are inclusive.
+// token in milliseconds, HTTP status codes and stream mode. A nil bound is
+// open; bounds are inclusive.
 type LogMetricsFilter struct {
 	PromptMin          *int
 	PromptMax          *int
@@ -498,6 +498,10 @@ type LogMetricsFilter struct {
 	// StatusCodes matches logs whose other.status_code is any of them, which
 	// error logs (and violation-fee logs) record.
 	StatusCodes []int
+	// Stream keeps the stream (true) or non-stream (false) requests. Only
+	// consume and error logs record a request's stream mode, so it also
+	// leaves out top-up, management and other logs.
+	Stream *bool
 }
 
 func (f LogMetricsFilter) IsZero() bool {
@@ -506,7 +510,7 @@ func (f LogMetricsFilter) IsZero() bool {
 			return false
 		}
 	}
-	return len(f.StatusCodes) == 0
+	return len(f.StatusCodes) == 0 && f.Stream == nil
 }
 
 type logMetricBound struct {
@@ -549,6 +553,9 @@ func (f LogMetricsFilter) applyTo(tx *gorm.DB, prefix string) *gorm.DB {
 			args = append(args, fmt.Sprintf(`%%"status_code":%d,%%`, code), fmt.Sprintf(`%%"status_code":%d}%%`, code))
 		}
 		tx = tx.Where("("+strings.Join(conditions, " OR ")+")", args...)
+	}
+	if f.Stream != nil {
+		tx = tx.Where(prefix+"is_stream = ? AND "+prefix+"type IN ?", *f.Stream, []int{LogTypeConsume, LogTypeError})
 	}
 	return tx
 }

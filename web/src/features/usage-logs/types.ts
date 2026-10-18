@@ -66,7 +66,11 @@ export interface CommonLogFilters extends CommonFilters {
   ttftMin?: string
   ttftMax?: string
   statusCodes?: string[]
+  stream?: LogStreamMode
 }
+
+/** A request's stream mode, as the usage-log filter offers it */
+export type LogStreamMode = 'stream' | 'non_stream'
 
 /**
  * Drawing logs specific filters
@@ -480,6 +484,8 @@ export interface GetLogsParams {
   ttft_ms_max?: number
   /** HTTP status codes separated by commas */
   status_codes?: string
+  /** 'true' or 'false'; only consume and error logs */
+  is_stream?: string
 }
 
 export interface GetLogsResponse {
@@ -519,6 +525,8 @@ export interface GetLogStatsParams {
   ttft_ms_max?: number
   /** HTTP status codes separated by commas */
   status_codes?: string
+  /** 'true' or 'false'; only consume and error logs */
+  is_stream?: string
 }
 
 export interface GetLogStatsResponse {
