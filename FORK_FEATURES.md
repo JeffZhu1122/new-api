@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 48 个（含本文档相关提交） |
-| 变更规模 | 329 个文件，+28372 / −2208 行（不含本文档） |
+| fork 专有提交数 | 49 个（含本文档相关提交） |
+| 变更规模 | 331 个文件，+28458 / −2211 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -48,6 +48,7 @@
 31. [渠道「零输出时报错」开关](#31-渠道零输出时报错开关)
 32. [渠道模型数量与 API 密钥可调用模型](#32-渠道模型数量与-api-密钥可调用模型)
 33. [使用日志：按流式 / 非流式筛选](#33-使用日志按流式--非流式筛选)
+34. [报错时服务器日志输出上游请求 ID](#34-报错时服务器日志输出上游请求-id)
 
 ---
 
@@ -83,6 +84,7 @@
 | 31 | 渠道「零输出时报错」开关 | 与本文档同一提交 | 关闭 | `channel_extend` | 文本生成请求的响应写出、重试与退款、渠道编辑抽屉 |
 | 32 | 渠道模型数量与 API 密钥可调用模型 | 与本文档同一提交 | 始终生效（只读） | 无 | `/v1/models` 的模型计算（拆出共用函数）、新增两个只读接口、渠道列表模型列（改为默认显示）、API 密钥模型列 |
 | 33 | 使用日志：按流式 / 非流式筛选 | 与本文档同一提交 | 默认「全部」，即不过滤 | 无（用已有的 `logs.is_stream`） | 使用日志列表、统计与导出接口、日志页筛选框 |
+| 34 | 报错时服务器日志输出上游请求 ID | 与本文档同一提交 | 始终生效 | 无（用已有的 `logs.upstream_request_id`） | 上游请求 ID 的识别（更多响应头）、每次尝试的重置、服务器日志的报错行 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -843,7 +845,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/channel_cache.go` | `channelExtendIDM`、`GetRandomSatisfiedChannel` 新增 `excludeChannelIds` 参数、多个 `HasAny*` 标志 |
 | `model/ability.go` | `GetChannel` 新参数、`filterAbilitiesByConstraints` 回填 extend；上游 rc.45 的 @ 修饰符回退查找在 fork 的排除已失败渠道之前 |
 | `model/channel_constraint.go` | count_tokens 与 input_tokens 谓词 |
-| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
+| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支；§34 `ProcessChannelError` 的报错行带上游请求 ID |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
 | `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列 |
@@ -855,11 +857,11 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `controller/model.go` | §32 把 `ListModels` 计算模型名的部分拆成 `listableModels`，`/v1/models` 与 Key 可调用模型接口共用；上游改 `ListModels` 的过滤规则时要改在 `listableModels` 里 |
 | `web/src/features/channels/components/channels-columns.tsx` / `channel-card.tsx` | §32 模型列改为数量 + `ModelListPopover`，卡片底部分组旁显示同一单元格 |
 | `web/src/features/keys/components/api-keys-cells.tsx` | §32 `ModelLimitsCell` 改为打开时加载可调用模型的 `ModelListPopover`（IP 限制单元格不变） |
-| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误；§31 错误已写进流时不再追加 JSON 错误 |
+| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误；§31 错误已写进流时不再追加 JSON 错误；§34 每次尝试先清空上游请求 ID，最终的 relay error 行带上游请求 ID |
 | `relay/compatible_handler.go` / `relay/claude_handler.go` / `relay/gemini_handler.go` / `relay/responses_handler.go` | §31 在 `DoResponse` 前后接入 `service.GuardEmptyOutput` / `Finish` |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
 | `relay/helper/price.go` | `HandleGroupRatio` 折扣乘法 |
-| `service/http.go` | `ShouldCopyUpstreamHeader` 响应头过滤 |
+| `service/http.go` / `relay/channel/api_request.go` | `ShouldCopyUpstreamHeader` 响应头过滤；§34 `UpstreamRequestIdFromHeader`（`DoRequest` 用它取上游请求 ID，取代只认 `X-Oneapi-Request-Id`） |
 | `relay/request_billing.go` / `service/text_quota.go` / `service/quota.go` | 免费路径、TPM 记账、realtime 预扣读 PriceData |
 | `middleware/distributor.go` | 输入 token 估算、extend setting 注入、count_tokens 不记亲和 |
 | `middleware/auth.go` | 多分组 key 归一化 |
@@ -1776,3 +1778,49 @@ Key 不属于该用户时返回失败。两条规则都在 `middleware/access_to
   - 接口：流式、非流式、非流式 + 状态码 + 渠道三种组合，在管理员与用户自己的列表和导出上，结果都与直接查询 SQLite 一致；非法值在列表与导出上都被拒绝。
   - 浏览器：选「非流式请求」后列表、统计与导出请求都带 `is_stream=false`，总数 85 与数据库一致，统计栏有说明；选回「流式：全部」后请求不带 `is_stream`，总数 199（含充值日志）；无页面报错。
 - 数据库：只在 SQLite 上验证；条件只是对已有布尔列的 `=` 比较（GORM 按各数据库绑定布尔值），MySQL / PostgreSQL / ClickHouse 未验证（本机没有）。
+
+---
+
+## 34. 报错时服务器日志输出上游请求 ID
+
+### 行为
+
+- 服务器日志文件（`--log-dir` 下的 `oneapi-*.log`）里，转发出错时的两种报错行会带上上游请求 ID：
+  - 每次尝试失败一行：`channel error (channel #3, status code: 429, upstream request id: req_xxx): …`
+  - 最终失败一行：`relay error (upstream request id: req_xxx): …`，是最后一次尝试的 ID。
+  - 上游没有返回请求 ID 时（如连接失败、没有可用渠道），两行保持原来的格式。
+  - `DEFAULT_LANGUAGE=zh-CN` 时是中文：`渠道请求出错 (渠道 #3，状态码 429，上游请求 ID req_xxx): …`、`转发请求出错 (上游请求 ID req_xxx): …`。
+- 日志文件里的 ID 和使用日志「上游请求 ID」字段（`logs.upstream_request_id`）用的是同一个值，可以拿日志文件里的 ID 去日志页搜索，反之亦然。
+- 上游请求 ID 从上游响应头里取，按下面的顺序取第一个有值的：
+  1. `X-Oneapi-Request-Id`：上游是 new-api / one-api，以前只认这一个；
+  2. `request-id`：Anthropic；
+  3. `x-request-id`：OpenAI 及大多数兼容接口和中转；
+  4. `apim-request-id`：Azure；
+  5. `x-amzn-requestid`：AWS。
+  - 超过 128 个字符的截断（`logs.upstream_request_id` 是 `varchar(128)`，否则 MySQL / PostgreSQL 写日志会失败）。
+- **与以前的不同**：
+  - 上游不是 new-api（例如直连 OpenAI、Claude 或其他中转）时，使用日志的「上游请求 ID」以前为空，现在会有值。
+  - 每次尝试开始前清空上一次的 ID：重试换到一个不返回请求 ID 的渠道后，日志不会沿用前一个渠道的 ID。以前这种情况下，成功的消费日志会记成失败那次的 ID。
+
+### 实现
+
+- `service/http.go` 的 `UpstreamRequestIdFromHeader` 负责按上面的顺序取 ID 并截断；`relay/channel/api_request.go` 的 `DoRequest` 拿到响应后用它写入上下文的 `X-Upstream-Request-Id`（`common.UpstreamRequestIdKey`），错误日志与消费日志写库时都读这个值。
+- `controller/relay.go` 的重试循环在每次尝试开始时清空这个值；最终的 relay error 行在有 ID 时用带 ID 的格式。
+- `service/relay_error.go` 的 `ProcessChannelError` 在有 ID 时用带 ID 的格式写每次尝试的报错行，紧接着写同一个 ID 的错误日志。
+- 中文文本加在 `common/log_text.zh-CN.json`。
+
+### 已知限制
+
+- 只有经过统一的 `DoRequest` / `DoApiRequest` 发出的请求会取 ID。走厂商 SDK 的请求（AWS 用 AK/SK 调用的 InvokeModel；API Key 模式与 Mantle 会取）、WebSocket（Realtime、Responses WebSocket）和异步任务提交不取。
+- 只识别上面 5 个头；其他厂商自定义的请求 ID 头不识别。
+
+### 测试
+
+- `service/http_test.go` `TestUpstreamRequestIdFromHeader`：new-api 的头优先于 `x-request-id`；Anthropic、OpenAI、Azure、AWS 的头；空值跳过；没有头时为空；超长截断到 128。
+- `controller/relay_error_log_test.go`：报错行带上下文里的上游请求 ID，且与写入数据库的错误日志的 `upstream_request_id` 相同。
+- 本地端到端（SQLite，模拟上游对 429 / 502 返回 `x-request-id`，对空回复返回 `request-id`，正常回复不返回）：
+  - 429 重试 3 次：每次的报错行各带自己的 ID，最终 relay error 行是最后一次的 ID，三条错误日志的 `upstream_request_id` 与日志文件一致。
+  - 空回复后换到正常渠道成功：失败那次的报错行与错误日志带 `request-id` 的值，成功的消费日志的上游请求 ID 为空（没有沿用）。
+  - 没有可用渠道：报错行里没有上游请求 ID。
+  - `DEFAULT_LANGUAGE=zh-CN`：报错行为中文格式。
+- 数据库：没有表结构变化，只是 `upstream_request_id` 有值的日志变多了；写入长度已限制在列宽以内。

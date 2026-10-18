@@ -621,7 +621,7 @@ func doRequest(c *gin.Context, req *http.Request, info *common.RelayInfo) (*http
 			resp.Proto)
 	}
 
-	if upID := resp.Header.Get(common2.RequestIdKey); upID != "" {
+	if upID := service.UpstreamRequestIdFromHeader(resp.Header); upID != "" {
 		c.Set(common2.UpstreamRequestIdKey, upID)
 	}
 
