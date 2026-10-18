@@ -4,12 +4,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 上游基线（merge-base） | `1d4328e97` — 2026-10-09 `docs(relaykit): rewrite README for the current conversion API`（上游版本 `v1.0.0-rc.42` 之后） |
-| 最近一次同步 | 2026-10-10，rebase 到 `1d4328e97`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 46 个（含本文档相关提交） |
-| 变更规模 | 329 个文件，+28087 / −2222 行（不含本文档） |
+| 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
+| 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
+| fork 专有提交数 | 47 个（含本文档相关提交） |
+| 变更规模 | 329 个文件，+28133 / −2208 行（不含本文档） |
 
-同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 1d4328e97..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
+同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
 ---
 
@@ -667,7 +667,7 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 
 - 检查挂在 `updateChannelUsedQuota` 内。它是所有结算调用点（`service/quota.go`、`service/text_quota.go`、`service/task_billing.go`、`service/violation_fee.go`、`service/midjourney.go`、`relay/mjproxy_handler.go`）与批量更新刷盘（`model/utils.go` `batchUpdate`）的共同出口，因此不改任何计费文件，直写模式与 `BATCH_UPDATE_ENABLED` 模式都覆盖。
 - 流程 `enforceChannelQuotaLimit(id)`：增量 ≤ 0（退款 / 差额回减）直接返回；`GetChannelExtendSettings(id)` 无上限时零开销返回；有上限则**读回**数据库中的 `status` 与 `used_quota`（多副本与批量刷盘都以持久化值为准）；渠道已非启用状态则返回；达到上限 → `UpdateChannelStatus(id, "", ChannelStatusAutoDisabled, reason)`，reason 形如 `额度已达上限：已用 $12.3456，上限 $10.0000`（前缀常量 `ChannelStatusReasonQuotaLimitReached`）。`UpdateChannelStatus` 自身负责内存缓存与 abilities 同步，状态未变化时返回 false，天然去重。
-- 通知：model 不能导入 service，故通过钩子 `model.ChannelQuotaLimitReachedHandler` 由 `service/channel.go` 的 `init()` 注册 `notifyChannelQuotaLimitReached`：关闭该渠道的活动 WebSocket（与 `DisableChannel` 一致），`NotifyRootUser(channel_update_<id>_3, …)` 发送含已用 / 上限 / 折算成本的通知。
+- 通知：model 不能导入 service，故通过钩子 `model.ChannelQuotaLimitReachedHandler` 由 `service/channel.go` 的 `init()` 注册 `notifyChannelQuotaLimitReached`：关闭该渠道的活动 WebSocket（与 `DisableChannel` 一致），`NotifyChannelWatchers(channel_update_<id>_3, …)` 发送含已用 / 上限 / 折算成本的通知。接收者与上游的渠道通知相同（上游 rc.45 起）：打开了渠道通知的管理员，root 未设置时默认接收；通知文字为固定中文，不随接收者语言变化。
 - **不受**渠道"自动禁用"开关（`auto_ban`）与全局 `AutomaticDisableChannelEnabled` 约束：上限是管理员显式设置的。
 
 ### 防止被重新启用
@@ -839,12 +839,13 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 |---|---|
 | `service/channel_select.go` | 渠道 RPM/TPM 循环、`ExcludeChannelIds`、指定 / 亲和渠道的 `TakeChannelRateLimit` |
 | `model/channel_cache.go` | `channelExtendIDM`、`GetRandomSatisfiedChannel` 新增 `excludeChannelIds` 参数、多个 `HasAny*` 标志 |
-| `model/ability.go` | `GetChannel` 新参数、`filterAbilitiesByConstraints` 回填 extend |
+| `model/ability.go` | `GetChannel` 新参数、`filterAbilitiesByConstraints` 回填 extend；上游 rc.45 的 @ 修饰符回退查找在 fork 的排除已失败渠道之前 |
 | `model/channel_constraint.go` | count_tokens 与 input_tokens 谓词 |
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
-| `model/log.go` | §28 把 `GetAllLogs` / `SumUsedQuota` 的渠道参数从 `int` 改为 `[]int`（`channel_id IN ?`）；§29 / §30 给 `GetAllLogs` / `GetUserLogs` / `SumUsedQuota` 末尾加了 `LogMetricsFilter` 参数；§30 给 `Log` 加了 `first_response_ms` 列 |
+| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列 |
+| `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数 |
 | `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列 |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
@@ -869,7 +870,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/request_policy.go` | `BeginAttempt` 中的实时 RPM 计数、`userID` 字段 |
 | `service/text_quota.go` / `service/quota.go` / `service/task_billing.go` / `relay/mjproxy_handler.go` | 消费日志参数改为先赋给 `logParams`，再调用 `RecordSettledUsage` 与 `RecordConsumeLog` |
 | `model/log.go` / `controller/log.go` | `SumUsedQuota` 只算额度、`ValidateLogTextPattern`；日志统计接口改读 `service.LogRate` |
-| `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹；§32 去掉渠道表 `initialColumnVisibility` 中的 `models: false` |
+| `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹（渠道表包在上游 rc.45 拖拽排序的 `ChannelPriorityContext` 外层）；§32 去掉渠道表 `initialColumnVisibility` 中的 `models: false` |
 | `controller/user.go` | `UpdateUser` 中 `rate_limit` / `model_discount` 写入紧挨上游的审计调用 |
 | `middleware/access_token_routes.go` | fork 新增的管理接口若不经 `RequirePermission`，必须在这里声明访问令牌权限，否则上游的覆盖测试失败、令牌被拒 |
 | `web/src/features/users/api.ts` | 文件头 import |
@@ -890,7 +891,9 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/components/data-table/layout/data-table-page.tsx` | 固定高度的卡片网格与移动端列表滚动容器加 `data-slot='data-table-scroll'` 钩子（仅属性） |
 | `controller/performance.go` | 日志文件列表与清理逻辑移到 `service/log_file_cleanup.go`（`LogFileInfo` 改为类型别名），手动清理接口的参数校验与响应不变 |
 | `controller/option.go` | `log_file_cleanup_setting.*` 保存前的校验块 |
-| `web/src/features/system-settings/maintenance/log-settings-section.tsx` | 表单 schema / 默认值 / 保存逻辑加入定时清理字段，服务器日志区块下渲染定时清理组件 |
+| `web/src/features/system-settings/maintenance/log-settings-section.tsx` / `server-log-files.tsx` | 表单 schema / 默认值 / 保存逻辑加入定时清理字段（`scheduleDefaults` 可省略）；`ServerLogFiles` 加了 `renderSchedule` 插槽，在手动清理下方渲染定时清理组件 |
+| `relay/constant/relay_mode.go` / `relaykit/types/relay_format.go` | 双方都在末尾追加常量（fork：count_tokens / input_tokens，上游：tools search / fetch），合并时都保留；relay mode 的数值只在请求上下文里使用，不持久化，顺序变化无影响 |
+| `service/channel.go` | §15 达上限通知改用上游 rc.45 的 `NotifyChannelWatchers` |
 | `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` / `api.ts` | 定时清理 option 默认值、传参、类型与状态接口 |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
@@ -901,10 +904,60 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 
 - `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`。
 - `relaykit/` 必须独立可编译：改动 `relaykit/dto/*` 后运行 `cd relaykit && GOWORK=off go build ./...`。
+- 日志查询（上游 rc.44 起）：`model.GetAllLogs` / `GetUserLogs` / `StreamAllLogs` / `StreamUserLogs` 都接收 `model.LogFilter`；fork 的渠道列表与指标筛选是它的字段，新增调用点用 `logFilterFromQuery` 构造。
+- 通知（上游 rc.45 起）：`NotifyRootUser` 已删除，渠道类通知用 `NotifyChannelWatchers(notifyType, func(lang) (subject, content))`。
 - 访问令牌按接口授权（上游 2026-09 起）：新增管理接口时，经 `channelPermissionRoutes` 等 `handlePermissionRoute` 注册的会自动声明；其余（如 `adminRoute.GET(...)`）要在 `accessTokenRouteRules` 里补规则，`router/access_token_scope_test.go` 会检查。
 
 ### 19.4 同步记录
 
+- **2026-10-18，rebase 到 `6cf0d90b5`（上游 `v1.0.0-rc.45`）**（上游 79 个提交，含 rc.43–rc.45：
+  - 使用日志导出 CSV；日志维护页拆成 4 个模块，新增「允许用户导出」与「日志最长时间范围」（默认 365 天，普通用户的日志搜索也受此限制）；
+  - 渠道拖拽调整优先级、单渠道跳过上游 TLS 校验；
+  - Key「允许查询用户额度」开关（`tokens` 表新列）、按类型开关通知、分组限流按组单独计数；
+  - DeepSeek V4.1 / Search / Fetch、AWS Mantle；
+  - 敏感词过滤默认关闭、错误信息只遮盖上游地址、过载保护改用容器口径；
+  - 前端依赖升级，oxfmt 升到 0.72）。
+  - 冲突（共 23 个文件，在各自的提交里解决）：
+    - `model/ability.go`：上游 @ 修饰符按路由名回退查找，fork 排除已失败渠道；两段都保留，回退在前。
+    - 渠道表单 4 个文件（`channel-mutate-drawer.tsx`、`channel-form.ts`、`channel-form-errors.ts`、`channel-configuration.ts`）：上游新字段（`tls_insecure_skip_verify`、`aws_api_type`）与 fork 字段并列；「渠道额外设置」的已配置判断合并两边条件。
+    - `relay/constant/relay_mode.go`（含测试）、`relaykit/types/relay_format.go`：两边新增的常量都保留。
+    - `.github/workflows/ci.yml`：保持删除。上游新增的 `.github/dependabot.yml` 不是 workflow，保留。
+    - `web/src/features/keys/lib/__tests__/auto-group-form.test.ts`：fork 的备用分组用例与上游的额度查询用例都保留。
+    - `channels-table.tsx`：采用上游拖拽排序的新结构，fork 的 `LiveRpmContext` 包在最外层。
+    - 日志 5 个文件（`model/log.go`、`controller/log.go` 与 3 个测试）：上游把列表查询改为 `LogFilter` 结构体并新增导出。§28–§30 的渠道列表与指标筛选移到 `LogFilter` 的 `Channels` / `Metrics` 字段，由 `logFilterFromQuery` 统一解析，列表、用户列表与导出都生效。
+    - `section-page-layout.tsx`、`general-error.tsx`（§22）：保留品牌样式，采用上游的 `max-w-full` 与「状态码未知时不显示数字」。
+    - 日志维护页 4 个文件（§23）：见 §23「前端」。
+    - `service/relay_error_test.go`、`controller/relay.go`（§31）：两边都保留。错误已写进流时提前返回，放在计算上游地址之前。
+  - 没有文本冲突、但需要适配的地方（已并入对应的原提交）：
+    - §15 达上限通知：`NotifyRootUser` 改为 `NotifyChannelWatchers`。
+    - 上游新测试调用 `GetRandomSatisfiedChannel` 时补 `nil`（§4）。
+    - §22 状态码标题测试改为传入带 500 状态的错误。
+    - 上游导出测试的模型参数按 §28 改为 `%gpt-4o%`。
+    - §23 的测试按新页面结构查找「时间」字段。
+  - 保留检查：对比 rebase 前的备份分支，fork 改过的 330 个文件中：
+    - 上游没改过的 240 个中，238 个与备份逐字节相同，另 2 个是 §23 的适配（定时清理默认值常量、测试）；
+    - 两边都改过的 84 个中，76 个保留了 fork 新增的每一行，其余 8 个的差异都是上面列出的移植与适配；
+    - fork 删除的 6 个 workflow 仍为删除；
+    - 没有 fork 删除的代码被合并带回。
+  - 验证：
+    - Go：`go build ./...`、`go vet ./...`、`go test ./...` 全部通过（46 个有测试的包）；relaykit、tokenkit 独立构建与测试通过。
+    - 前端：
+      - 类型检查通过；fork 改过的 183 个文件 lint 无错误，并通过上游锁定的 oxfmt 0.72 格式检查。
+      - Vitest 236 个文件 2624 个用例中 2623 个通过。唯一的失败（`markdown.test.tsx` 数学公式）在纯上游代码上同样失败，原因是本机 `node_modules` 仍是旧版 katex 0.17（上游要求 0.18），执行 `bun install` 后会消失。
+    - 本地端到端（SQLite，用 rebase 前的数据库升级启动两次）：
+      - 迁移：`tokens.allow_user_quota_query` 自动加列，第二次启动无报错。
+      - 日志筛选 20 项：§28–§30 的每种筛选，在管理员与用户自己的列表和导出上，结果都与直接查询 SQLite 一致；非法参数在列表与导出上都被拒绝。
+      - Key 可调用模型 5 项；token 区间 8 项；零输出 16 + 8 项；跨站复制 10 项。
+      - 浏览器 9 项：渠道卡片 / 表格同时有拖拽、模型数量与 RPM/TPM；渠道抽屉里上游 TLS 开关与 fork 设置并存；导出请求带上 fork 筛选；日志维护页的定时清理位于服务器日志模块；无页面报错。
+      - §2–§17 只由 Go 与前端测试覆盖：之前同步用的端到端脚本不在本机。
+    - 数据库：只在 SQLite 上验证。上游新增的 `tokens.allow_user_quota_query` 列，以及拖拽排序的事务行锁，未在 MySQL / PostgreSQL 上验证（本机没有）。
+  - 部署注意：
+    - 前端依赖有升级，构建前执行 `bun install`（Docker 构建会按 `bun.lock` 安装）。
+    - 敏感词过滤默认改为关闭、默认词表清空：从没在设置里保存过该选项的站点，升级后过滤变为关闭。
+    - 普通用户的日志查询与导出受「日志最长时间范围」限制（默认 365 天）。
+    - 表结构变化只有 `tokens.allow_user_quota_query`（自动迁移），旧 Key 默认不允许查询用户额度。
+    - Playground 改为按账号保存，升级后旧的历史记录会被清空一次。
+    - 渠道通知改为发给打开了渠道通知的管理员（root 默认接收），§15 的达上限通知也一样。
 - **2026-10-10，rebase 到 `1d4328e97`**（上游 22 个提交：全面国际化 #7712、token 计数移入独立模块 `tokenkit` 并重新校准、联网搜索按渠道编码与按厂商上报计费 #7690、Gemini 谷歌搜索按查询 / 带搜索请求计费、relaykit v0.3.0 协议转换修复、静态文件单独限流、高级参数覆盖支持正则、用户列表按分组筛选、Grok Imagine 视频插件等；`go.mod` 升到 Go 1.26，新增 `tokenkit/` 子模块）。
   - 冲突（共 24 个文件）：前端 7 个语言文件（按 key 做三方合并，保留上游全部改动并加回 fork 新增 key）；`.github/workflows/` 3 个（保持删除）；`controller/relay.go`（重试耗尽的可配置状态码分支 + 上游多语言默认文案）；`relay/channel/api_request.go`（渠道超时的 `cancelTimeout` + 上游 `LogText`）；`service/quota.go` / `service/task_billing_test.go`（import 与测试初始化两侧并存）；`service/relay_error.go`（只保留仍在使用的 import）；`web/src/features/keys/components/api-key-group-cell.tsx`（保留主分组 + 备用分组结构，并采用上游 `GroupBadge type='text'` 防截断）；`web/src/features/users/components/users-table.tsx`（`getGroups` 与 `getUserRpm` 并存）；`model/log.go`（RPM/TPM 改走 Redis，删除上游仍在维护的 SQL 统计块）；`model/channel.go`（上游 `LogText` + fork 额度上限禁用逻辑）；`controller/performance.go`（采用上游多语言的部分失败文案，计数取自共用的 `service.CleanupServerLogFiles` 结果）；`i18n/keys.go` 与 3 个 yaml（取上游）。
   - 适配上游国际化：上游把控制台接口的提示从后端翻译 key 改为英文原文 + 参数（`common.ApiErrorT` / `ApiSuccessT` / `common.NewMessage`），由前端在 7 种语言中翻译；后端 `i18n/keys.go` 只保留给 AI 客户端、邮件与通知的文案。fork 的多分组令牌校验（§13）、渠道额度上限提示（§15）、用户 / RPM 接口的参数错误改用新方式，对应翻译加在前端语言文件中；免费 count_tokens 日志（§6）的 content 改为 `common.Message`。
@@ -1235,11 +1288,12 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
   - 每个节点（master 与 slave）都运行，清理各自 `--log-dir` 下的文件；未配置日志目录时不执行。
 - `GET /api/performance/logs/schedule`（`RootAuth`，访问令牌 scope `ops:read`）：返回本节点的时区名称、UTC 偏移、下一次执行时间与上一次执行结果（删除数量、释放空间、错误）。上一次结果只保存在进程内存中，重启后清空。
 - 每次执行写一条系统日志：`scheduled log file cleanup (by_days=30): deleted N, freed M bytes`。
+- 前端：上游 rc.44 把日志维护页拆成「日志记录」「日志搜索与导出」「历史日志清理」「服务器日志管理」4 个模块。定时清理字段仍属于页面表单（`log-settings-section.tsx` 的 `log_file_cleanup_setting`，由「保存日志设置」保存），通过上游 `ServerLogFiles` 新增的 `renderSchedule` 插槽显示在服务器日志模块的手动清理下方。`scheduleDefaults` 可省略，省略时用后端默认值（`DEFAULT_LOG_FILE_CLEANUP_SCHEDULE`），上游自己的测试不用传。
 
 ### 测试
 
 - `service/log_file_cleanup_test.go`：`NextRun` 的每日 / 每周 / 每月 / 已过时间 / 关闭 / 非法值表格测试；`ValidateOption`；按数量、按天数清理；当前写入中的日志文件不会被删；定时执行后状态里记录上一次结果并把下一次顺延到明天。
-- `web/src/features/system-settings/maintenance/__tests__/log-file-cleanup-schedule.test.tsx`：关闭时只显示开关、打开后出现时间等字段且只保存改动的 key；每周显示星期、每月显示日期；非法时间阻止保存；显示服务器时区、下次执行与上次结果。
+- `web/src/features/system-settings/maintenance/__tests__/log-file-cleanup-schedule.test.tsx`（「时间」字段在服务器日志模块内查找，因为历史日志清理的日期时间选择器也有「时间」输入框）：关闭时只显示开关、打开后出现时间等字段且只保存改动的 key；每周显示星期、每月显示日期；非法时间阻止保存；显示服务器时区、下次执行与上次结果。
 - 本地端到端（`scratchpad/logclean_e2e.py`，17 项）：非法值被拒绝；设定两分钟后执行，到点删除 45 天前的文件、保留 2 天内的文件，状态接口记录结果且下一次顺延一天；手动清理接口响应结构不变。
 
 ### 已知限制
@@ -1473,7 +1527,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 ### 行为
 
 - **模型名默认「包含」匹配**：日志页的模型框（占位文字「模型名称（模糊）」）输入 `4o` 时，前端发送 `model_name=%4o%`，匹配所有名称里含 `4o` 的模型；输入里带 `%` 时原样发送，作为用户自己的匹配模式。转换在 `web/src/features/usage-logs/lib/utils.ts` 的 `toModelNameSearch`，列表、额度统计、实时 RPM/TPM 共用 `buildApiParams`，三者口径一致。后端对不带 `%` 的值仍是精确匹配，所以直接调接口的脚本行为不变；模式规则沿用上游（`%` 最多 2 个、关键词至少 2 个字符，`_` 按字面匹配）。
-- **渠道可填多个 ID**：管理员视图的渠道框（「渠道 ID，如 1,2,3」）可以用英文逗号、中文逗号或空格分隔，如 `1,2 5`。后端 `controller/log.go` 的 `parseLogChannelFilter` 解析：去重；`0` 表示不过滤（兼容旧行为）；负数或非数字返回「Invalid channel ID」；超过 100 个返回「Search at most {{max}} channel IDs at once」。`model.GetAllLogs` / `model.SumUsedQuota` 的渠道参数改为 `[]int`，SQL 为 `channel_id IN ?`。
+- **渠道可填多个 ID**：管理员视图的渠道框（「渠道 ID，如 1,2,3」）可以用英文逗号、中文逗号或空格分隔，如 `1,2 5`。后端 `controller/log.go` 的 `parseLogChannelFilter` 解析：去重；`0` 表示不过滤（兼容旧行为）；负数或非数字返回「Invalid channel ID」；超过 100 个返回「Search at most {{max}} channel IDs at once」。列表与导出用上游的 `model.LogFilter`，渠道是其中的 `Channels []int`（取代上游的 `Channel int`）；`model.SumUsedQuota` 的渠道参数改为 `[]int`；SQL 为 `channel_id IN ?`。
+- **日志导出同样生效**：§28–§30 的筛选都在 `controller/log.go` 的 `logFilterFromQuery` 里解析进 `model.LogFilter`（指标筛选是其中的 `Metrics`），上游 rc.44 新增的日志导出与列表共用它，所以导出的就是页面当前筛选出的日志（模型名同样按包含匹配）。参数非法时导出与列表一样返回错误。
 - **实时 RPM/TPM 同步支持**：`service.LogRateFilter.ChannelID` 改为 `ChannelIDs []int`。只按渠道过滤时把多个渠道的汇总字段一起求和；一个渠道 + 一个用户仍走渠道 × 用户汇总；其他组合按每个用户的明细逐条判断渠道是否在列表里。
 - 用户自己的统计接口（`/api/log/self/stat`）同样接受多个渠道；前端的用户视图不发送渠道参数。
 
@@ -1496,7 +1551,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 ### 行为
 
 - 日志页「展开」后的高级筛选里有两组范围：「输入 token」（`prompt_tokens`）和「输出 token」（`completion_tokens`），每组有最小值、最大值两个框，可以只填一个，边界值包含在内。管理员视图与用户自己的视图都有。
-- 接口参数：`prompt_tokens_min`、`prompt_tokens_max`、`completion_tokens_min`、`completion_tokens_max`，作用于 `GET /api/log/`、`/api/log/self`、`/api/log/stat`、`/api/log/self/stat`。后端 `controller/log.go` 的 `parseLogMetricsFilter`（§30 起同时解析其他指标）解析：必须是大于或等于 0 的整数，否则返回「Token counts must be whole numbers of 0 or more」；最小值大于最大值返回「The minimum token count cannot be greater than the maximum」。查询条件由 `model.LogMetricsFilter.applyTo` 加到列表、计数与额度统计上。
+- 接口参数：`prompt_tokens_min`、`prompt_tokens_max`、`completion_tokens_min`、`completion_tokens_max`，作用于 `GET /api/log/`、`/api/log/self`、`/api/log/stat`、`/api/log/self/stat`。后端 `controller/log.go` 的 `parseLogMetricsFilter`（§30 起同时解析其他指标）解析：必须是大于或等于 0 的整数，否则返回「Token counts must be whole numbers of 0 or more」；最小值大于最大值返回「The minimum token count cannot be greater than the maximum」。查询条件由 `model.LogMetricsFilter.applyTo` 加到列表、计数、导出（经 `LogFilter.Metrics`）与额度统计上。
 - 前端点「搜索」前用同样的规则先校验（`lib/filter.ts` 的 `getMetricFilterError`，§30 起覆盖全部指标），不合法时直接提示、不发请求；否则服务端的业务错误会被查询自动重试，几秒后才提示。
 - URL 搜索参数为 `inputTokensMin`、`inputTokensMax`、`outputTokensMin`、`outputTokensMax`（数字）；「展开」角标把每组范围算作一个筛选。
 - **实时 RPM / TPM 不支持这个筛选**：实时统计只按分钟汇总，不保存每条请求的 token 数。设置了任一 token 范围时，统计接口不读实时统计，`rate_source` 返回 `filter_unsupported`，日志页的 RPM / TPM 显示「-」并加注说明（§30 起说明文字涵盖全部指标筛选）。用量（额度）统计照常按范围计算。
