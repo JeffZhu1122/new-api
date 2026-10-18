@@ -7547,7 +7547,7 @@
     "Max output tokens": "Tokens en sortie max.",
     "Token counts must be whole numbers of 0 or more": "Les nombres de tokens doivent être des entiers supérieurs ou égaux à 0",
     "The minimum token count cannot be greater than the maximum": "Le nombre minimal de tokens ne peut pas dépasser le maximum",
-    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "Les RPM / TPM en direct ne peuvent pas appliquer les filtres de tokens, de durée, de TTFT ou de code de statut.",
+    "Live RPM / TPM cannot apply the token, use time, TTFT, status code or stream mode filters.": "Les RPM / TPM en direct ne peuvent pas appliquer les filtres de tokens, de durée, de TTFT, de code de statut ou de mode de streaming.",
     "Use time (s)": "Durée (s)",
     "Min use time (s)": "Durée min. (s)",
     "Max use time (s)": "Durée max. (s)",
@@ -7565,6 +7565,11 @@
     "Error on Empty Output": "Erreur en cas de sortie vide",
     "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "Traite comme une erreur une réponse de chat, Claude, Gemini ou Responses sans aucune sortie (ni texte, ni raisonnement, ni appel d’outil, ni refus) : elle est réessayée sur un autre canal et n’est pas facturée. Les flux sont retenus jusqu’à leur première sortie. Si un ping de maintien a déjà atteint le client, un flux vide se termine par un événement d’erreur au lieu d’une nouvelle tentative.",
     "Callable models": "Modèles appelables",
-    "No models": "Aucun modèle"
+    "No models": "Aucun modèle",
+    "Stream mode": "Mode de streaming",
+    "Stream: All": "Streaming : tous",
+    "Stream requests": "Requêtes en streaming",
+    "Non-stream requests": "Requêtes sans streaming",
+    "Stream mode must be true or false": "Le mode de streaming doit être true ou false"
   }
 }

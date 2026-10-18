@@ -7547,7 +7547,7 @@
     "Max output tokens": "输出 token 最大值",
     "Token counts must be whole numbers of 0 or more": "token 数量必须是大于或等于 0 的整数",
     "The minimum token count cannot be greater than the maximum": "token 数量的最小值不能大于最大值",
-    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "实时 RPM / TPM 无法按 token 数量、消耗时长、TTFT 或状态码过滤。",
+    "Live RPM / TPM cannot apply the token, use time, TTFT, status code or stream mode filters.": "实时 RPM / TPM 无法按 token 数量、消耗时长、TTFT、状态码或流式模式过滤。",
     "Use time (s)": "消耗时长（秒）",
     "Min use time (s)": "消耗时长最小值（秒）",
     "Max use time (s)": "消耗时长最大值（秒）",
@@ -7565,6 +7565,11 @@
     "Error on Empty Output": "零输出时报错",
     "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "对话、Claude、Gemini 或 Responses 请求的回复完全没有输出（没有文本、推理、工具调用或拒答）时视为错误，会换渠道重试且不扣费。流式回复会先暂存，直到出现第一个输出才发给客户端。如果保活 ping 已经发给了客户端，空的流会以一个错误事件结束，不再重试。",
     "Callable models": "可调用模型",
-    "No models": "没有模型"
+    "No models": "没有模型",
+    "Stream mode": "流式模式",
+    "Stream: All": "流式：全部",
+    "Stream requests": "流式请求",
+    "Non-stream requests": "非流式请求",
+    "Stream mode must be true or false": "流式模式只能是 true 或 false"
   }
 }

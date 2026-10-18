@@ -336,3 +336,55 @@ func TestUsageLogsFilterByUseTimeTTFTAndStatusCodes(t *testing.T) {
 		})
 	}
 }
+
+func TestUsageLogsFilterByStreamMode(t *testing.T) {
+	setupLogFilterTest(t)
+	previousConsume := common.LogConsumeEnabled
+	common.LogConsumeEnabled = true
+	t.Cleanup(func() { common.LogConsumeEnabled = previousConsume })
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	c.Set("username", "alice")
+	model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{ChannelId: 1, ModelName: "stream-consume", Quota: 800, IsStream: true, Group: "default", Other: model.NewLogOther()})
+	model.RecordErrorLog(c, 1, 2, "stream-error", "", "upstream failed", 0, 3, true, "default", model.NewLogOther())
+	model.RecordErrorLog(c, 1, 2, "plain-error", "", "upstream failed", 0, 3, false, "default", model.NewLogOther())
+	// Logs that are not requests record no stream mode.
+	require.NoError(t, model.LOG_DB.Create(&model.Log{UserId: 1, Username: "alice", Type: model.LogTypeTopup, Content: "top up", Quota: 5000, CreatedAt: 1003}).Error)
+
+	for _, test := range []struct {
+		name   string
+		query  url.Values
+		models []string
+		quota  int
+	}{
+		{"stream requests", url.Values{"is_stream": {"true"}}, []string{"stream-consume", "stream-error"}, 800},
+		{"non-stream requests leave out the top-up", url.Values{"is_stream": {"false"}}, []string{"gpt-4o", "gpt-4o-mini", "claude-sonnet-4", "plain-error"}, 700},
+		{"stream mode with another filter", url.Values{"is_stream": {"false"}, "model_name": {"%error%"}}, []string{"plain-error"}, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for name, handlers := range map[string][2]gin.HandlerFunc{
+				"all logs": {GetAllLogs, GetLogsStat},
+				"own logs": {GetUserLogs, GetLogsSelfStat},
+			} {
+				logs := logFilterRequest(t, handlers[0], test.query)
+				require.True(t, logs.Success, logs.MessageKey)
+				models := make([]string, 0, len(logs.Data.Items))
+				for _, item := range logs.Data.Items {
+					models = append(models, item.ModelName)
+				}
+				assert.ElementsMatch(t, test.models, models, name)
+
+				stat := logFilterRequest(t, handlers[1], test.query)
+				require.True(t, stat.Success, stat.MessageKey)
+				assert.Equal(t, test.quota, stat.Data.Quota, name)
+				assert.Equal(t, "filter_unsupported", stat.Data.RateSource, name)
+			}
+		})
+	}
+
+	for _, handler := range []gin.HandlerFunc{GetAllLogs, GetLogsStat, GetUserLogs, GetLogsSelfStat} {
+		response := logFilterRequest(t, handler, url.Values{"is_stream": {"sometimes"}})
+		assert.False(t, response.Success)
+		assert.Equal(t, "Stream mode must be true or false", response.MessageKey)
+	}
+}

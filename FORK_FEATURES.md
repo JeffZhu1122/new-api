@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 47 个（含本文档相关提交） |
-| 变更规模 | 329 个文件，+28133 / −2208 行（不含本文档） |
+| fork 专有提交数 | 48 个（含本文档相关提交） |
+| 变更规模 | 329 个文件，+28372 / −2208 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -47,6 +47,7 @@
 30. [使用日志：按消耗时长、TTFT 与 HTTP 状态码筛选](#30-使用日志按消耗时长ttft-与-http-状态码筛选)
 31. [渠道「零输出时报错」开关](#31-渠道零输出时报错开关)
 32. [渠道模型数量与 API 密钥可调用模型](#32-渠道模型数量与-api-密钥可调用模型)
+33. [使用日志：按流式 / 非流式筛选](#33-使用日志按流式--非流式筛选)
 
 ---
 
@@ -81,6 +82,7 @@
 | 30 | 使用日志：按消耗时长、TTFT 与 HTTP 状态码筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.first_response_ms`（新列） | 消费日志写入、日志表迁移（含 ClickHouse）、使用日志列表与统计接口、日志页筛选框 |
 | 31 | 渠道「零输出时报错」开关 | 与本文档同一提交 | 关闭 | `channel_extend` | 文本生成请求的响应写出、重试与退款、渠道编辑抽屉 |
 | 32 | 渠道模型数量与 API 密钥可调用模型 | 与本文档同一提交 | 始终生效（只读） | 无 | `/v1/models` 的模型计算（拆出共用函数）、新增两个只读接口、渠道列表模型列（改为默认显示）、API 密钥模型列 |
+| 33 | 使用日志：按流式 / 非流式筛选 | 与本文档同一提交 | 默认「全部」，即不过滤 | 无（用已有的 `logs.is_stream`） | 使用日志列表、统计与导出接口、日志页筛选框 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -844,7 +846,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支 |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
-| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列 |
+| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列 |
 | `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数 |
 | `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列 |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
@@ -1735,3 +1737,42 @@ Key 不属于该用户时返回失败。两条规则都在 `middleware/access_to
     - 表格视图默认有「模型」列，所有数量完整显示，没有截断。
     - Key 列表悬停列出 `mock-fast`、`mock-slow`，复制结果相同。
 - 数据库：没有表结构变化，也没有新的查询写法（只用已有的 Key、用户分组与能力缓存读取），所以没有单独做三库验证。
+
+---
+
+## 33. 使用日志：按流式 / 非流式筛选
+
+### 行为
+
+- 日志页「展开」后的高级筛选新增「流式模式」下拉框。管理员视图、用户自己的视图和手机筛选抽屉里都有：
+  - **流式：全部**（默认，即不选）：不按流式筛选，所有日志都显示，包括充值、管理等非请求日志。
+  - **流式请求** / **非流式请求**：只看消费日志和错误日志里流式 / 非流式的请求。其他类型的日志不记录流式模式（`is_stream` 一律为 0），所以选「非流式请求」时会把它们排除，不会混进结果。
+- 接口参数 `is_stream=true|false`，不传就不筛选。作用于 `GET /api/log/`、`/api/log/self`、`/api/log/stat`、`/api/log/self/stat` 与两个导出接口；其他值返回「Stream mode must be true or false」。
+- 用的是日志表已有的 `is_stream` 列（上游原有），没有新增列，历史日志也能筛选。
+- 额度统计按筛选计算；实时 RPM / TPM 不支持按流式筛选，与 §29 / §30 一样返回 `filter_unsupported`，说明文字改为「实时 RPM / TPM 无法按 token 数量、消耗时长、TTFT、状态码或流式模式过滤」。
+
+### 实现
+
+- `model.LogMetricsFilter` 加 `Stream *bool`：`applyTo` 加条件 `is_stream = ? AND type IN (消费, 错误)`，`IsZero` 把它计入。列表、统计与导出都经过它（§28 的 `LogFilter.Metrics`）。
+- `controller/log.go` 的 `parseLogMetricsFilter` 用 `strconv.ParseBool` 解析 `is_stream`。
+- 前端：
+  - URL 参数 `stream=stream|non_stream`（`routes/_authenticated/usage-logs/$section.tsx`），由 `buildApiParams` 转成 `is_stream`，不选时不带这个参数。
+  - 筛选框在 `common-logs-filter-bar.tsx`，复用页面已有的 `Select`（与「类型」筛选同一写法），选项在 `constants.ts` 的 `LOG_STREAM_MODE_FILTERS`，选中时计入「收起」角标。
+
+### 已知限制
+
+- `is_stream` 记录的是转发时的 `relayInfo.IsStream`：客户端要求流式，或上游以 `text/event-stream` 返回（客户端没要求时也算），都记为流式；Responses WebSocket 与 Realtime 一律算流式。
+- `is_stream` 没有单独索引，依赖时间范围收窄扫描。
+
+### 测试
+
+- `controller/log_filter_test.go` `TestUsageLogsFilterByStreamMode`：
+  - 用网关自己的 `RecordConsumeLog` / `RecordErrorLog` 写入流式与非流式的消费、错误日志，外加一条充值日志。
+  - 在管理员与用户自己两个视图下检查：流式只有流式的消费和错误日志；非流式排除充值日志；与模型名组合时结果正确；额度统计按筛选计算；实时统计为 `filter_unsupported`。
+  - 非法值在 4 个接口上都被拒绝。
+- `web/src/features/usage-logs/lib/__tests__/log-filter-params.test.ts`：`stream` / `non_stream` 转成 `is_stream=true` / `false`；不选或未知值不发送；选中值保留在 URL。
+- `web/src/features/usage-logs/components/__tests__/range-filters.test.tsx`：选「非流式请求」后搜索，URL 正确、「收起」角标为 1；URL 里的模式回填到下拉框；选回「流式：全部」后 URL 不再带 `stream`。
+- 本地端到端（SQLite）：
+  - 接口：流式、非流式、非流式 + 状态码 + 渠道三种组合，在管理员与用户自己的列表和导出上，结果都与直接查询 SQLite 一致；非法值在列表与导出上都被拒绝。
+  - 浏览器：选「非流式请求」后列表、统计与导出请求都带 `is_stream=false`，总数 85 与数据库一致，统计栏有说明；选回「流式：全部」后请求不带 `is_stream`，总数 199（含充值日志）；无页面报错。
+- 数据库：只在 SQLite 上验证；条件只是对已有布尔列的 `=` 比较（GORM 按各数据库绑定布尔值），MySQL / PostgreSQL / ClickHouse 未验证（本机没有）。

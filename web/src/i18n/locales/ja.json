@@ -7547,7 +7547,7 @@
     "Max output tokens": "出力トークン 最大",
     "Token counts must be whole numbers of 0 or more": "トークン数は 0 以上の整数で指定してください",
     "The minimum token count cannot be greater than the maximum": "トークン数の最小値は最大値を超えられません",
-    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "リアルタイムの RPM / TPM には、トークン数・所要時間・TTFT・ステータスコードの絞り込みを適用できません。",
+    "Live RPM / TPM cannot apply the token, use time, TTFT, status code or stream mode filters.": "リアルタイムの RPM / TPM には、トークン数・所要時間・TTFT・ステータスコード・ストリーミングモードの絞り込みを適用できません。",
     "Use time (s)": "所要時間（秒）",
     "Min use time (s)": "所要時間 最小（秒）",
     "Max use time (s)": "所要時間 最大（秒）",
@@ -7565,6 +7565,11 @@
     "Error on Empty Output": "出力が空ならエラー",
     "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "チャット・Claude・Gemini・Responses の応答に出力がまったくない（テキスト、推論、ツール呼び出し、拒否のいずれもない）場合はエラーとして扱い、別のチャネルで再試行し課金しません。ストリームは最初の出力が出るまで保留します。キープアライブの ping がすでにクライアントに届いている場合、空のストリームは再試行せずエラーイベントで終了します。",
     "Callable models": "呼び出し可能なモデル",
-    "No models": "モデルがありません"
+    "No models": "モデルがありません",
+    "Stream mode": "ストリーミングモード",
+    "Stream: All": "ストリーミング：すべて",
+    "Stream requests": "ストリーミングリクエスト",
+    "Non-stream requests": "非ストリーミングリクエスト",
+    "Stream mode must be true or false": "ストリーミングモードは true または false で指定してください"
   }
 }

@@ -358,6 +358,16 @@ export const DISPLAYABLE_LOG_TYPES = [0, 2, 5, 6] as const
  */
 export const TIMING_LOG_TYPES = [2, 5] as const
 
+/** No stream mode filter: every log, including top-ups and other non-requests */
+export const LOG_STREAM_MODE_ALL_VALUE = 'all'
+
+/** Stream mode choices of the usage-log filter (labels are i18n keys) */
+export const LOG_STREAM_MODE_FILTERS = [
+  { value: LOG_STREAM_MODE_ALL_VALUE, label: 'Stream: All' },
+  { value: 'stream', label: 'Stream requests' },
+  { value: 'non_stream', label: 'Non-stream requests' },
+] as const
+
 /**
  * HTTP status codes offered by the usage-log status code filter; others can
  * be typed in. They carry no hint: MultiSelect marks hinted chips with an

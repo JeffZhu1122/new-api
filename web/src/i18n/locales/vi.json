@@ -7547,7 +7547,7 @@
     "Max output tokens": "Token ra tối đa",
     "Token counts must be whole numbers of 0 or more": "Số token phải là số nguyên từ 0 trở lên",
     "The minimum token count cannot be greater than the maximum": "Số token tối thiểu không được lớn hơn tối đa",
-    "Live RPM / TPM cannot apply the token, use time, TTFT or status code filters.": "Không thể áp dụng bộ lọc token, thời gian xử lý, TTFT hoặc mã trạng thái cho RPM / TPM trực tiếp.",
+    "Live RPM / TPM cannot apply the token, use time, TTFT, status code or stream mode filters.": "Không thể áp dụng bộ lọc token, thời gian xử lý, TTFT, mã trạng thái hoặc chế độ phát trực tuyến cho RPM / TPM trực tiếp.",
     "Use time (s)": "Thời gian xử lý (giây)",
     "Min use time (s)": "Thời gian xử lý tối thiểu (giây)",
     "Max use time (s)": "Thời gian xử lý tối đa (giây)",
@@ -7565,6 +7565,11 @@
     "Error on Empty Output": "Báo lỗi khi không có đầu ra",
     "Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.": "Coi phản hồi chat, Claude, Gemini hoặc Responses không có đầu ra nào (không có văn bản, suy luận, gọi công cụ hay từ chối) là lỗi, để thử lại trên kênh khác và không tính phí. Luồng được giữ lại cho đến khi có đầu ra đầu tiên. Nếu ping giữ kết nối đã đến client, luồng rỗng kết thúc bằng một sự kiện lỗi thay vì thử lại.",
     "Callable models": "Mô hình có thể gọi",
-    "No models": "Không có mô hình"
+    "No models": "Không có mô hình",
+    "Stream mode": "Chế độ phát trực tuyến",
+    "Stream: All": "Phát trực tuyến: tất cả",
+    "Stream requests": "Yêu cầu phát trực tuyến",
+    "Non-stream requests": "Yêu cầu không phát trực tuyến",
+    "Stream mode must be true or false": "Chế độ phát trực tuyến phải là true hoặc false"
   }
 }
