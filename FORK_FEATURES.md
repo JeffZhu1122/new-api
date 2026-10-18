@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 49 个（含本文档相关提交） |
-| 变更规模 | 331 个文件，+28458 / −2211 行（不含本文档） |
+| fork 专有提交数 | 50 个（含本文档相关提交） |
+| 变更规模 | 332 个文件，+28607 / −2210 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -49,6 +49,7 @@
 32. [渠道模型数量与 API 密钥可调用模型](#32-渠道模型数量与-api-密钥可调用模型)
 33. [使用日志：按流式 / 非流式筛选](#33-使用日志按流式--非流式筛选)
 34. [报错时服务器日志输出上游请求 ID](#34-报错时服务器日志输出上游请求-id)
+35. [服务器日志的请求汇总行与报错行中的渠道](#35-服务器日志的请求汇总行与报错行中的渠道)
 
 ---
 
@@ -85,6 +86,7 @@
 | 32 | 渠道模型数量与 API 密钥可调用模型 | 与本文档同一提交 | 始终生效（只读） | 无 | `/v1/models` 的模型计算（拆出共用函数）、新增两个只读接口、渠道列表模型列（改为默认显示）、API 密钥模型列 |
 | 33 | 使用日志：按流式 / 非流式筛选 | 与本文档同一提交 | 默认「全部」，即不过滤 | 无（用已有的 `logs.is_stream`） | 使用日志列表、统计与导出接口、日志页筛选框 |
 | 34 | 报错时服务器日志输出上游请求 ID | 与本文档同一提交 | 始终生效 | 无（用已有的 `logs.upstream_request_id`） | 上游请求 ID 的识别（更多响应头）、每次尝试的重置、服务器日志的报错行 |
+| 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -845,10 +847,10 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/channel_cache.go` | `channelExtendIDM`、`GetRandomSatisfiedChannel` 新增 `excludeChannelIds` 参数、多个 `HasAny*` 标志 |
 | `model/ability.go` | `GetChannel` 新参数、`filterAbilitiesByConstraints` 回填 extend；上游 rc.45 的 @ 修饰符回退查找在 fork 的排除已失败渠道之前 |
 | `model/channel_constraint.go` | count_tokens 与 input_tokens 谓词 |
-| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支；§34 `ProcessChannelError` 的报错行带上游请求 ID |
+| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支；§34 / §35 `ProcessChannelError` 的报错行带上游请求 ID、渠道名与分组 |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
-| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列 |
+| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary` |
 | `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数 |
 | `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列 |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
@@ -857,7 +859,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `controller/model.go` | §32 把 `ListModels` 计算模型名的部分拆成 `listableModels`，`/v1/models` 与 Key 可调用模型接口共用；上游改 `ListModels` 的过滤规则时要改在 `listableModels` 里 |
 | `web/src/features/channels/components/channels-columns.tsx` / `channel-card.tsx` | §32 模型列改为数量 + `ModelListPopover`，卡片底部分组旁显示同一单元格 |
 | `web/src/features/keys/components/api-keys-cells.tsx` | §32 `ModelLimitsCell` 改为打开时加载可调用模型的 `ModelListPopover`（IP 限制单元格不变） |
-| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误；§31 错误已写进流时不再追加 JSON 错误；§34 每次尝试先清空上游请求 ID，最终的 relay error 行带上游请求 ID |
+| `controller/relay.go` | `AddFailedChannel`、count_tokens 分派、耗尽错误、强制重试换不到渠道时返回上一次错误；§31 错误已写进流时不再追加 JSON 错误；§34 每次尝试先清空上游请求 ID；§34 / §35 最终的 relay error 行带渠道名、分组与上游请求 ID |
 | `relay/compatible_handler.go` / `relay/claude_handler.go` / `relay/gemini_handler.go` / `relay/responses_handler.go` | §31 在 `DoResponse` 前后接入 `service.GuardEmptyOutput` / `Finish` |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
 | `relay/helper/price.go` | `HandleGroupRatio` 折扣乘法 |
@@ -1786,10 +1788,10 @@ Key 不属于该用户时返回失败。两条规则都在 `middleware/access_to
 ### 行为
 
 - 服务器日志文件（`--log-dir` 下的 `oneapi-*.log`）里，转发出错时的两种报错行会带上上游请求 ID：
-  - 每次尝试失败一行：`channel error (channel #3, status code: 429, upstream request id: req_xxx): …`
-  - 最终失败一行：`relay error (upstream request id: req_xxx): …`，是最后一次尝试的 ID。
-  - 上游没有返回请求 ID 时（如连接失败、没有可用渠道），两行保持原来的格式。
-  - `DEFAULT_LANGUAGE=zh-CN` 时是中文：`渠道请求出错 (渠道 #3，状态码 429，上游请求 ID req_xxx): …`、`转发请求出错 (上游请求 ID req_xxx): …`。
+  - 每次尝试失败一行：`channel error (channel #3 "渠道名", group "default", status code: 429, upstream request id: req_xxx): …`
+  - 最终失败一行：`relay error (channel #3 "渠道名", group "default", upstream request id: req_xxx): …`，是最后一次尝试的 ID。
+  - 上游没有返回请求 ID 时（如连接失败），两行不带 `upstream request id`；没有可用渠道时最终一行是原来的 `relay error: …`。渠道名与分组见 §35。
+  - `DEFAULT_LANGUAGE=zh-CN` 时是中文：`渠道请求出错 (渠道 #3 "渠道名"，分组 "default"，状态码 429，上游请求 ID req_xxx): …`、`转发请求出错 (渠道 #3 "渠道名"，分组 "default"，上游请求 ID req_xxx): …`。
 - 日志文件里的 ID 和使用日志「上游请求 ID」字段（`logs.upstream_request_id`）用的是同一个值，可以拿日志文件里的 ID 去日志页搜索，反之亦然。
 - 上游请求 ID 从上游响应头里取，按下面的顺序取第一个有值的：
   1. `X-Oneapi-Request-Id`：上游是 new-api / one-api，以前只认这一个；
@@ -1824,3 +1826,59 @@ Key 不属于该用户时返回失败。两条规则都在 `middleware/access_to
   - 没有可用渠道：报错行里没有上游请求 ID。
   - `DEFAULT_LANGUAGE=zh-CN`：报错行为中文格式。
 - 数据库：没有表结构变化，只是 `upstream_request_id` 有值的日志变多了；写入长度已限制在列宽以内。
+
+---
+
+## 35. 服务器日志的请求汇总行与报错行中的渠道
+
+### 行为
+
+- 服务器日志文件里，每个结算的请求（写消费日志的请求）多一行 INFO，字段为 `key=value`，字符串带双引号：
+
+  ```
+  [INFO] 2026/10/19 - 03:55:39 | <请求 ID> | request completed: user_id=1 model="mock-slow" channel_id=3 channel_name="e2e-mock" group="default" stream=true input_tokens=12 output_tokens=5 cache_read_tokens=4 cache_write_tokens=0 quota=17 ttft_ms=2214 duration_ms=2281 tps=2.19 upstream_request_id=""
+  ```
+
+  | 字段 | 含义 |
+  |---|---|
+  | `model` | 消费日志里的模型名 |
+  | `channel_id` / `channel_name` | 最终成功的渠道 |
+  | `group` | 本次请求使用的分组（与使用日志的「分组」相同） |
+  | `stream` | 是否流式（与 §33 的口径相同） |
+  | `input_tokens` / `output_tokens` | 输入 / 输出 token，与使用日志相同 |
+  | `cache_read_tokens` | 缓存读取（`other.cache_tokens`） |
+  | `cache_write_tokens` | 缓存写入：取消费日志的 `other.cache_write_tokens`（Claude 5 分钟 / 1 小时写入之和，或 OpenAI 的 `cache_write_tokens` / `cached_creation_tokens`），没有时取 `other.cache_creation_tokens`；上游没报告时为 0 |
+  | `quota` | 本次请求实际扣除的额度，与使用日志的额度相同 |
+  | `ttft_ms` | 首字时间（毫秒）；首字时间未知（非流式请求）时为 0，与使用日志的 `first_response_ms` 相同 |
+  | `duration_ms` | 从收到请求到结算的总耗时（毫秒） |
+  | `tps` | 输出 token ÷ 总耗时（秒），保留两位小数；与日志页的算法相同，但用的是毫秒精度的耗时。只看生成速度可用 `output_tokens / (duration_ms - ttft_ms)` 自行计算 |
+  | `upstream_request_id` | §34 的上游请求 ID，没有时为空字符串 |
+
+- 这一行不受「记录消费日志」开关影响；关掉开关时数据库不写消费日志，但这一行照常输出。原有的 `record consume log` 行不变（只在开关打开时输出）。
+- 失败的请求没有这一行；它们的 `channel error` 与最终的 `relay error` 行带上渠道名与分组（格式见 §34），没有可用渠道时最终一行保持 `relay error: …`。
+- 这一行的字段名是固定的英文，`DEFAULT_LANGUAGE=zh-CN` 时也不翻译，方便日志平台解析。例如 CloudWatch Logs Insights：`filter @message like /request completed/ | parse @message /ttft_ms=(?<ttft>\d+) duration_ms=(?<duration>\d+) tps=(?<tps>[\d.]+)/ | stats avg(ttft), pct(duration, 95) by bin(5m)`。
+
+### 实现
+
+- `model/log.go` 的 `RecordConsumeLog` 开头调用 `logRequestSummary`：
+  - 渠道名取上下文的 `ContextKeyChannelName`，总耗时取 `ContextKeyRequestStartTime`（取不到时用 `use_time` 秒数）；
+  - `frt` 与缓存数从 `other` 里读（`logOtherNumber` 兼容整数与浮点数）。缓存写入在结算时只要大于 0 就会写进 `other`，不分 Claude 还是 OpenAI 口径（`service/text_quota.go`）。
+- 报错行的格式改动在 `service/relay_error.go` 与 `controller/relay.go`，中文文本在 `common/log_text.zh-CN.json`（替换 §34 加的两条）。
+- 只读取消费日志已经算好的数值写进日志行，不改动任何计费逻辑。
+
+### 已知限制
+
+- 异步任务的结算日志（`RecordTaskBillingLog`）没有这一行。
+- 每个请求多一行日志，日志文件的增长会比以前快。
+
+### 测试
+
+- `model/log_format_test.go` `TestConsumeLogWritesARequestSummaryLine`：
+  - Claude 流式请求的各字段（含缓存读写、额度、TTFT、渠道名、分组、上游请求 ID）；5 分钟 / 1 小时拆分的缓存写入取归一化总数；OpenAI 口径的缓存写入；
+  - 非流式请求在「记录消费日志」关闭时照样输出，首字时间未知为 0；
+  - `tps` 等于输出 ÷ `duration_ms` 秒数。
+- `controller/relay_error_log_test.go`：报错行带渠道名、分组与上游请求 ID。
+- 本地端到端（SQLite，模拟上游的正常回复在 OpenAI 格式的 `prompt_tokens_details` 里带 4 个缓存命中、3 个缓存写入 token）：
+  - 慢流式、非流式、重试后成功三种请求各有一行汇总，模型、渠道 ID、渠道名、分组、流式、输入、输出、缓存读写、额度、TTFT 都与数据库里同一请求的消费日志一致，`tps` 与总耗时吻合；OpenAI 格式报告的 3 个缓存写入在消费日志与汇总行里都是 3，并计入了扣费；
+  - 重试失败那次的报错行带失败渠道的名字与分组；
+  - 429 失败的请求没有汇总行，最终 relay error 行带渠道名、分组与上游请求 ID；没有可用渠道时保持短格式。

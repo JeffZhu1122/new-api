@@ -1,10 +1,17 @@
 package model
 
 import (
+	"bytes"
+	"net/http/httptest"
+	"regexp"
+	"strconv"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 
+	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
@@ -241,4 +248,88 @@ func TestLogFormattingPreservesLargeIntegerLexemes(t *testing.T) {
 		FormatAdminLogs(adminLogs)
 		assert.Equal(t, unprivileged, adminLogs[0].Other)
 	})
+}
+
+// captureServerInfoLog collects the INFO lines the server log writes.
+func captureServerInfoLog(t *testing.T) *bytes.Buffer {
+	t.Helper()
+	var buffer bytes.Buffer
+	common.LogWriterMu.Lock()
+	previous := gin.DefaultWriter
+	gin.DefaultWriter = &buffer
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultWriter = previous
+		common.LogWriterMu.Unlock()
+	})
+	return &buffer
+}
+
+func TestConsumeLogWritesARequestSummaryLine(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	for _, tc := range []struct {
+		name          string
+		consumeLogged bool
+		params        RecordConsumeLogParams
+		other         map[string]any
+		want          string
+	}{
+		{
+			name:          "a Claude stream with cache reads and writes",
+			consumeLogged: true,
+			params:        RecordConsumeLogParams{ChannelId: 3, ModelName: "claude-sonnet-4", PromptTokens: 1000, CompletionTokens: 200, Quota: 1500, IsStream: true, Group: "vip"},
+			other:         map[string]any{"frt": float64(350), "cache_tokens": 100, "cache_creation_tokens": 40},
+			want:          `request completed: user_id=1 model="claude-sonnet-4" channel_id=3 channel_name="Claude main" group="vip" stream=true input_tokens=1000 output_tokens=200 cache_read_tokens=100 cache_write_tokens=40 quota=1500 ttft_ms=350 `,
+		},
+		{
+			// The settlement logs cache_write_tokens as the sum of the 5m and 1h writes.
+			name:          "cache writes split into 5m and 1h use the normalized total",
+			consumeLogged: true,
+			params:        RecordConsumeLogParams{ChannelId: 3, ModelName: "claude-opus-4", PromptTokens: 10, CompletionTokens: 2, Quota: 90, IsStream: true, Group: "vip"},
+			other:         map[string]any{"frt": float64(80), "cache_tokens": 0, "cache_creation_tokens": 40, "cache_creation_tokens_5m": 30, "cache_creation_tokens_1h": 30, "cache_write_tokens": 60},
+			want:          `cache_read_tokens=0 cache_write_tokens=60 quota=90 ttft_ms=80 `,
+		},
+		{
+			name:          "an OpenAI cache write reported as cache_write_tokens",
+			consumeLogged: true,
+			params:        RecordConsumeLogParams{ChannelId: 3, ModelName: "gpt-5", PromptTokens: 2000, CompletionTokens: 20, Quota: 300, IsStream: true, Group: "default"},
+			other:         map[string]any{"frt": float64(500), "cache_tokens": 1024, "cache_creation_tokens": 512, "cache_write_tokens": 512},
+			want:          `model="gpt-5" channel_id=3 channel_name="Claude main" group="default" stream=true input_tokens=2000 output_tokens=20 cache_read_tokens=1024 cache_write_tokens=512 quota=300 ttft_ms=500 `,
+		},
+		{
+			name:          "a non-stream request without a first token time, consume logs off",
+			consumeLogged: false,
+			params:        RecordConsumeLogParams{ChannelId: 3, ModelName: "gpt-4o", PromptTokens: 12, CompletionTokens: 5, Quota: 17, Group: "default"},
+			other:         map[string]any{"frt": float64(-1760000000000), "cache_tokens": 0},
+			want:          `request completed: user_id=1 model="gpt-4o" channel_id=3 channel_name="Claude main" group="default" stream=false input_tokens=12 output_tokens=5 cache_read_tokens=0 cache_write_tokens=0 quota=17 ttft_ms=0 `,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			previous := common.LogConsumeEnabled
+			common.LogConsumeEnabled = tc.consumeLogged
+			t.Cleanup(func() { common.LogConsumeEnabled = previous })
+			serverLog := captureServerInfoLog(t)
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			common.SetContextKey(c, constant.ContextKeyChannelName, "Claude main")
+			common.SetContextKey(c, constant.ContextKeyRequestStartTime, time.Now().Add(-2*time.Second))
+			c.Set(common.UpstreamRequestIdKey, "req_up_9")
+			other := NewLogOther()
+			other.MergePublic(tc.other)
+			tc.params.Other = other
+
+			RecordConsumeLog(c, 1, tc.params)
+
+			assert.Contains(t, serverLog.String(), tc.want)
+			assert.Contains(t, serverLog.String(), `upstream_request_id="req_up_9"`)
+			// duration_ms covers the whole request and tps is output tokens per second of it.
+			match := regexp.MustCompile(`duration_ms=(\d+) tps=([\d.]+) `).FindStringSubmatch(serverLog.String())
+			require.Len(t, match, 3, serverLog.String())
+			durationMs, _ := strconv.Atoi(match[1])
+			tps, _ := strconv.ParseFloat(match[2], 64)
+			assert.GreaterOrEqual(t, durationMs, 2000)
+			assert.InDelta(t, float64(tc.params.CompletionTokens)/(float64(durationMs)/1000), tps, 0.01)
+		})
+	}
 }

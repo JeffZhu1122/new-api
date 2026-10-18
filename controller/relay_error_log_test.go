@@ -88,7 +88,7 @@ func TestProcessChannelErrorUsesSnapshotWithoutLeakingChannelMetadata(t *testing
 	assert.Equal(t, channelSnapshot.ChannelId, stored.ChannelId)
 	// The server log line names the upstream request id the error log keeps.
 	assert.Equal(t, "req_upstream_1", stored.UpstreamRequestId)
-	assert.Contains(t, serverLog.String(), "channel error (channel #101, status code: 502, upstream request id: req_upstream_1): ")
+	assert.Contains(t, serverLog.String(), `channel error (channel #101 "snapshot-channel", group "default", status code: 502, upstream request id: req_upstream_1): `)
 	storedOther, err := common.StrToMap(stored.Other)
 	require.NoError(t, err)
 	assert.Equal(t, float64(http.StatusBadGateway), storedOther["status_code"])

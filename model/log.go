@@ -4,8 +4,10 @@ import (
 	"context"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/types"
 
@@ -340,6 +342,7 @@ type RecordConsumeLogParams struct {
 }
 
 func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	logRequestSummary(c, userId, params)
 	if !common.LogConsumeEnabled {
 		return
 	}
@@ -417,6 +420,51 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			NodeName:            common.NodeName,
 		})
 	}
+}
+
+// logRequestSummary writes one key=value line per settled request to the
+// server log, whether or not consume logs are stored, so log shippers can
+// chart and alert on per-request metrics. ttft_ms is 0 when the first token
+// time is unknown (non-stream requests); tps is output tokens per second of
+// the whole request.
+func logRequestSummary(c *gin.Context, userId int, params RecordConsumeLogParams) {
+	other := params.Other.Snapshot()
+	ttftMs := 0
+	if frt := logOtherNumber(other, "frt"); frt > 0 {
+		ttftMs = int(frt)
+	}
+	durationMs := int64(params.UseTimeSeconds) * 1000
+	if start := common.GetContextKeyTime(c, constant.ContextKeyRequestStartTime); !start.IsZero() {
+		durationMs = time.Since(start).Milliseconds()
+	}
+	// cache_write_tokens is the normalized total of every cache write (Claude
+	// 5m / 1h splits summed, OpenAI cache_write_tokens included); older paths
+	// only set cache_creation_tokens.
+	cacheWriteTokens := logOtherNumber(other, "cache_write_tokens")
+	if cacheWriteTokens == 0 {
+		cacheWriteTokens = logOtherNumber(other, "cache_creation_tokens")
+	}
+	tps := 0.0
+	if durationMs > 0 && params.CompletionTokens > 0 {
+		tps = float64(params.CompletionTokens) / (float64(durationMs) / 1000)
+	}
+	logger.LogInfo(c, common.LogText("request completed: user_id=%d model=%q channel_id=%d channel_name=%q group=%q stream=%t input_tokens=%d output_tokens=%d cache_read_tokens=%d cache_write_tokens=%d quota=%d ttft_ms=%d duration_ms=%d tps=%.2f upstream_request_id=%q",
+		userId, params.ModelName, params.ChannelId, common.GetContextKeyString(c, constant.ContextKeyChannelName), params.Group, params.IsStream,
+		params.PromptTokens, params.CompletionTokens, int(logOtherNumber(other, "cache_tokens")), int(cacheWriteTokens),
+		params.Quota, ttftMs, durationMs, tps, c.GetString(common.UpstreamRequestIdKey)))
+}
+
+// logOtherNumber reads a numeric log field that was set as an int or a float.
+func logOtherNumber(other map[string]any, key string) float64 {
+	switch value := other[key].(type) {
+	case int:
+		return float64(value)
+	case int64:
+		return float64(value)
+	case float64:
+		return value
+	}
+	return 0
 }
 
 type RecordTaskBillingLogParams struct {
