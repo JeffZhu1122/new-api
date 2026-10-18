@@ -92,10 +92,18 @@ func Relay(c *gin.Context, relayFormat types.RelayFormat) {
 	defer func() {
 		if newAPIError != nil {
 			service.RecordRequestPolicyTermination(c, newAPIError)
-			if upstreamRequestId := c.GetString(common.UpstreamRequestIdKey); upstreamRequestId != "" {
-				logger.LogError(c, common.LogText("relay error (upstream request id: %s): %s", upstreamRequestId, common.LocalLogPreview(newAPIError.Error())))
-			} else {
+			// The channel and group of the last attempt; none when no channel was found.
+			channelId := common.GetContextKeyInt(c, constant.ContextKeyChannelId)
+			channelName := common.GetContextKeyString(c, constant.ContextKeyChannelName)
+			group := common.GetContextKeyString(c, constant.ContextKeyUsingGroup)
+			upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
+			switch {
+			case channelId == 0:
 				logger.LogError(c, common.LogText("relay error: %s", common.LocalLogPreview(newAPIError.Error())))
+			case upstreamRequestId != "":
+				logger.LogError(c, common.LogText("relay error (channel #%d %q, group %q, upstream request id: %s): %s", channelId, channelName, group, upstreamRequestId, common.LocalLogPreview(newAPIError.Error())))
+			default:
+				logger.LogError(c, common.LogText("relay error (channel #%d %q, group %q): %s", channelId, channelName, group, common.LocalLogPreview(newAPIError.Error())))
 			}
 			newAPIError.SetMessage(common.MessageWithRequestId(newAPIError.Error(), requestId))
 			if common.GetContextKeyBool(c, constant.ContextKeyRelayErrorStreamed) {
