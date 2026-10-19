@@ -64,6 +64,14 @@ import { Combobox } from '@/components/ui/combobox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import {
+  Select,
+  SelectContent,
+  SelectGroup,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select'
+import {
   Sheet,
   SheetContent,
   SheetDescription,
@@ -324,6 +332,7 @@ function ChannelTestDialogContent({
   > | null>(null)
   const [endpointType, setEndpointType] = useState('auto')
   const [isStreamTest, setIsStreamTest] = useState(false)
+  const [maxTokensParam, setMaxTokensParam] = useState('auto')
   const [searchTerm, setSearchTerm] = useState('')
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({})
   const [rowSelection, setRowSelection] = useState<RowSelectionState>({})
@@ -351,6 +360,16 @@ function ChannelTestDialogContent({
         value: option.value,
         label: t(option.label),
       })),
+    [t]
+  )
+  // The length field a Chat Completions test sends. Auto leaves the choice to
+  // the backend, which uses max_completion_tokens for the models that need it.
+  const maxTokensParamItems = useMemo(
+    () => [
+      { value: 'auto', label: t('Auto (by model name)') },
+      { value: 'max_tokens', label: 'max_tokens' },
+      { value: 'max_completion_tokens', label: 'max_completion_tokens' },
+    ],
     [t]
   )
 
@@ -391,6 +410,7 @@ function ChannelTestDialogContent({
     batchStopRequestedRef.current = true
     setEndpointType('auto')
     setIsStreamTest(false)
+    setMaxTokensParam('auto')
     setSearchTerm('')
     setTestResults({})
     setRowSelection({})
@@ -407,6 +427,9 @@ function ChannelTestDialogContent({
 
   const streamDisabled = STREAM_INCOMPATIBLE_ENDPOINTS.has(endpointType)
   const effectiveStreamTest = !streamDisabled && isStreamTest
+  const showMaxTokensParam = endpointType === 'openai'
+  const effectiveMaxTokensParam =
+    showMaxTokensParam && maxTokensParam !== 'auto' ? maxTokensParam : undefined
 
   const handleEndpointTypeChange = useCallback((value: string | null) => {
     if (value === null) return
@@ -552,6 +575,7 @@ function ChannelTestDialogContent({
             testModel: model,
             endpointType: endpointType === 'auto' ? undefined : endpointType,
             stream: effectiveStreamTest || undefined,
+            maxTokensParam: effectiveMaxTokensParam,
             silent,
           },
           (success, responseTime, error, errorCode) => {
@@ -590,6 +614,7 @@ function ChannelTestDialogContent({
       currentRow,
       endpointType,
       effectiveStreamTest,
+      effectiveMaxTokensParam,
       markModelTesting,
       refreshChannelLists,
       t,
@@ -1013,6 +1038,38 @@ function ChannelTestDialogContent({
                 {t('Enable streaming mode for the test request.')}
               </p>
             </div>
+            {showMaxTokensParam && (
+              <div className='grid gap-2'>
+                <Label htmlFor='max-tokens-param'>
+                  {t('Max tokens field')}
+                </Label>
+                <Select
+                  items={maxTokensParamItems}
+                  value={maxTokensParam}
+                  onValueChange={(value) =>
+                    value !== null && setMaxTokensParam(value)
+                  }
+                >
+                  <SelectTrigger id='max-tokens-param' className='w-full'>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent alignItemWithTrigger={false}>
+                    <SelectGroup>
+                      {maxTokensParamItems.map((item) => (
+                        <SelectItem key={item.value} value={item.value}>
+                          {item.label}
+                        </SelectItem>
+                      ))}
+                    </SelectGroup>
+                  </SelectContent>
+                </Select>
+                <p className='text-muted-foreground text-xs'>
+                  {t(
+                    'The field that carries the output length limit. Some models only accept max_completion_tokens.'
+                  )}
+                </p>
+              </div>
+            )}
           </div>
 
           <div className='space-y-3 max-sm:has-[div[role="toolbar"]]:pb-16'>

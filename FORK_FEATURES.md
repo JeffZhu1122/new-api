@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 50 个（含本文档相关提交） |
-| 变更规模 | 332 个文件，+28607 / −2210 行（不含本文档） |
+| fork 专有提交数 | 51 个（含本文档相关提交） |
+| 变更规模 | 336 个文件，+28948 / −2215 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -50,6 +50,7 @@
 33. [使用日志：按流式 / 非流式筛选](#33-使用日志按流式--非流式筛选)
 34. [报错时服务器日志输出上游请求 ID](#34-报错时服务器日志输出上游请求-id)
 35. [服务器日志的请求汇总行与报错行中的渠道](#35-服务器日志的请求汇总行与报错行中的渠道)
+36. [渠道测试：选择 max_tokens 或 max_completion_tokens](#36-渠道测试选择-max_tokens-或-max_completion_tokens)
 
 ---
 
@@ -87,6 +88,7 @@
 | 33 | 使用日志：按流式 / 非流式筛选 | 与本文档同一提交 | 默认「全部」，即不过滤 | 无（用已有的 `logs.is_stream`） | 使用日志列表、统计与导出接口、日志页筛选框 |
 | 34 | 报错时服务器日志输出上游请求 ID | 与本文档同一提交 | 始终生效 | 无（用已有的 `logs.upstream_request_id`） | 上游请求 ID 的识别（更多响应头）、每次尝试的重置、服务器日志的报错行 |
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
+| 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -904,6 +906,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
 | `web/src/features/dashboard/components/{models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts},flow/flow-charts,users/user-charts}.tsx` | 数据看板各标签页外框改为 `brand-surface rounded-2xl` |
+| `controller/channel-test.go` | §36 `testChannel` 末尾加 `maxTokensParam` 参数（`TestChannel` 解析 `max_tokens_param`，定时测试传空串）；`applyTestMaxTokensParam` 在 `ConvertOpenAIRequest` 之后、序列化之前调用 |
+| `web/src/features/channels/components/dialogs/channel-test-dialog.tsx` / `lib/channel-actions.ts` / `api.ts` | §36 端点为 Chat Completions 时多一个「最大 Token 参数」选择框；`handleTestChannel` 与 `testChannel` 多一个参数 |
 | `web/src/features/errors/{not-found-error,unauthorized-error,forbidden,maintenance-error,general-error}.tsx` | 错误页背景层；状态码改为渐变字，外包 `relative isolate` 的 div 并加 `BrandGlow` |
 
 ### 19.3 上游签名变化的传染点
@@ -1882,3 +1886,64 @@ Key 不属于该用户时返回失败。两条规则都在 `middleware/access_to
   - 慢流式、非流式、重试后成功三种请求各有一行汇总，模型、渠道 ID、渠道名、分组、流式、输入、输出、缓存读写、额度、TTFT 都与数据库里同一请求的消费日志一致，`tps` 与总耗时吻合；OpenAI 格式报告的 3 个缓存写入在消费日志与汇总行里都是 3，并计入了扣费；
   - 重试失败那次的报错行带失败渠道的名字与分组；
   - 429 失败的请求没有汇总行，最终 relay error 行带渠道名、分组与上游请求 ID；没有可用渠道时保持短格式。
+
+---
+
+## 36. 渠道测试：选择 max_tokens 或 max_completion_tokens
+
+### 动机
+
+部分模型测试时报：
+
+```
+bad response status code 400, message: Unsupported parameter: 'max_tokens' is not supported with this model. Use 'max_completion_tokens' instead.
+```
+
+渠道测试原来只按模型名决定长度字段：o 系列、gpt-5 等由 OpenAI 适配器改成 `max_completion_tokens`，其余模型都发 `max_tokens`。改过名或不在名单里的同类模型因此测不通；反过来，只认 `max_tokens` 的旧上游遇到名单里的模型也测不通。
+
+### 行为
+
+- 测试弹窗的「端点类型」选 `OpenAI (/v1/chat/completions)` 时，多一个「最大 Token 参数」选择框：
+
+  | 选项 | 发给上游的长度字段 |
+  |---|---|
+  | 自动（按模型名），默认 | 与原来相同，由模型名决定 |
+  | `max_tokens` | 只发 `max_tokens: 16`，即使模型名本来会改成 `max_completion_tokens` |
+  | `max_completion_tokens` | 只发 `max_completion_tokens: 16` |
+
+- 其他端点（包括 Responses 与「自动检测」）不显示这个选择框，也不发送这个参数；Responses 的测试请求本来就不带长度字段。切到其他端点后，之前的选择不再生效；关闭弹窗后恢复「自动」。
+- 只影响手动的渠道测试。正常转发不受影响；定时测试仍按模型名选择。
+- 接口：`GET /api/channel/test/:id` 新增可选参数 `max_tokens_param`，取值 `auto` / `max_tokens` / `max_completion_tokens`，只在 `endpoint_type=openai` 时生效；其他取值返回 `Invalid max tokens parameter`。
+
+### 实现
+
+- `controller/channel-test.go` 的 `applyTestMaxTokensParam`：
+  - 在 `adaptor.ConvertOpenAIRequest` 之后、序列化之前执行，所以强制的选择优先于按模型名的改名；
+  - 把长度值挪到选定的字段，并清空另一个字段；
+  - 参数覆盖（param override）仍在它之后执行。
+- 前端：`channel-test-dialog.tsx` 用 `Select` 渲染选择框；`handleTestChannel` / `testChannel` 透传 `max_tokens_param`。
+- 计费：测试请求的长度值仍是固定的 16，只换字段名，不引入新的用户输入数值。
+
+### 测试
+
+- `controller/channel_test_request_test.go` `TestChannelTestForcesTheChosenMaxTokensParam`：
+  - 自动时，GPT-5 名字发 `max_completion_tokens`，未知名字发 `max_tokens`；
+  - 未知名字可以强制 `max_completion_tokens`；
+  - 强制 `max_tokens` 优先于 GPT-5 与 o3-mini 的改名；
+  - 非 Chat 端点不受影响。
+- `web/.../__tests__/channel-test-max-tokens.test.tsx`：
+  - 选择框只在 Chat Completions 端点出现；
+  - 选择后，测试请求带 `max_tokens_param`；自动时不带；
+  - 切到 Responses 后，之前的选择不再发送。
+- 本地端到端（SQLite）。模拟上游有三个模型，并记录收到的请求体：`mock-strict` / `gpt-5-strict` 对 `max_tokens` 返回与上面相同的 400，`mock-legacy` 对 `max_completion_tokens` 返回 400。
+  - 接口 13 项：
+    - `mock-strict` 自动时发 `max_tokens`，返回上游的 Unsupported parameter；选 `max_completion_tokens` 后上游只收到 `max_completion_tokens: 16`，测试通过；
+    - `gpt-5-strict` 自动时通过；强制 `max_tokens` 时失败；
+    - `mock-legacy` 选 `max_tokens` 通过，选 `max_completion_tokens` 失败；
+    - Responses 端点与自动检测端点忽略这个参数；
+    - 未知取值被拒绝。
+  - 浏览器 12 项：
+    - 选择框只在 Chat Completions 端点出现，默认「自动」；
+    - 自动时 `mock-strict` 测试失败并显示上游错误；选 `max_completion_tokens` 后同一模型测试成功，请求带上该参数；
+    - 切到 Responses 后选择框消失，请求不带参数；
+    - 中文界面的标签与选项正确。
