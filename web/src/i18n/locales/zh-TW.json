@@ -7570,6 +7570,10 @@
     "Stream: All": "流式：全部",
     "Stream requests": "流式請求",
     "Non-stream requests": "非流式請求",
-    "Stream mode must be true or false": "流式模式只能是 true 或 false"
+    "Stream mode must be true or false": "流式模式只能是 true 或 false",
+    "Auto (by model name)": "自動（依模型名稱）",
+    "Max tokens field": "最大 Token 參數",
+    "The field that carries the output length limit. Some models only accept max_completion_tokens.": "用於傳遞輸出長度上限的欄位。部分模型只接受 max_completion_tokens。",
+    "Invalid max tokens parameter": "無效的最大 Token 參數"
   }
 }

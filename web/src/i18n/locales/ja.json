@@ -7570,6 +7570,10 @@
     "Stream: All": "ストリーミング：すべて",
     "Stream requests": "ストリーミングリクエスト",
     "Non-stream requests": "非ストリーミングリクエスト",
-    "Stream mode must be true or false": "ストリーミングモードは true または false で指定してください"
+    "Stream mode must be true or false": "ストリーミングモードは true または false で指定してください",
+    "Auto (by model name)": "自動（モデル名で判定）",
+    "Max tokens field": "最大トークン数のフィールド",
+    "The field that carries the output length limit. Some models only accept max_completion_tokens.": "出力長の上限を渡すフィールドです。一部のモデルは max_completion_tokens のみ受け付けます。",
+    "Invalid max tokens parameter": "最大トークン数のパラメーターが無効です"
   }
 }

@@ -7570,6 +7570,10 @@
     "Stream: All": "Stream: All",
     "Stream requests": "Stream requests",
     "Non-stream requests": "Non-stream requests",
-    "Stream mode must be true or false": "Stream mode must be true or false"
+    "Stream mode must be true or false": "Stream mode must be true or false",
+    "Auto (by model name)": "Auto (by model name)",
+    "Max tokens field": "Max tokens field",
+    "The field that carries the output length limit. Some models only accept max_completion_tokens.": "The field that carries the output length limit. Some models only accept max_completion_tokens.",
+    "Invalid max tokens parameter": "Invalid max tokens parameter"
   }
 }

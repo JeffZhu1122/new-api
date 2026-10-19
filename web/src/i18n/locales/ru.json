@@ -7570,6 +7570,10 @@
     "Stream: All": "Поток: все",
     "Stream requests": "Потоковые запросы",
     "Non-stream requests": "Непотоковые запросы",
-    "Stream mode must be true or false": "Потоковый режим должен быть true или false"
+    "Stream mode must be true or false": "Потоковый режим должен быть true или false",
+    "Auto (by model name)": "Авто (по имени модели)",
+    "Max tokens field": "Поле максимума токенов",
+    "The field that carries the output length limit. Some models only accept max_completion_tokens.": "Поле, в котором передаётся предел длины ответа. Некоторые модели принимают только max_completion_tokens.",
+    "Invalid max tokens parameter": "Недопустимый параметр максимума токенов"
   }
 }

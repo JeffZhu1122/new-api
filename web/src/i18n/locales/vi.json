@@ -7570,6 +7570,10 @@
     "Stream: All": "Phát trực tuyến: tất cả",
     "Stream requests": "Yêu cầu phát trực tuyến",
     "Non-stream requests": "Yêu cầu không phát trực tuyến",
-    "Stream mode must be true or false": "Chế độ phát trực tuyến phải là true hoặc false"
+    "Stream mode must be true or false": "Chế độ phát trực tuyến phải là true hoặc false",
+    "Auto (by model name)": "Tự động (theo tên mô hình)",
+    "Max tokens field": "Trường số token tối đa",
+    "The field that carries the output length limit. Some models only accept max_completion_tokens.": "Trường mang giới hạn độ dài đầu ra. Một số mô hình chỉ chấp nhận max_completion_tokens.",
+    "Invalid max tokens parameter": "Tham số số token tối đa không hợp lệ"
   }
 }

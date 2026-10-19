@@ -110,6 +110,52 @@ func TestChannelTestOpenAIChatCompatibility(t *testing.T) {
 	}
 }
 
+func TestChannelTestForcesTheChosenMaxTokensParam(t *testing.T) {
+	chat := string(constant.EndpointTypeOpenAI)
+	for _, tt := range []struct {
+		name      string
+		model     string
+		endpoint  string
+		param     string
+		wantLimit string
+	}{
+		{name: "automatic keeps the rename for GPT-5", model: "gpt-5.6-luna", endpoint: chat, param: "", wantLimit: "max_completion_tokens"},
+		{name: "automatic keeps max_tokens for an unknown name", model: "my-reasoning-deploy", endpoint: chat, param: "", wantLimit: "max_tokens"},
+		{name: "forced max_completion_tokens for an unknown name", model: "my-reasoning-deploy", endpoint: chat, param: testMaxTokensParamMaxCompletionTokens, wantLimit: "max_completion_tokens"},
+		{name: "forced max_tokens wins over the GPT-5 rename", model: "gpt-5.6-luna", endpoint: chat, param: testMaxTokensParamMaxTokens, wantLimit: "max_tokens"},
+		{name: "forced max_tokens for an o series model", model: "o3-mini", endpoint: chat, param: testMaxTokensParamMaxTokens, wantLimit: "max_tokens"},
+		{name: "only the Chat Completions endpoint is forced", model: "gpt-5.6-luna", endpoint: "", param: testMaxTokensParamMaxTokens, wantLimit: "max_completion_tokens"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			request, ok := buildTestRequest(tt.model, tt.endpoint, &model.Channel{}, false).(*dto.GeneralOpenAIRequest)
+			require.True(t, ok)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: request.Model,
+				Request:         request,
+				RelayFormat:     types.RelayFormatOpenAI,
+				ChannelMeta:     &relaycommon.ChannelMeta{ChannelType: constant.ChannelTypeOpenAI, UpstreamModelName: request.Model},
+			}
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			converted, err := (&openai.Adaptor{}).ConvertOpenAIRequest(c, info, request)
+			require.NoError(t, err)
+
+			applyTestMaxTokensParam(converted, tt.endpoint, tt.param)
+
+			encoded, err := common.Marshal(converted)
+			require.NoError(t, err)
+			var body map[string]any
+			require.NoError(t, common.Unmarshal(encoded, &body))
+			assert.Equal(t, float64(16), body[tt.wantLimit], string(encoded))
+			for _, other := range []string{"max_tokens", "max_completion_tokens"} {
+				if other != tt.wantLimit {
+					assert.NotContains(t, body, other, string(encoded))
+				}
+			}
+		})
+	}
+}
+
 func TestOpenAIChatSamplingCompatibility(t *testing.T) {
 	const sampling = `{"temperature":0.2,"top_p":0.8,"logprobs":true,"top_logprobs":5}`
 	for _, tt := range []struct {
