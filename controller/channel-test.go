@@ -99,7 +99,35 @@ func resolveChannelTestUserID(c *gin.Context) (int, error) {
 	return rootUser.Id, nil
 }
 
-func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool) testResult {
+// Length fields a Chat Completions channel test can force; "" keeps the
+// automatic choice by model name.
+const (
+	testMaxTokensParamMaxTokens           = "max_tokens"
+	testMaxTokensParamMaxCompletionTokens = "max_completion_tokens"
+)
+
+// applyTestMaxTokensParam forces the length field of a Chat Completions channel
+// test. It runs after the adaptor, so it wins over the rename by model name and
+// the tester sees how the upstream answers that exact field. Other endpoints
+// and upstream request shapes are left alone.
+func applyTestMaxTokensParam(convertedRequest any, endpointType string, maxTokensParam string) {
+	openAIRequest, ok := convertedRequest.(*dto.GeneralOpenAIRequest)
+	if !ok || constant.EndpointType(endpointType) != constant.EndpointTypeOpenAI {
+		return
+	}
+	limit := openAIRequest.MaxCompletionTokens
+	if limit == nil {
+		limit = openAIRequest.MaxTokens
+	}
+	switch maxTokensParam {
+	case testMaxTokensParamMaxTokens:
+		openAIRequest.MaxTokens, openAIRequest.MaxCompletionTokens = limit, nil
+	case testMaxTokensParamMaxCompletionTokens:
+		openAIRequest.MaxTokens, openAIRequest.MaxCompletionTokens = nil, limit
+	}
+}
+
+func testChannel(ctx context.Context, channel *model.Channel, testUserID int, testModel string, endpointType string, isStream bool, maxTokensParam string) testResult {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -439,6 +467,7 @@ func testChannel(ctx context.Context, channel *model.Channel, testUserID int, te
 			newAPIError: types.NewError(err, types.ErrorCodeConvertRequestFailed),
 		}
 	}
+	applyTestMaxTokensParam(convertedRequest, endpointType, maxTokensParam)
 	jsonData, err := common.Marshal(convertedRequest)
 	if err != nil {
 		return testResult{
@@ -908,6 +937,14 @@ func TestChannel(c *gin.Context) {
 	testModel := c.Query("model")
 	endpointType := c.Query("endpoint_type")
 	isStream, _ := strconv.ParseBool(c.Query("stream"))
+	maxTokensParam := c.Query("max_tokens_param")
+	if maxTokensParam == "auto" {
+		maxTokensParam = ""
+	}
+	if maxTokensParam != "" && maxTokensParam != testMaxTokensParamMaxTokens && maxTokensParam != testMaxTokensParamMaxCompletionTokens {
+		common.ApiErrorT(c, "Invalid max tokens parameter")
+		return
+	}
 	testUserID, err := resolveChannelTestUserID(c)
 	if err != nil {
 		common.ApiError(c, err)
@@ -918,7 +955,7 @@ func TestChannel(c *gin.Context) {
 	if c.Request != nil {
 		requestCtx = c.Request.Context()
 	}
-	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream)
+	result := testChannel(requestCtx, channel, testUserID, testModel, endpointType, isStream, maxTokensParam)
 	if result.localErr != nil {
 		resp := gin.H{
 			"success": false,
@@ -965,7 +1002,7 @@ func testChannelForHealthCheck(ctx context.Context, channel *model.Channel, test
 	summary := channelTestSummary{}
 	isChannelEnabled := channel.Status == common.ChannelStatusEnabled
 	tik := time.Now()
-	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel))
+	result := testChannel(ctx, channel, testUserID, "", "", shouldUseStreamForAutomaticChannelTest(channel), "")
 	milliseconds := time.Since(tik).Milliseconds()
 	if ctx.Err() != nil {
 		return summary
