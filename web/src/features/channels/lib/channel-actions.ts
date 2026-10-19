@@ -277,6 +277,7 @@ export async function handleTestChannel(
     testModel?: string
     endpointType?: string
     stream?: boolean
+    maxTokensParam?: string
     silent?: boolean
   },
   onTestComplete?: (
@@ -287,13 +288,20 @@ export async function handleTestChannel(
   ) => void
 ): Promise<void> {
   const payload =
-    options && (options.testModel || options.endpointType || options.stream)
+    options &&
+    (options.testModel ||
+      options.endpointType ||
+      options.stream ||
+      options.maxTokensParam)
       ? {
           ...(options.testModel ? { model: options.testModel } : {}),
           ...(options.endpointType
             ? { endpoint_type: options.endpointType }
             : {}),
           ...(options.stream ? { stream: true } : {}),
+          ...(options.maxTokensParam
+            ? { max_tokens_param: options.maxTokensParam }
+            : {}),
         }
       : undefined
 
