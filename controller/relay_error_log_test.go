@@ -11,6 +11,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"github.com/QuantumNous/new-api/relaykit/types"
 
 	"github.com/gin-gonic/gin"
@@ -88,7 +89,8 @@ func TestProcessChannelErrorUsesSnapshotWithoutLeakingChannelMetadata(t *testing
 	assert.Equal(t, channelSnapshot.ChannelId, stored.ChannelId)
 	// The server log line names the upstream request id the error log keeps.
 	assert.Equal(t, "req_upstream_1", stored.UpstreamRequestId)
-	assert.Contains(t, serverLog.String(), `channel error (channel #101 "snapshot-channel", group "default", status code: 502, upstream request id: req_upstream_1): `)
+	// Without an attempt's channel metadata the line names the requested model.
+	assert.Contains(t, serverLog.String(), `channel error (channel #101 "snapshot-channel", group "default", status code: 502, upstream request id: req_upstream_1, model "gpt-test"): `)
 	storedOther, err := common.StrToMap(stored.Other)
 	require.NoError(t, err)
 	assert.Equal(t, float64(http.StatusBadGateway), storedOther["status_code"])
@@ -110,5 +112,66 @@ func TestProcessChannelErrorUsesSnapshotWithoutLeakingChannelMetadata(t *testing
 	assert.NotContains(t, userOther, "admin_info")
 	for _, key := range []string{"channel_id", "channel_name", "channel_type"} {
 		assert.NotContains(t, userOther, key)
+	}
+}
+
+// The channel error line names the model the channel was asked for (after its
+// model mapping), last inside the parentheses so readers of the older format
+// still parse it.
+func TestChannelErrorLineNamesTheModelTheChannelWasAskedFor(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	previousErrorLogEnabled := constant.ErrorLogEnabled
+	constant.ErrorLogEnabled = false
+	var serverLog bytes.Buffer
+	common.LogWriterMu.Lock()
+	previousErrorWriter := gin.DefaultErrorWriter
+	gin.DefaultErrorWriter = &serverLog
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		constant.ErrorLogEnabled = previousErrorLogEnabled
+		common.LogWriterMu.Lock()
+		gin.DefaultErrorWriter = previousErrorWriter
+		common.LogWriterMu.Unlock()
+	})
+
+	cases := []struct {
+		name              string
+		upstreamRequestId string
+		relayInfo         *relaycommon.RelayInfo
+		want              string
+	}{
+		{
+			name:      "mapped model",
+			relayInfo: &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "vendor-model-v2", IsModelMapped: true}},
+			want:      `channel error (channel #5 "supplier", group "vip", status code: 429, model "vendor-model-v2"): `,
+		},
+		{
+			name:              "mapped model with an upstream request id",
+			upstreamRequestId: "req_429",
+			relayInfo:         &relaycommon.RelayInfo{ChannelMeta: &relaycommon.ChannelMeta{UpstreamModelName: "vendor-model-v2", IsModelMapped: true}},
+			want:              `channel error (channel #5 "supplier", group "vip", status code: 429, upstream request id: req_429, model "vendor-model-v2"): `,
+		},
+		{
+			name:      "no channel metadata falls back to the requested model",
+			relayInfo: &relaycommon.RelayInfo{},
+			want:      `channel error (channel #5 "supplier", group "vip", status code: 429, model "gpt-alias"): `,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			serverLog.Reset()
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest(http.MethodPost, "/v1/chat/completions", nil)
+			ctx.Set("original_model", "gpt-alias")
+			common.SetContextKey(ctx, constant.ContextKeyUsingGroup, "vip")
+			if tc.upstreamRequestId != "" {
+				ctx.Set(common.UpstreamRequestIdKey, tc.upstreamRequestId)
+			}
+			apiErr := types.NewOpenAIError(errors.New("rate limited"), types.ErrorCodeBadResponseStatusCode, http.StatusTooManyRequests)
+
+			processChannelError(ctx, types.ChannelError{ChannelId: 5, ChannelName: "supplier"}, apiErr, tc.relayInfo)
+
+			assert.Contains(t, serverLog.String(), tc.want)
+		})
 	}
 }
