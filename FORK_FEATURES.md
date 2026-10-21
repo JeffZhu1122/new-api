@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 51 个（含本文档相关提交） |
-| 变更规模 | 336 个文件，+28948 / −2215 行（不含本文档） |
+| fork 专有提交数 | 52 个（含本文档相关提交） |
+| 变更规模 | 336 个文件，+29018 / −2215 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -51,6 +51,7 @@
 34. [报错时服务器日志输出上游请求 ID](#34-报错时服务器日志输出上游请求-id)
 35. [服务器日志的请求汇总行与报错行中的渠道](#35-服务器日志的请求汇总行与报错行中的渠道)
 36. [渠道测试：选择 max_tokens 或 max_completion_tokens](#36-渠道测试选择-max_tokens-或-max_completion_tokens)
+37. [渠道报错行带模型名](#37-渠道报错行带模型名)
 
 ---
 
@@ -89,6 +90,7 @@
 | 34 | 报错时服务器日志输出上游请求 ID | 与本文档同一提交 | 始终生效 | 无（用已有的 `logs.upstream_request_id`） | 上游请求 ID 的识别（更多响应头）、每次尝试的重置、服务器日志的报错行 |
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
+| 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -849,7 +851,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/channel_cache.go` | `channelExtendIDM`、`GetRandomSatisfiedChannel` 新增 `excludeChannelIds` 参数、多个 `HasAny*` 标志 |
 | `model/ability.go` | `GetChannel` 新参数、`filterAbilitiesByConstraints` 回填 extend；上游 rc.45 的 @ 修饰符回退查找在 fork 的排除已失败渠道之前 |
 | `model/channel_constraint.go` | count_tokens 与 input_tokens 谓词 |
-| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支；§34 / §35 `ProcessChannelError` 的报错行带上游请求 ID、渠道名与分组 |
+| `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支；§34 / §35 / §37 `ProcessChannelError` 的报错行带上游请求 ID、渠道名、分组与模型（模型必须在括号内最后） |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
 | `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary` |
@@ -1792,10 +1794,10 @@ Key 不属于该用户时返回失败。两条规则都在 `middleware/access_to
 ### 行为
 
 - 服务器日志文件（`--log-dir` 下的 `oneapi-*.log`）里，转发出错时的两种报错行会带上上游请求 ID：
-  - 每次尝试失败一行：`channel error (channel #3 "渠道名", group "default", status code: 429, upstream request id: req_xxx): …`
+  - 每次尝试失败一行：`channel error (channel #3 "渠道名", group "default", status code: 429, upstream request id: req_xxx, model "模型名"): …`（`model` 见 §37）
   - 最终失败一行：`relay error (channel #3 "渠道名", group "default", upstream request id: req_xxx): …`，是最后一次尝试的 ID。
   - 上游没有返回请求 ID 时（如连接失败），两行不带 `upstream request id`；没有可用渠道时最终一行是原来的 `relay error: …`。渠道名与分组见 §35。
-  - `DEFAULT_LANGUAGE=zh-CN` 时是中文：`渠道请求出错 (渠道 #3 "渠道名"，分组 "default"，状态码 429，上游请求 ID req_xxx): …`、`转发请求出错 (渠道 #3 "渠道名"，分组 "default"，上游请求 ID req_xxx): …`。
+  - `DEFAULT_LANGUAGE=zh-CN` 时是中文：`渠道请求出错 (渠道 #3 "渠道名"，分组 "default"，状态码 429，上游请求 ID req_xxx，模型 "模型名"): …`、`转发请求出错 (渠道 #3 "渠道名"，分组 "default"，上游请求 ID req_xxx): …`。
 - 日志文件里的 ID 和使用日志「上游请求 ID」字段（`logs.upstream_request_id`）用的是同一个值，可以拿日志文件里的 ID 去日志页搜索，反之亦然。
 - 上游请求 ID 从上游响应头里取，按下面的顺序取第一个有值的：
   1. `X-Oneapi-Request-Id`：上游是 new-api / one-api，以前只认这一个；
@@ -1947,3 +1949,37 @@ bad response status code 400, message: Unsupported parameter: 'max_tokens' is no
     - 自动时 `mock-strict` 测试失败并显示上游错误；选 `max_completion_tokens` 后同一模型测试成功，请求带上该参数；
     - 切到 Responses 后选择框消失，请求不带参数；
     - 中文界面的标签与选项正确。
+
+---
+
+## 37. 渠道报错行带模型名
+
+### 动机
+
+CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `channel error` 行给渠道供应商发通知（如「上游限流 429」）。原来这一行没有模型名，通知里说不出是哪个模型出的错。
+
+### 行为
+
+- `channel error` 行在括号内的**最后**多一个 `model` 字段，用 `%q` 加引号：
+
+  ```
+  channel error (channel #3 "渠道名", group "default", status code: 429, upstream request id: req_xxx, model "gpt-4o-2024-08-06"): …
+  channel error (channel #3 "渠道名", group "default", status code: 429, model "gpt-4o-2024-08-06"): …
+  ```
+
+  `DEFAULT_LANGUAGE=zh-CN` 时为 `渠道请求出错 (渠道 #3 "渠道名"，分组 "default"，状态码 429，上游请求 ID req_xxx，模型 "…"): …`，没有上游请求 ID 时去掉该字段。
+- 模型是**这个渠道被请求的模型**：用户请求的模型经过该渠道的模型重定向（`model_mapping`）之后的名字，也就是发给供应商的模型名；没有重定向时就是用户请求的模型。每次重试换渠道都按新渠道的重定向重新计算。拿不到本次尝试的渠道信息时，退回用户请求的模型（`original_model`）。
+- 放在最后是为了兼容：只读到 `status code` / `upstream request id`（请求 ID 读到 `,` 或 `，` 为止）的解析规则，读新格式的行结果不变，所以 Lambda 与 new-api 谁先部署都可以。
+- 最终的 `relay error` 行与 §35 的 `request completed` 行不变。
+
+### 实现
+
+- `service/relay_error.go` `ProcessChannelError`：取 `relayInfo.GetUpstreamModelName()`（每次尝试由处理器的 `InitChannelMeta` 重置为请求的模型，再由 `ModelMappedHelper` 按渠道重定向改写），为空时取 `original_model`。
+- 中文文本在 `common/log_text.zh-CN.json`（替换 §34 / §35 的两条）。
+
+### 测试
+
+- `controller/relay_error_log_test.go`：
+  - `TestChannelErrorLineNamesTheModelTheChannelWasAskedFor`：有重定向时写重定向后的模型（有、无上游请求 ID 两种格式）；没有渠道信息时写请求的模型；
+  - 原有的快照测试断言带 `model "gpt-test"` 的完整格式。
+- 没有做本地端到端：测试实例 B 的登录凭据文件已不在，没有为此重新生成凭据。
