@@ -31,9 +31,12 @@ func setupAssetLibraryAccountTestDB(t *testing.T) {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.AssetLibraryAccount{}))
+	require.NoError(t, db.AutoMigrate(&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.Task{}, &model.User{}))
 	model.DB, model.LOG_DB = db, db
+	previousRedis := common.RedisEnabled
+	common.RedisEnabled = false
 	t.Cleanup(func() {
+		common.RedisEnabled = previousRedis
 		model.DB, model.LOG_DB = previousDB, previousLogDB
 		if sqlDB, err := db.DB(); err == nil {
 			_ = sqlDB.Close()
@@ -171,8 +174,9 @@ func (c *sqlStatementCapture) Trace(_ context.Context, _ time.Time, fc func() (s
 	c.statements = append(c.statements, statement)
 }
 
-// The accounts table migrates on every supported database, a second
-// migration leaves it alone, and false and zero values survive an update.
+// The asset library tables migrate on every supported database, a second
+// migration leaves them alone, false and zero values survive an update, name
+// search escapes LIKE wildcards, and an upload finishes its task.
 func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 	for _, dialect := range []struct{ kind, env string }{{"sqlite", ""}, {"mysql", "TEST_MYSQL_DSN"}, {"postgres", "TEST_POSTGRES_DSN"}} {
 		t.Run(dialect.kind, func(t *testing.T) {
@@ -180,10 +184,11 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 				t.Skip(dialect.env + " is not configured")
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
-			require.NoError(t, db.AutoMigrate(&model.AssetLibraryAccount{}))
+			tables := []any{&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.Task{}}
+			require.NoError(t, db.AutoMigrate(tables...))
 
 			capture := &sqlStatementCapture{Interface: gormlogger.Discard}
-			require.NoError(t, db.Session(&gorm.Session{Logger: capture}).AutoMigrate(&model.AssetLibraryAccount{}))
+			require.NoError(t, db.Session(&gorm.Session{Logger: capture}).AutoMigrate(tables...))
 			for _, statement := range capture.statements {
 				upper := strings.ToUpper(statement)
 				assert.False(t, strings.HasPrefix(upper, "ALTER") || strings.HasPrefix(upper, "CREATE"), "second migration ran %s", statement)
@@ -214,6 +219,46 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 			accounts, err = model.ListAssetLibraryAccounts()
 			require.NoError(t, err)
 			assert.Len(t, accounts, 1)
+
+			// Name search escapes LIKE wildcards with "!" on every database.
+			for index, name := range []string{"100% real", "1000 real", "a_b", "axb"} {
+				require.NoError(t, model.CreateAssetLibraryGroup(&model.AssetLibraryGroup{UserId: 1, AccountId: low.Id, RemoteId: fmt.Sprintf("group-%d", index), GroupType: "AIGC", Name: name}))
+			}
+			for _, search := range []struct {
+				name string
+				want []string
+			}{{"0% r", []string{"100% real"}}, {"a_b", []string{"a_b"}}, {"!", nil}} {
+				groups, total, err := model.ListAssetLibraryGroups(model.AssetLibraryListFilter{UserId: 1, GroupType: "AIGC", Name: search.name, SortBy: "CreateTime", Limit: 10})
+				require.NoError(t, err)
+				names := make([]string, 0, len(groups))
+				for _, group := range groups {
+					names = append(names, group.Name)
+				}
+				assert.Equal(t, int64(len(search.want)), total, search.name)
+				assert.ElementsMatch(t, search.want, names, search.name)
+			}
+			require.Error(t, model.CreateAssetLibraryGroup(&model.AssetLibraryGroup{UserId: 2, AccountId: low.Id, RemoteId: "group-0", GroupType: "AIGC", Name: "dup"}))
+
+			// An upload records the asset and its task together, and finishes the task with the asset.
+			group, err := model.GetUserAssetLibraryGroup(1, "group-0")
+			require.NoError(t, err)
+			asset := &model.AssetLibraryAsset{UserId: 1, AccountId: low.Id, GroupId: group.Id, RemoteGroupId: group.RemoteId, RemoteId: "asset-1", AssetType: "Image", Status: model.AssetLibraryAssetProcessing}
+			require.NoError(t, model.CreateAssetLibraryUpload(asset, "default"))
+			asset.Status, asset.ErrorCode, asset.ErrorMessage = model.AssetLibraryAssetFailed, "DownloadFailed", "cannot download"
+			require.NoError(t, model.SaveAssetLibraryAsset(asset, model.AssetLibraryAssetProcessing))
+			task, exists, err := model.GetByTaskId(1, "asset-1")
+			require.NoError(t, err)
+			require.True(t, exists)
+			assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
+			assert.Equal(t, "DownloadFailed: cannot download", task.FailReason)
+			assets, total, err := model.ListAssetLibraryAssets(model.AssetLibraryListFilter{UserId: 1, GroupType: "AIGC", Statuses: []string{model.AssetLibraryAssetFailed}, SortBy: "GroupId", Limit: 10})
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), total)
+			require.Len(t, assets, 1)
+			require.NoError(t, model.DeleteAssetLibraryGroup(group))
+			count, err := model.CountAssetLibraryAssets("user_id", 1)
+			require.NoError(t, err)
+			assert.Zero(t, count)
 		})
 	}
 }

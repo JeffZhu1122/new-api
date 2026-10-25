@@ -280,6 +280,7 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		apiRouter.POST("/asset-library/openapi", middleware.UserAuth(), controller.AssetLibraryOpenAPI)
 		assetLibraryAccountRoute := apiRouter.Group("/asset-library/accounts")
 		assetLibraryAccountRoute.Use(middleware.RootAuth())
 		{

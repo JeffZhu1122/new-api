@@ -5,8 +5,10 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/pkg/volcark"
+	"github.com/QuantumNous/new-api/setting/asset_library_setting"
 )
 
 var assetLibraryHTTPClient = &http.Client{Timeout: 30 * time.Second}
@@ -47,4 +49,30 @@ func TestAssetLibraryAccount(ctx context.Context, account *model.AssetLibraryAcc
 		}
 	}
 	return nil
+}
+
+const (
+	assetLibrarySyncInterval = 15 * time.Second
+	assetLibrarySyncBatch    = 100
+)
+
+// StartAssetLibrarySync polls Ark for assets still being processed, so their
+// status and upload tasks settle even when nobody reads them. It runs on the
+// master node while the asset library is enabled.
+func StartAssetLibrarySync() {
+	go func() {
+		ticker := time.NewTicker(assetLibrarySyncInterval)
+		defer ticker.Stop()
+		for range ticker.C {
+			if !asset_library_setting.GetSetting().Enabled {
+				continue
+			}
+			assets, err := model.ListProcessingAssetLibraryAssets(assetLibrarySyncBatch)
+			if err != nil {
+				common.SysError(common.LogText("asset library sync could not list processing assets: %s", err.Error()))
+				continue
+			}
+			refreshAssetLibraryAssets(context.Background(), assets)
+		}
+	}()
 }

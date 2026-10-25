@@ -144,6 +144,11 @@ func main() {
 	// Scheduled cleanup of this node's server log files (log_file_cleanup_setting)
 	service.StartLogFileCleanupScheduler()
 
+	// Settle asset library uploads Ark is still processing (asset_library_setting)
+	if common.IsMasterNode {
+		service.StartAssetLibrarySync()
+	}
+
 	// Wire task polling adaptor factory (breaks service -> relay import cycle).
 	// Must run before the system task runner starts: the async_task_poll handler
 	// calls service.RunTaskPollingOnce, which needs this factory set.
