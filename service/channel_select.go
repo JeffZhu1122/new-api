@@ -457,6 +457,9 @@ func SelectChannelForRequest(c *gin.Context, modelName string, retry *RetryParam
 			}
 		}
 	}
+	// The DB-direct selection path returns a channel reloaded without its
+	// channel_extend settings; fill them as the pinned and affinity paths do.
+	fillExtendConfigForFilters(channel, constraints.Filters)
 	if ok, kind := model.ChannelSatisfiesFilters(channel, modelName, constraints.Filters); !ok {
 		return nil, selectGroup, &ChannelSelectError{
 			StatusCode: http.StatusServiceUnavailable, Code: types.ErrorCodeModelNotFound, MessageID: i18n.MsgDistributorNoAvailableChannel,

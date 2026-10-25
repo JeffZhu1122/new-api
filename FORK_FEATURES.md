@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 54 个（含本文档相关提交） |
-| 变更规模 | 360 个文件，+33844 / −2216 行（不含本文档） |
+| fork 专有提交数 | 55 个（含本文档相关提交） |
+| 变更规模 | 365 个文件，+34357 / −2220 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -92,7 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
-| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分步交付中） | 关闭 | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets`（新表）、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；任务轮询与超时清理跳过素材库任务 |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分步交付中） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -908,6 +908,11 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/channel.go` | §15 达上限通知改用上游 rc.45 的 `NotifyChannelWatchers` |
 | `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` / `api.ts` | 定时清理 option 默认值、传参、类型与状态接口；§38 「素材库」一节（`asset-library`）的默认值、传参与类型 |
 | `controller/misc.go` | §38 `/api/status` 多一个 `asset_library_enabled` |
+| `middleware/distributor.go` | §38 `getModelRequest` 之后调用 `service.CheckAssetLibraryReferences`，拒绝或加 `FilterAssetLibraryAccount`；选不到渠道时多一条服务端日志 |
+| `service/channel_select.go` | §38 `SelectChannelForRequest` 末尾的过滤复核前先 `fillExtendConfigForFilters`（DB 直查路径返回的渠道不带 channel_extend） |
+| `model/channel_constraint.go` / `dto/channel_constraints.go` | §38 新过滤类型 `asset_library_account`（加入 `filterEvalOrder` 和 `FiltersReadExtendConfig`） |
+| `model/channel_extend.go` / `relaykit/dto/channel_extend_settings.go` | §38 `asset_library_account_id`（列、`ToSettings`、upsert 的列清单、`IsZero`、校验） |
+| `web/src/features/channels/{api.ts,types.ts,lib/channel-form*.ts,lib/channel-configuration.ts,components/drawers/channel-mutate-drawer.tsx}` | §38 渠道「素材库账号」选择（extend_config 映射、表单、抽屉字段） |
 | `model/task.go` | §38 `GetAllUnFinishSyncTasks`、`GetTimedOutUnfinishedTasks`、`HasUnfinishedSyncTasks` 加 `platform <> asset_library`，素材上传任务由素材库自己同步 |
 | `router/main.go` / `main.go` / `constant/task.go` | §38 `SetAssetLibraryRouter`（`/volc`）、主节点启动 `StartAssetLibrarySync`、`TaskPlatformAssetLibrary` |
 | `web/src/features/usage-logs/{constants.ts,lib/task-artifacts.ts}` | §38 任务动作 `CreateAsset` 的名称；素材上传任务不提供产物查看 |
@@ -2053,9 +2058,22 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 原有的任务轮询和超时清理跳过这个平台，否则它们会因为没有渠道把任务判为失败。
   - 任务日志里显示为「素材库 · 上传素材」，不提供产物查看。
 
+### 第 3 步：转发时的素材校验与渠道绑定（已完成）
+
+- **校验位置**：所有转发都经过的分发中间件（对话、`/v1/videos`、Responses、任务与插件路由），在选渠道之前检查请求体里的 `asset://` 引用。
+  - JSON 请求按解码后的字符串值查找，`asset:\/\/…` 或 `\u0061sset://…` 这类转义藏不住；协议名不区分大小写；multipart 请求按原文查找。
+- **素材库启用时**：
+  - 每个引用都必须是本人的素材（管理员可以用任何已登记的素材），且状态为 Active；否则 403「素材 … 不在你的素材库中」，或 400「素材 … 暂不可用（状态：…）」。不存在和不属于本人返回同一句话。
+  - 一个请求最多引用 100 个素材，且必须来自同一个火山账号，否则 400。
+  - 通过后，请求只会选「素材库账号」绑定为该账号的渠道，重试也只在这些渠道之间；没有绑定的渠道时返回通用的「无可用渠道」，服务端日志写明原因。
+- **素材库关闭时**：「关闭时也拦截所有 asset://」打开（默认）则一律 403「本服务不支持 asset:// 素材引用」；关掉则完全不检查，和没有这个功能时一样。
+- 错误信息走后端 i18n（en / zh-CN / zh-TW），键为 `asset_library.*`。
+- **渠道绑定**：`channel_extend.asset_library_account_id`（0 为不绑定）。渠道编辑抽屉的其他设置里多一个「素材库账号」下拉框，素材库启用或该渠道已绑定时才显示。选项来自 `GET /api/asset_library_options`（需要渠道读权限，只返回 ID、名称、项目和启用状态）。
+- **顺带修复**：没有内存缓存时（例如没配 Redis），`SelectChannelForRequest` 最后的过滤复核读到的是从数据库重新加载、不带 channel_extend 的渠道。原有的输入 token 和时段过滤对没有扩展配置的渠道放行，所以以前没暴露；现在复核前先补上扩展配置，和指定渠道、亲和渠道两条路径一致。
+
 ### 后续步骤（规划）
 
-- **转发时的素材归属校验**与「关闭时也拦截所有 asset://」、**渠道绑定火山账号**、**素材库管理页面**（含管理员视角）。
+- **素材库管理页面**（含管理员视角）。
 
 ### 测试
 
@@ -2078,4 +2096,15 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 - 第 2 步数据库：`TestAssetLibraryAccountsAcrossDatabases` 扩展到三张表和任务表：名称搜索在三种库上正确转义 `%` 与 `_`（用 `!` 作 ESCAPE），火山 ID 唯一，上传与任务一起写入且随素材失败而失败，删除组连带删除素材。再次用官方 rc.46 建库后升级两次，三种库都正常。
 - 第 2 步本地端到端（全新 SQLite 实例 + Python 模拟方舟，模拟器用独立实现的签名算法验签）21 项：关闭时 404、测试连接、无令牌 401、建虚拟与真人组、上传、列表中的处理中状态、任务日志、`GetAsset` 变为 Active、后台同步把坏素材的任务判为失败（`FaceMismatch`）、按状态与页码列出、另一个用户 4 种操作都是 `ResourceNotFound` 且没有发到火山、网关校验的错误格式、删除组；模拟器收到的 11 次调用签名全部正确、项目全部是账号的项目。
 - 前端 `usage-logs/__tests__/artifacts.test.ts`：素材上传任务不提供产物查看。
+- 第 3 步 `controller/asset_library_openapi_test.go`：
+  - `TestAssetLibraryReferenceCheck` 12 种请求：无引用、本人素材（返回账号）、转义斜杠、`\u` 转义、大写协议名、别人的素材、管理员、不存在、空 ID、处理中、跨账号、multipart；关闭时拦截开 / 关。去掉 JSON 解码遍历后，两个转义用例失败。
+  - `TestAssetLibraryAccountFilterKeepsBoundChannels`：只有绑定了该账号的渠道通过过滤，过滤需要回填扩展配置。
+- `service/channel_select_exclude_test.go` `TestSelectChannelForRequestKeepsAssetLibraryAccountChannels`：有内存缓存和直接查库两种模式都只选绑定渠道、账号不符时无可用渠道；去掉复核前的回填后，直接查库模式失败。
+- 前端 `channels/lib/__tests__/channel-extend-switches.test.ts`：绑定账号写入 extend_config，不绑定发送 0，已有绑定能回填并标记为已配置。
+- 第 3 步数据库：矩阵测试加入 `channel_extend`，三种库上绑定的保存、读取和清除都正确；用第 2 步版本建好的库在三种库上升级两次，新列都自动加上（默认 0），日志无错误。
+- 第 3 步本地端到端（新版本 + 模拟方舟，两个渠道分别走 `/bound`、`/unbound`）12 项：
+  - 绑定已保存；处理中的素材被拒；本人 Active 素材 6 次请求全部成功且全部发到绑定渠道，`asset://` 原样转发；
+  - 另一用户直接引用、用转义斜杠引用都是 403，且没有请求发到上游；不带素材的请求仍会用到两个渠道；
+  - 取消绑定后带素材的请求找不到渠道，也没有发到上游；关闭素材库且拦截开时 403，拦截关时照常转发。
+  - 第 2 步的 `/volc` 端到端在新版本上重跑，20 项通过。
 

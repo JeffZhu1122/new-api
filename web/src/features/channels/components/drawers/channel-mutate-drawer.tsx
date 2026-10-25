@@ -113,6 +113,7 @@ import { SecureVerificationDialog } from '@/features/auth/secure-verification'
 import { PluginIcon } from '@/features/task-plugins/components/plugin-icon'
 import { useCopyToClipboard } from '@/hooks/use-copy-to-clipboard'
 import { useHiddenClickUnlock } from '@/hooks/use-hidden-click-unlock'
+import { useStatus } from '@/hooks/use-status'
 import { toIntlLocale } from '@/i18n/languages'
 import {
   ADMIN_PERMISSION_ACTIONS,
@@ -137,6 +138,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import {
   getAllModels,
+  getAssetLibraryAccountOptions,
   getChannel,
   getChannelDefaultBaseURLs,
   getGroups,
@@ -344,6 +346,7 @@ const SENSITIVE_FORM_FIELDS = [
   'quota_limit_amount',
   'force_retry',
   'empty_output_error',
+  'asset_library_account_id',
   'schedule_enabled',
   'schedule_timezone',
   'schedule_windows',
@@ -839,6 +842,18 @@ export function ChannelMutateDrawer({
         ?.label || `#${currentType}`,
     [currentType]
   )
+  const { status } = useStatus()
+  // The binding only shows while the asset library is on, or when the channel
+  // is already bound so an existing binding can still be seen and cleared.
+  const showAssetLibraryAccount =
+    Boolean(status?.asset_library_enabled) ||
+    (formValues.asset_library_account_id ?? 0) > 0
+  const assetLibraryAccountsQuery = useQuery({
+    queryKey: ['asset-library-account-options'],
+    queryFn: getAssetLibraryAccountOptions,
+    enabled: open && showAssetLibraryAccount,
+    meta: { errorToast: false },
+  })
   const taskPluginOptionsQuery = useQuery({
     queryKey: ['task-plugin-options'],
     queryFn: async () => requireServerSuccess(await getTaskPluginOptions()),
@@ -2616,6 +2631,53 @@ export function ChannelMutateDrawer({
           </FormItem>
         )}
       />
+      {showAssetLibraryAccount && (
+        <FormField
+          control={form.control}
+          name='asset_library_account_id'
+          render={({ field }) => (
+            <FormItem>
+              <FormLabel>{t('Asset library account')}</FormLabel>
+              <Select
+                items={[
+                  { value: '0', label: t('Not bound') },
+                  ...(assetLibraryAccountsQuery.data ?? []).map((account) => ({
+                    value: String(account.id),
+                    label: `${account.name} (${account.project_name})`,
+                  })),
+                ]}
+                value={String(field.value ?? 0)}
+                onValueChange={(value) =>
+                  value !== null && field.onChange(Number(value))
+                }
+                disabled={sensitiveLocked}
+              >
+                <FormControl>
+                  <SelectTrigger aria-label={t('Asset library account')}>
+                    <SelectValue />
+                  </SelectTrigger>
+                </FormControl>
+                <SelectContent alignItemWithTrigger={false}>
+                  <SelectGroup>
+                    <SelectItem value='0'>{t('Not bound')}</SelectItem>
+                    {(assetLibraryAccountsQuery.data ?? []).map((account) => (
+                      <SelectItem key={account.id} value={String(account.id)}>
+                        {account.name} ({account.project_name})
+                      </SelectItem>
+                    ))}
+                  </SelectGroup>
+                </SelectContent>
+              </Select>
+              <FormDescription>
+                {t(
+                  "The Volcengine account and project this channel's API key belongs to. Requests that use asset:// assets of that account only go to channels bound to it."
+                )}
+              </FormDescription>
+              <FormMessage />
+            </FormItem>
+          )}
+        />
+      )}
       <FormField
         control={form.control}
         name='schedule_enabled'

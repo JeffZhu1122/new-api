@@ -108,6 +108,24 @@ export async function getTaskPluginOptions(): Promise<TaskPluginOption[]> {
   return requireServerSuccess(response.data).data
 }
 
+// Asset library accounts a channel can be bound to (no keys).
+export type AssetLibraryAccountOption = {
+  id: number
+  name: string
+  project_name: string
+  enabled: boolean
+}
+
+export async function getAssetLibraryAccountOptions(): Promise<
+  AssetLibraryAccountOption[]
+> {
+  const response = await api.get<{
+    success: boolean
+    data: AssetLibraryAccountOption[]
+  }>('/api/asset_library_options')
+  return requireServerSuccess(response.data).data
+}
+
 export type CodexUsageResponse = {
   success: boolean
   message?: string

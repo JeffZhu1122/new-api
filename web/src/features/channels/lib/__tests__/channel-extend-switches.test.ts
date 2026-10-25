@@ -96,3 +96,31 @@ describe.each<ExtendSwitch>(['force_retry', 'empty_output_error'])(
     })
   }
 )
+
+// The asset library binding is a channel_extend account id; 0 means unbound.
+describe('asset library account binding', () => {
+  test('a bound account is sent in extend_config', () => {
+    const { channel } = transformFormDataToCreatePayload({
+      ...switchForm('force_retry', false),
+      asset_library_account_id: 4,
+    })
+    expect(channel.extend_config?.asset_library_account_id).toBe(4)
+  })
+
+  test('an unbound channel sends 0 so the backend clears the binding', () => {
+    const { channel } = transformFormDataToCreatePayload(
+      switchForm('force_retry', false)
+    )
+    expect(channel.extend_config?.asset_library_account_id).toBe(0)
+  })
+
+  test('a stored binding is restored and marks the extra settings as configured', () => {
+    const defaults = transformChannelToFormDefaults(
+      storedChannel({ asset_library_account_id: 4 })
+    )
+    expect(defaults.asset_library_account_id).toBe(4)
+    expect(
+      getChannelConfigurationState(defaults, {}, true).blocks.extraSettings
+    ).toBe('configured')
+  })
+})

@@ -304,3 +304,11 @@ func ListProcessingAssetLibraryAssets(limit int) ([]*AssetLibraryAsset, error) {
 	err := DB.Where("status = ?", AssetLibraryAssetProcessing).Order("updated_time ASC").Limit(limit).Find(&assets).Error
 	return assets, err
 }
+
+// GetAssetLibraryAssetsByRemoteIds returns the recorded assets with the Ark
+// ids, whoever owns them.
+func GetAssetLibraryAssetsByRemoteIds(remoteIds []string) ([]*AssetLibraryAsset, error) {
+	var assets []*AssetLibraryAsset
+	err := DB.Where("remote_id IN ?", remoteIds).Find(&assets).Error
+	return assets, err
+}

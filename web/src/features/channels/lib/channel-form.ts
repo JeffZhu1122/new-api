@@ -340,6 +340,8 @@ export const channelFormSchema = z
     force_retry: z.boolean().optional(),
     // Error on a text generation response without output (channel_extend)
     empty_output_error: z.boolean().optional(),
+    // Asset library account the key belongs to, 0 = none (channel_extend)
+    asset_library_account_id: z.number().int().min(0).optional(),
     // Weekly availability schedule (channel_extend, off = always selectable)
     schedule_enabled: z.boolean().optional(),
     schedule_timezone: z.string().optional(),
@@ -726,6 +728,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   quota_limit_amount: 0,
   force_retry: false,
   empty_output_error: false,
+  asset_library_account_id: 0,
   schedule_enabled: false,
   schedule_timezone: DEFAULT_CHANNEL_SCHEDULE_TIMEZONE,
   schedule_windows: [],
@@ -921,6 +924,8 @@ export function transformChannelToFormDefaults(
     ),
     force_retry: Boolean(channel.extend_config?.force_retry),
     empty_output_error: Boolean(channel.extend_config?.empty_output_error),
+    asset_library_account_id:
+      channel.extend_config?.asset_library_account_id || 0,
     schedule_enabled: Boolean(channel.extend_config?.schedule),
     schedule_timezone:
       channel.extend_config?.schedule?.timezone ||
@@ -1199,6 +1204,7 @@ function buildExtendConfig(formData: ChannelFormValues): ChannelExtendSettings {
     quota_limit: parseQuotaFromDollars(formData.quota_limit_amount || 0),
     force_retry: Boolean(formData.force_retry),
     empty_output_error: Boolean(formData.empty_output_error),
+    asset_library_account_id: formData.asset_library_account_id || 0,
     // The schedule only exists while enabled; undefined clears it.
     schedule: formData.schedule_enabled
       ? {

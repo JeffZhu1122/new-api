@@ -44,6 +44,9 @@ const (
 	FilterInputTokens        ChannelFilterKind = "input_tokens"
 	FilterResponsesWebSocket ChannelFilterKind = "responses_websocket"
 	FilterChannelSchedule    ChannelFilterKind = "channel_schedule"
+	// FilterAssetLibraryAccount keeps channels bound to the asset library
+	// account holding the request's asset:// references.
+	FilterAssetLibraryAccount ChannelFilterKind = "asset_library_account"
 )
 
 type ChannelFilter struct {
@@ -62,6 +65,8 @@ type ChannelFilter struct {
 	// schedules against. Retries reuse the first attempt's instant so a
 	// request straddling a window boundary is judged consistently.
 	At time.Time
+	// AssetLibraryAccountId is the account FilterAssetLibraryAccount requires.
+	AssetLibraryAccountId int
 }
 
 type ChannelConstraints struct {
