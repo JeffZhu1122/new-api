@@ -103,6 +103,8 @@ func TestAssetLibraryAccountAPIRejectsInvalidAccounts(t *testing.T) {
 		{"blank name", `{"name":" ","access_key_id":"ak","secret_access_key":"sk"}`, "Account name must be 1 to 64 characters"},
 		{"bad region", `{"name":"a","access_key_id":"ak","secret_access_key":"sk","region":"cn beijing"}`, "Invalid region"},
 		{"bad endpoint", `{"name":"a","access_key_id":"ak","secret_access_key":"sk","endpoint":"ftp://example.com"}`, "Invalid endpoint URL"},
+		{"inference endpoint", `{"name":"a","access_key_id":"ak","secret_access_key":"sk","endpoint":"https://ark.cn-beijing.volces.com/api/v3"}`, "This is a model inference address, which does not accept Access Keys. Leave the endpoint blank for Volcengine, or enter https://ark.ap-southeast-1.byteplusapi.com for BytePlus."},
+		{"BytePlus inference endpoint", `{"name":"a","access_key_id":"ak","secret_access_key":"sk","endpoint":"https://ark.ap-southeast.bytepluses.com/api/v3"}`, "This is a model inference address, which does not accept Access Keys. Leave the endpoint blank for Volcengine, or enter https://ark.ap-southeast-1.byteplusapi.com for BytePlus."},
 		{"negative quota", `{"name":"a","access_key_id":"ak","secret_access_key":"sk","max_groups":-1}`, "Invalid account limits"},
 		{"empty user group", `{"name":"a","access_key_id":"ak","secret_access_key":"sk","allowed_user_groups":[""]}`, "Invalid allowed user groups"},
 	}
