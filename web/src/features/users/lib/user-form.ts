@@ -28,6 +28,7 @@ import { ROLE } from '@/lib/roles'
 
 import { DEFAULT_GROUP } from '../constants'
 import type {
+  AssetLibraryLimits,
   RateLimitOverride,
   RateLimitValues,
   UserFormData,
@@ -149,6 +150,14 @@ export const userFormSchema = z.object({
       isValidModelDiscountJSON,
       'Invalid JSON format or discount values out of (0, 10]'
     ),
+  asset_library_max_groups: z
+    .string()
+    .optional()
+    .refine(isEmptyOrLimitNumber, 'Must be an integer within [0, 2147483647]'),
+  asset_library_max_assets: z
+    .string()
+    .optional()
+    .refine(isEmptyOrLimitNumber, 'Must be an integer within [0, 2147483647]'),
 })
 
 export type UserFormValues = z.infer<typeof userFormSchema>
@@ -171,6 +180,8 @@ export const USER_FORM_DEFAULT_VALUES: UserFormValues = {
   rate_limit_default_tpm: '',
   rate_limit_models: '',
   model_discount: '',
+  asset_library_max_groups: '',
+  asset_library_max_assets: '',
 }
 
 // ============================================================================
@@ -217,6 +228,17 @@ function buildModelDiscount(data: UserFormValues): Record<string, number> {
   }
 }
 
+function buildAssetLibraryLimits(data: UserFormValues): AssetLibraryLimits {
+  const limits: AssetLibraryLimits = {}
+  if (data.asset_library_max_groups?.trim()) {
+    limits.max_groups_per_user = Number(data.asset_library_max_groups.trim())
+  }
+  if (data.asset_library_max_assets?.trim()) {
+    limits.max_assets_per_user = Number(data.asset_library_max_assets.trim())
+  }
+  return limits
+}
+
 // ============================================================================
 // Form Data Transformation
 // ============================================================================
@@ -260,6 +282,7 @@ export function transformFormDataToPayload(
     // override from GetUser, so sending it back is lossless.
     payload.rate_limit = buildRateLimitOverride(data)
     payload.model_discount = buildModelDiscount(data)
+    payload.asset_library_limits = buildAssetLibraryLimits(data)
   }
 
   return payload
@@ -272,6 +295,7 @@ export function transformFormDataToPayload(
  */
 export function transformUserToFormDefaults(user: User): UserFormValues {
   const rateLimit = user.rate_limit
+  const assetLibraryLimits = user.asset_library_limits
   return {
     username: user.username,
     display_name: user.display_name,
@@ -296,6 +320,14 @@ export function transformUserToFormDefaults(user: User): UserFormValues {
     model_discount:
       user.model_discount && Object.keys(user.model_discount).length > 0
         ? JSON.stringify(user.model_discount, null, 2)
+        : '',
+    asset_library_max_groups:
+      assetLibraryLimits?.max_groups_per_user !== undefined
+        ? String(assetLibraryLimits.max_groups_per_user)
+        : '',
+    asset_library_max_assets:
+      assetLibraryLimits?.max_assets_per_user !== undefined
+        ? String(assetLibraryLimits.max_assets_per_user)
         : '',
   }
 }

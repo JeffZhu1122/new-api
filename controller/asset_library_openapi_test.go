@@ -202,6 +202,48 @@ func TestAssetLibraryCreateGroupPicksTheAccountAndReturnsArksResponse(t *testing
 	assert.Len(t, fixture.ark.recorded(), 2)
 }
 
+// An administrator's per-user limits replace the global ones (2 groups, 3
+// assets) for that user only; 0 lifts a limit and a limit left out inherits.
+func TestAssetLibraryUserLimitsOverrideTheGlobalOnes(t *testing.T) {
+	setupAssetLibraryOpenAPI(t)
+	three, unlimited := 3, 0
+	require.NoError(t, model.UpdateUserAssetLibraryLimits(1, &model.AssetLibraryLimits{MaxGroups: &three, MaxAssets: &unlimited}))
+
+	var groupId string
+	for i := range 3 {
+		status, body := callAction(t, 1, "CreateAssetGroup", fmt.Sprintf(`{"Name":"g%d"}`, i))
+		require.Equal(t, http.StatusOK, status, body)
+		groupId = resultId(t, body)
+	}
+	status, body := callAction(t, 1, "CreateAssetGroup", `{"Name":"g3"}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "QuotaExceeded", arkErrorCode(body))
+	for i := range 4 {
+		status, body := callAction(t, 1, "CreateAsset", fmt.Sprintf(`{"GroupId":%q,"URL":"https://cdn.example/%d.png","AssetType":"Image"}`, groupId, i))
+		require.Equal(t, http.StatusOK, status, body)
+	}
+	config, err := service.GetAssetLibraryUserConfig(1, "default")
+	require.NoError(t, err)
+	assert.Equal(t, 3, config.MaxGroups)
+	assert.Equal(t, 0, config.MaxAssets)
+
+	for i := range 2 {
+		status, body := callAction(t, 2, "CreateAssetGroup", fmt.Sprintf(`{"Name":"b%d"}`, i))
+		require.Equal(t, http.StatusOK, status, body)
+	}
+	status, body = callAction(t, 2, "CreateAssetGroup", `{"Name":"b2"}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "QuotaExceeded", arkErrorCode(body))
+
+	require.NoError(t, model.UpdateUserAssetLibraryLimits(1, &model.AssetLibraryLimits{MaxGroups: &three}))
+	config, err = service.GetAssetLibraryUserConfig(1, "default")
+	require.NoError(t, err)
+	assert.Equal(t, 3, config.MaxAssets)
+	status, body = callAction(t, 1, "CreateAsset", fmt.Sprintf(`{"GroupId":%q,"URL":"https://cdn.example/x.png","AssetType":"Image"}`, groupId))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "QuotaExceeded", arkErrorCode(body))
+}
+
 // Another user's group and asset read as missing and never reach Ark.
 func TestAssetLibraryHidesOtherUsersResources(t *testing.T) {
 	fixture := setupAssetLibraryOpenAPI(t)

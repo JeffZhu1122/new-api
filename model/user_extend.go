@@ -19,6 +19,14 @@ type UserExtend struct {
 	UserId        int    `json:"user_id" gorm:"primaryKey"`
 	RateLimit     string `json:"rate_limit" gorm:"type:text"`     // JSON dto.RateLimitOverride, "" = 无覆盖
 	ModelDiscount string `json:"model_discount" gorm:"type:text"` // JSON map[模型名]折扣, "" = 无折扣
+	AssetLibrary  string `json:"asset_library" gorm:"type:text"`  // JSON AssetLibraryLimits, "" = 继承全局
+}
+
+// AssetLibraryLimits overrides the asset library's global per-user limits for
+// one user. A nil field inherits the global value, 0 means unlimited.
+type AssetLibraryLimits struct {
+	MaxGroups *int `json:"max_groups_per_user,omitempty"`
+	MaxAssets *int `json:"max_assets_per_user,omitempty"`
 }
 
 func (UserExtend) TableName() string {
@@ -33,11 +41,16 @@ func userModelDiscountCacheKey(userId int) string {
 	return fmt.Sprintf("user_extend_md:%d", userId)
 }
 
+func userAssetLibraryLimitsCacheKey(userId int) string {
+	return fmt.Sprintf("user_extend_al:%d", userId)
+}
+
 // deleteEmptyUserExtend removes the row once every override column is cleared,
 // so "inherit group/global" users keep no record. Clearing one column must
-// never delete the row while another column still holds an override.
+// never delete the row while another column still holds an override. A column
+// added after a row was written is NULL in that row, which counts as empty.
 func deleteEmptyUserExtend(userId int) error {
-	return DB.Where("user_id = ? AND rate_limit = '' AND model_discount = ''", userId).Delete(&UserExtend{}).Error
+	return DB.Where("user_id = ? AND COALESCE(rate_limit, '') = '' AND COALESCE(model_discount, '') = '' AND COALESCE(asset_library, '') = ''", userId).Delete(&UserExtend{}).Error
 }
 
 // GetUserRateLimitOverride returns the per-user RPM/TPM override, or nil when
@@ -202,5 +215,89 @@ func UpdateUserModelDiscount(userId int, discounts map[string]float64) error {
 		return err
 	}
 	cacheUserModelDiscount(userId, discounts)
+	return nil
+}
+
+// GetUserAssetLibraryLimits returns the user's asset library limit override,
+// or nil when the user has none. The cached value is always
+// common.Marshal(limits), so a stored "null" doubles as the negative cache.
+func GetUserAssetLibraryLimits(userId int) (*AssetLibraryLimits, error) {
+	if userId == 0 {
+		return nil, errors.New("user id is required")
+	}
+	if common.RedisEnabled {
+		if cached, err := common.RedisGet(userAssetLibraryLimitsCacheKey(userId)); err == nil {
+			var limits *AssetLibraryLimits
+			if err := common.UnmarshalJsonStr(cached, &limits); err == nil {
+				return limits, nil
+			}
+		}
+	}
+
+	var extend UserExtend
+	err := DB.Where("user_id = ?", userId).Take(&extend).Error
+	if err != nil && !errors.Is(err, gorm.ErrRecordNotFound) {
+		return nil, err
+	}
+	var limits *AssetLibraryLimits
+	if extend.AssetLibrary != "" {
+		if err := common.UnmarshalJsonStr(extend.AssetLibrary, &limits); err != nil {
+			return nil, err
+		}
+	}
+	cacheUserAssetLibraryLimits(userId, limits)
+	return limits, nil
+}
+
+func cacheUserAssetLibraryLimits(userId int, limits *AssetLibraryLimits) {
+	if !common.RedisEnabled {
+		return
+	}
+	data, err := common.Marshal(limits)
+	if err != nil {
+		common.SysError("failed to marshal user asset library limits for cache: " + err.Error())
+		return
+	}
+	if err := common.RedisSet(userAssetLibraryLimitsCacheKey(userId), string(data), time.Duration(common.RedisKeyCacheSeconds())*time.Second); err != nil {
+		common.SysError("failed to cache user asset library limits: " + err.Error())
+	}
+}
+
+// UpdateUserAssetLibraryLimits persists the user's asset library limit
+// override. An override with neither limit clears the column; the row is
+// deleted only when every override column is empty. The cache is written
+// through, so other instances see the change immediately.
+func UpdateUserAssetLibraryLimits(userId int, limits *AssetLibraryLimits) error {
+	if userId == 0 {
+		return errors.New("user id is required")
+	}
+	if limits != nil && limits.MaxGroups == nil && limits.MaxAssets == nil {
+		limits = nil
+	}
+	if limits == nil {
+		if err := DB.Model(&UserExtend{}).Where("user_id = ?", userId).Update("asset_library", "").Error; err != nil {
+			return err
+		}
+		if err := deleteEmptyUserExtend(userId); err != nil {
+			return err
+		}
+		cacheUserAssetLibraryLimits(userId, nil)
+		return nil
+	}
+	data, err := common.Marshal(limits)
+	if err != nil {
+		return err
+	}
+	extend := UserExtend{
+		UserId:       userId,
+		AssetLibrary: string(data),
+	}
+	if err := DB.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "user_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{"asset_library"}),
+	}).Create(&extend).Error; err != nil {
+		return err
+	}
+	cacheUserAssetLibraryLimits(userId, limits)
 	return nil
 }

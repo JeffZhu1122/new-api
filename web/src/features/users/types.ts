@@ -46,6 +46,13 @@ export const rateLimitOverrideSchema = z.object({
 })
 export type RateLimitOverride = z.infer<typeof rateLimitOverrideSchema>
 
+/** Per-user asset library limits; missing field = inherit, 0 = unlimited */
+export const assetLibraryLimitsSchema = z.object({
+  max_groups_per_user: z.number().optional(),
+  max_assets_per_user: z.number().optional(),
+})
+export type AssetLibraryLimits = z.infer<typeof assetLibraryLimitsSchema>
+
 export const userSchema = z.object({
   id: z.number(),
   username: z.string(),
@@ -78,6 +85,7 @@ export const userSchema = z.object({
     .optional(),
   rate_limit: rateLimitOverrideSchema.nullable().optional(),
   model_discount: z.record(z.string(), z.number()).nullable().optional(),
+  asset_library_limits: assetLibraryLimitsSchema.nullable().optional(),
 })
 export type User = z.infer<typeof userSchema>
 
@@ -144,6 +152,7 @@ export interface UserFormData {
   admin_permissions?: AdminPermissionMatrix
   rate_limit?: RateLimitOverride // Only used when updating user; {} clears the override
   model_discount?: Record<string, number> // Only used when updating user; {} clears the discounts
+  asset_library_limits?: AssetLibraryLimits // Only used when updating user; {} clears the override
 }
 
 export type ManageUserAction =

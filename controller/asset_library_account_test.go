@@ -32,7 +32,7 @@ func setupAssetLibraryAccountTestDB(t *testing.T) {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.AssetLibraryVerification{}, &model.Task{}, &model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.AssetLibraryVerification{}, &model.Task{}, &model.User{}, &model.UserExtend{}))
 	model.DB, model.LOG_DB = db, db
 	previousRedis := common.RedisEnabled
 	common.RedisEnabled = false
@@ -187,7 +187,7 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 				t.Skip(dialect.env + " is not configured")
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
-			tables := []any{&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.AssetLibraryVerification{}, &model.Task{}, &model.ChannelExtend{}}
+			tables := []any{&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.AssetLibraryVerification{}, &model.Task{}, &model.ChannelExtend{}, &model.UserExtend{}}
 			require.NoError(t, db.AutoMigrate(tables...))
 
 			capture := &sqlStatementCapture{Interface: gormlogger.Discard}
@@ -196,6 +196,28 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 				upper := strings.ToUpper(statement)
 				assert.False(t, strings.HasPrefix(upper, "ALTER") || strings.HasPrefix(upper, "CREATE"), "second migration ran %s", statement)
 			}
+
+			// Per-user limits: an explicit 0 survives the round trip, and a
+			// row written before the asset_library column existed (NULL there)
+			// still goes once its other overrides are cleared.
+			zero, rpm := 0, 5
+			require.NoError(t, model.UpdateUserAssetLibraryLimits(6, &model.AssetLibraryLimits{MaxGroups: &zero}))
+			limits, err := model.GetUserAssetLibraryLimits(6)
+			require.NoError(t, err)
+			require.NotNil(t, limits)
+			require.NotNil(t, limits.MaxGroups)
+			assert.Zero(t, *limits.MaxGroups)
+			assert.Nil(t, limits.MaxAssets)
+			require.NoError(t, model.UpdateUserRateLimitOverride(5, &relaykitdto.RateLimitOverride{Default: &relaykitdto.RateLimitValues{Rpm: &rpm}}))
+			require.NoError(t, db.Exec("UPDATE user_extend SET asset_library = NULL WHERE user_id = ?", 5).Error)
+			limits, err = model.GetUserAssetLibraryLimits(5)
+			require.NoError(t, err)
+			assert.Nil(t, limits)
+			require.NoError(t, model.UpdateUserRateLimitOverride(5, nil))
+			require.NoError(t, model.UpdateUserAssetLibraryLimits(6, &model.AssetLibraryLimits{}))
+			var extendRows int64
+			require.NoError(t, db.Model(&model.UserExtend{}).Count(&extendRows).Error)
+			assert.Zero(t, extendRows)
 
 			low := &model.AssetLibraryAccount{Name: "low", AccessKeyId: "AKLTlow", SecretAccessKey: "sk-low", Region: "cn-beijing", ProjectName: "default", Enabled: true, AigcEnabled: true, LivenessFaceVerify: true, Priority: 1, MaxAssets: 50, CreateAssetQPM: 3}
 			high := &model.AssetLibraryAccount{Name: "high", AccessKeyId: "AKLThigh", SecretAccessKey: "sk-high", Region: "cn-beijing", ProjectName: "video", Enabled: true, LivenessFaceEnabled: true, Priority: 9, AllowedUserGroups: `["vip"]`}
