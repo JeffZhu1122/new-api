@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 58 个（含本文档相关提交） |
-| 变更规模 | 391 个文件，+38968 / −2223 行（不含本文档） |
+| fork 专有提交数 | 59 个（含本文档相关提交） |
+| 变更规模 | 391 个文件，+39002 / −2223 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -2059,6 +2059,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 单个资源的读写先查归属，别人的资源一律回 404 `ResourceNotFound`，**不会发到火山**；通过后发给资源所在的火山账号，原样返回火山的响应（火山的 RequestId、错误码都保留）。
   - 两个 List 由网关按本人的记录回答，字段与方舟一致，支持方舟的两种分页（`MaxResults` + `NextToken`，或 `PageNumber` + `PageSize` 返回 `TotalCount`）和排序；`NextToken` 只编码本人记录的偏移量。`ListAssets` 时对还在处理中、或签名 URL 快过期（11 小时）的素材向火山重新查询。
   - 请求里的 `ProjectName` 被忽略，发给火山时一律用该账号的项目。
+  - `CreateAsset` 的 `Moderation` 原样转发，例如 `{"Strategy": "Skip"}` 跳过内容预审（火山要求先在控制台关闭预审，取值由火山校验）。传的不是对象时返回 `InvalidParameter`，传 `null` 视为没传。这意味着每个能用素材库的用户都能在这个火山账号上选择跳过预审。
 - **建组时选账号**：启用、支持该类型、允许该用户分组、且未达账号配额的账号中，优先级最高的那个。
 - **限制**：每用户素材组 / 素材上限（`asset_library_setting`），账号配额，账号每分钟上传次数（开了 Redis 时多节点共用计数）。网关自己的检查用这些错误码：`InvalidActionOrVersion`、`InvalidParameter`、`ResourceNotFound`、`AccessDenied`、`QuotaExceeded`、`RequestLimitExceeded`、`InternalError`。
 - 火山已创建、但网关记录失败的组或素材会立即删掉，不留下无主资源。删除仍有素材组的火山账号会被拒绝。
@@ -2144,6 +2145,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 火山的错误原样返回且不留记录；超过账号每分钟上传次数返回 429；两种分页与互斥校验；不支持的 Action / Version；
   - `/volc` 令牌鉴权、无令牌时方舟格式的 401、素材库关闭时 404；任务轮询、超时清理和「是否有未完成任务」都跳过素材库任务。
   - 去掉归属查询里的 `user_id` 条件后，隔离测试失败。
+  - `TestAssetLibraryUploadPassesModerationThrough`：`Moderation` 对象原样发给火山，不是对象时不调火山，`null` 不转发；去掉转发后测试失败。
 - 第 2 步数据库：`TestAssetLibraryAccountsAcrossDatabases` 扩展到三张表和任务表：名称搜索在三种库上正确转义 `%` 与 `_`（用 `!` 作 ESCAPE），火山 ID 唯一，上传与任务一起写入且随素材失败而失败，删除组连带删除素材。再次用官方 rc.46 建库后升级两次，三种库都正常。
 - 第 2 步本地端到端（全新 SQLite 实例 + Python 模拟方舟，模拟器用独立实现的签名算法验签）21 项：关闭时 404、测试连接、无令牌 401、建虚拟与真人组、上传、列表中的处理中状态、任务日志、`GetAsset` 变为 Active、后台同步把坏素材的任务判为失败（`FaceMismatch`）、按状态与页码列出、另一个用户 4 种操作都是 `ResourceNotFound` 且没有发到火山、网关校验的错误格式、删除组；模拟器收到的 11 次调用签名全部正确、项目全部是账号的项目。
 - 前端 `usage-logs/__tests__/artifacts.test.ts`：素材上传任务不提供产物查看。

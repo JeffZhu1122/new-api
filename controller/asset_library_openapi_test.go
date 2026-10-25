@@ -268,6 +268,29 @@ func TestAssetLibraryUploadIsATaskThatFinishesWithTheAsset(t *testing.T) {
 	}
 }
 
+// CreateAsset's Moderation goes to Ark as sent; a value that is not an object
+// is refused before Ark, and null counts as not sent.
+func TestAssetLibraryUploadPassesModerationThrough(t *testing.T) {
+	fixture := setupAssetLibraryOpenAPI(t)
+	_, body := callAction(t, 1, "CreateAssetGroup", `{"Name":"g"}`)
+	groupId := resultId(t, body)
+	upload := `{"GroupId":%q,"URL":"https://cdn.example/a.png","AssetType":"Image","Moderation":%s}`
+
+	status, body := callAction(t, 1, "CreateAsset", fmt.Sprintf(upload, groupId, `"Skip"`))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "InvalidParameter", arkErrorCode(body))
+	assert.Len(t, fixture.ark.recorded(), 1)
+
+	for _, moderation := range []string{`{"Strategy":"Skip"}`, `null`} {
+		status, body = callAction(t, 1, "CreateAsset", fmt.Sprintf(upload, groupId, moderation))
+		require.Equal(t, http.StatusOK, status, body)
+	}
+	calls := fixture.ark.recorded()
+	require.Len(t, calls, 3)
+	assert.Equal(t, `CreateAsset {"AssetType":"Image","GroupId":"group-1","Moderation":{"Strategy":"Skip"},"ProjectName":"video","URL":"https://cdn.example/a.png"}`, calls[1])
+	assert.Equal(t, `CreateAsset {"AssetType":"Image","GroupId":"group-1","ProjectName":"video","URL":"https://cdn.example/a.png"}`, calls[2])
+}
+
 // Ark's own errors come back unchanged and leave nothing recorded.
 func TestAssetLibraryPassesArkErrorsThrough(t *testing.T) {
 	fixture := setupAssetLibraryOpenAPI(t)
