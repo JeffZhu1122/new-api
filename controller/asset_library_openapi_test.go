@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"fmt"
 	"io"
 	"net/http"
@@ -8,6 +9,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -30,6 +32,8 @@ type fakeArk struct {
 	next        int
 	assetStatus string
 	failAction  string
+	// Group Ark created for each face verification token that passed.
+	verified map[string]string
 }
 
 func (f *fakeArk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -52,6 +56,17 @@ func (f *fakeArk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		_, _ = fmt.Fprintf(w, `{%s,"Result":{"Id":"group-%d"}}`, metadata, f.next)
 	case "CreateAsset":
 		_, _ = fmt.Fprintf(w, `{%s,"Result":{"Id":"asset-%d"}}`, metadata, f.next)
+	case "CreateVisualValidateSession":
+		_, _ = fmt.Fprintf(w, `{%s,"Result":{"BytedToken":"tok-%d","H5Link":"https://h5.example/?bytedToken=tok-%d","CallbackURL":%q}}`, metadata, f.next, f.next, request["CallbackURL"])
+	case "GetVisualValidateResult":
+		token, _ := request["BytedToken"].(string)
+		groupId := f.verified[token]
+		if groupId == "" {
+			w.WriteHeader(http.StatusBadRequest)
+			_, _ = fmt.Fprintf(w, `{"ResponseMetadata":{"RequestId":"ark-%d","Action":%q,"Error":{"Code":"InvalidParameter.BytedToken","Message":"not verified yet"}}}`, f.next, action)
+			return
+		}
+		_, _ = fmt.Fprintf(w, `{%s,"Result":{"GroupId":%q}}`, metadata, groupId)
 	case "GetAsset":
 		errorField := ""
 		if f.assetStatus == "Failed" {
@@ -61,6 +76,16 @@ func (f *fakeArk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		_, _ = fmt.Fprintf(w, `{%s,"Result":{}}`, metadata)
 	}
+}
+
+// pass makes Ark report the group for the verification token.
+func (f *fakeArk) pass(token, groupId string) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if f.verified == nil {
+		f.verified = map[string]string{}
+	}
+	f.verified[token] = groupId
 }
 
 func (f *fakeArk) recorded() []string {
@@ -79,11 +104,11 @@ func setupAssetLibraryOpenAPI(t *testing.T) *assetLibraryFixture {
 	setupAssetLibraryAccountTestDB(t)
 	previous := config.GlobalConfig.ExportAllConfigs()
 	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{
-		"enabled": "true", "max_groups_per_user": "2", "max_assets_per_user": "3", "allowed_user_groups": "[]",
+		"enabled": "true", "max_groups_per_user": "2", "max_assets_per_user": "3", "allowed_user_groups": "[]", "verify_sessions_per_hour": "5",
 	}))
 	t.Cleanup(func() {
 		restore := map[string]string{}
-		for _, key := range []string{"enabled", "max_groups_per_user", "max_assets_per_user", "allowed_user_groups"} {
+		for _, key := range []string{"enabled", "max_groups_per_user", "max_assets_per_user", "allowed_user_groups", "verify_sessions_per_hour"} {
 			restore[key] = previous["asset_library_setting."+key]
 		}
 		_ = config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), restore)
@@ -313,7 +338,7 @@ func TestAssetLibraryListsPageLikeArk(t *testing.T) {
 
 func TestAssetLibraryRejectsUnknownActionsAndVersions(t *testing.T) {
 	setupAssetLibraryOpenAPI(t)
-	for _, target := range []string{"/volc?Action=CreateVisualValidateSession&Version=2024-01-01", "/volc?Action=ListAssets&Version=2023-01-01"} {
+	for _, target := range []string{"/volc?Action=ListProjects&Version=2024-01-01", "/volc?Action=ListAssets&Version=2023-01-01"} {
 		recorder := httptest.NewRecorder()
 		ctx, _ := gin.CreateTestContext(recorder)
 		ctx.Request = httptest.NewRequest(http.MethodPost, target, strings.NewReader(`{}`))
@@ -531,4 +556,164 @@ func TestAssetLibraryConsoleEndpoints(t *testing.T) {
 	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"enabled": "false"}))
 	assert.Equal(t, float64(http.StatusNotFound), run(GetAssetLibraryConfig, http.MethodGet, "/api/asset-library/config", nil, 1)["_status"])
 	assert.Equal(t, float64(http.StatusNotFound), run(AdminListAssetLibraryGroups, http.MethodGet, "/api/asset-library/admin/groups", nil, 9)["_status"])
+}
+
+func arkErrorMessage(body map[string]any) string {
+	metadata, _ := body["ResponseMetadata"].(map[string]any)
+	apiErr, _ := metadata["Error"].(map[string]any)
+	message, _ := apiErr["Message"].(string)
+	return message
+}
+
+// A face verification belongs to the user who started it: only they can
+// collect the group, which Ark creates once the person passes and the gateway
+// then names and records under them.
+func TestAssetLibraryFaceVerificationRecordsTheGroupForItsUser(t *testing.T) {
+	fixture := setupAssetLibraryOpenAPI(t)
+
+	// An allowlisted account creates real-person groups directly.
+	status, body := callAction(t, 1, "CreateVisualValidateSession", `{"CallbackURL":"https://gw.example/done"}`)
+	assert.Equal(t, http.StatusForbidden, status)
+	assert.Contains(t, arkErrorMessage(body), "CreateAssetGroup")
+
+	people := fixture.accounts["people"]
+	people.LivenessFaceVerify = true
+	require.NoError(t, model.UpdateAssetLibraryAccount(people))
+	userConfig, err := service.GetAssetLibraryUserConfig(1, "default")
+	require.NoError(t, err)
+	assert.True(t, userConfig.LivenessFaceVerify)
+	assert.Contains(t, userConfig.GroupTypes, "LivenessFace")
+
+	status, body = callAction(t, 1, "CreateAssetGroup", `{"Name":"me","GroupType":"LivenessFace"}`)
+	assert.Equal(t, http.StatusForbidden, status)
+	assert.Contains(t, arkErrorMessage(body), "CreateVisualValidateSession")
+	status, body = callAction(t, 1, "CreateVisualValidateSession", `{"CallbackURL":"javascript:alert(1)"}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "InvalidParameter", arkErrorCode(body))
+	assert.Empty(t, fixture.ark.recorded())
+
+	status, body = callAction(t, 1, "CreateVisualValidateSession", `{"CallbackURL":"https://gw.example/done","Name":"Alice","Description":"the real one","ProjectName":"other"}`)
+	require.Equal(t, http.StatusOK, status, body)
+	session := body["Result"].(map[string]any)
+	token := session["BytedToken"].(string)
+	assert.NotEmpty(t, session["H5Link"])
+	assert.Equal(t, []string{`CreateVisualValidateSession {"CallbackURL":"https://gw.example/done","ProjectName":"video"}`}, fixture.ark.recorded())
+	verification, err := model.GetUserAssetLibraryVerification(1, token)
+	require.NoError(t, err)
+	task, exists, err := model.GetByTaskId(1, verification.TaskId)
+	require.NoError(t, err)
+	require.True(t, exists)
+	assert.Equal(t, model.AssetLibraryVerifyAction, task.Action)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusInProgress), task.Status)
+	assert.Zero(t, task.Quota)
+	assert.NotContains(t, string(task.Data), token)
+
+	// Bob cannot collect Alice's group, and Ark is not asked.
+	status, body = callAction(t, 2, "GetVisualValidateResult", fmt.Sprintf(`{"BytedToken":%q}`, token))
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Equal(t, "ResourceNotFound", arkErrorCode(body))
+	assert.Len(t, fixture.ark.recorded(), 1)
+
+	// Until the person passes, Ark's answer comes back as is.
+	status, body = callAction(t, 1, "GetVisualValidateResult", fmt.Sprintf(`{"BytedToken":%q}`, token))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "InvalidParameter.BytedToken", arkErrorCode(body))
+
+	fixture.ark.pass(token, "group-alice")
+	before := len(fixture.ark.recorded())
+	status, body = callAction(t, 1, "GetVisualValidateResult", fmt.Sprintf(`{"BytedToken":%q}`, token))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Equal(t, "group-alice", body["Result"].(map[string]any)["GroupId"])
+	assert.Equal(t, []string{
+		fmt.Sprintf(`GetVisualValidateResult {"BytedToken":%q,"ProjectName":"video"}`, token),
+		`UpdateAssetGroup {"Description":"the real one","Id":"group-alice","Name":"Alice","ProjectName":"video"}`,
+		`GetAssetGroup {"Id":"group-alice","ProjectName":"video"}`,
+	}, fixture.ark.recorded()[before:])
+	group, err := model.GetUserAssetLibraryGroup(1, "group-alice")
+	require.NoError(t, err)
+	assert.Equal(t, "Alice", group.Name)
+	assert.Equal(t, "LivenessFace", group.GroupType)
+	assert.Equal(t, people.Id, group.AccountId)
+	task, _, err = model.GetByTaskId(1, verification.TaskId)
+	require.NoError(t, err)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), task.Status)
+	assert.Contains(t, string(task.Data), `"GroupId":"group-alice"`)
+
+	// Asked again, the gateway answers from its record.
+	before = len(fixture.ark.recorded())
+	status, body = callAction(t, 1, "GetVisualValidateResult", fmt.Sprintf(`{"BytedToken":%q}`, token))
+	require.Equal(t, http.StatusOK, status, body)
+	assert.Equal(t, "group-alice", body["Result"].(map[string]any)["GroupId"])
+	assert.Len(t, fixture.ark.recorded(), before)
+
+	// The group is Alice's like any other.
+	status, body = callAction(t, 2, "GetAssetGroup", `{"Id":"group-alice"}`)
+	assert.Equal(t, http.StatusNotFound, status)
+	assert.Equal(t, "ResourceNotFound", arkErrorCode(body))
+}
+
+// Pending verifications hold a group place and a user can start only so many
+// per hour; a result page that did not pass ends the verification, and the
+// background sync records groups nobody asked for and gives up after the
+// token's lifetime.
+func TestAssetLibraryFaceVerificationLimitsAndEndings(t *testing.T) {
+	fixture := setupAssetLibraryOpenAPI(t)
+	people := fixture.accounts["people"]
+	people.LivenessFaceVerify = true
+	require.NoError(t, model.UpdateAssetLibraryAccount(people))
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"verify_sessions_per_hour": "1"}))
+
+	status, body := callAction(t, 1, "CreateVisualValidateSession", `{"CallbackURL":"https://gw.example/done"}`)
+	require.Equal(t, http.StatusOK, status, body)
+	aliceToken := body["Result"].(map[string]any)["BytedToken"].(string)
+	calls := len(fixture.ark.recorded())
+	status, body = callAction(t, 1, "CreateVisualValidateSession", `{"CallbackURL":"https://gw.example/done"}`)
+	assert.Equal(t, http.StatusTooManyRequests, status)
+	assert.Equal(t, "RequestLimitExceeded", arkErrorCode(body))
+	assert.Len(t, fixture.ark.recorded(), calls)
+
+	// Bob's pending verification takes the second of his two group places.
+	status, body = callAction(t, 2, "CreateAssetGroup", `{"Name":"bob"}`)
+	require.Equal(t, http.StatusOK, status, body)
+	status, body = callAction(t, 2, "CreateVisualValidateSession", `{"CallbackURL":"https://gw.example/done"}`)
+	require.Equal(t, http.StatusOK, status, body)
+	bobToken := body["Result"].(map[string]any)["BytedToken"].(string)
+	status, body = callAction(t, 2, "CreateAssetGroup", `{"Name":"third"}`)
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "QuotaExceeded", arkErrorCode(body))
+
+	// The result page reports that Alice's person did not pass.
+	service.HandleAssetLibraryVerificationCallback(context.Background(), aliceToken, "10001")
+	status, body = callAction(t, 1, "GetVisualValidateResult", fmt.Sprintf(`{"BytedToken":%q}`, aliceToken))
+	assert.Equal(t, http.StatusBadRequest, status)
+	assert.Equal(t, "VerificationFailed", arkErrorCode(body))
+	alice, err := model.GetUserAssetLibraryVerification(1, aliceToken)
+	require.NoError(t, err)
+	task, _, err := model.GetByTaskId(1, alice.TaskId)
+	require.NoError(t, err)
+	assert.Equal(t, model.TaskStatus(model.TaskStatusFailure), task.Status)
+	assert.Equal(t, "Face verification did not pass.", task.FailReason)
+	assert.Contains(t, string(task.Data), `"ResultCode":"10001"`)
+
+	calls = len(fixture.ark.recorded())
+	service.HandleAssetLibraryVerificationCallback(context.Background(), "tok-unknown", "10000")
+	assert.Len(t, fixture.ark.recorded(), calls)
+
+	// The sync records the group of Bob's person although nobody asked.
+	fixture.ark.pass(bobToken, "group-bob")
+	require.NoError(t, model.DB.Model(&model.AssetLibraryVerification{}).Where("byted_token = ?", bobToken).Update("last_checked_time", 0).Error)
+	service.SyncAssetLibraryVerifications(context.Background())
+	_, err = model.GetUserAssetLibraryGroup(2, "group-bob")
+	require.NoError(t, err)
+
+	// A verification nobody finished gives up after the token's lifetime.
+	stale := &model.AssetLibraryVerification{UserId: 2, AccountId: people.Id, BytedToken: "tok-stale"}
+	require.NoError(t, model.CreateAssetLibraryVerification(stale, "default"))
+	old := time.Now().Add(-40 * time.Minute).Unix()
+	require.NoError(t, model.DB.Model(stale).Updates(map[string]any{"created_time": old, "last_checked_time": old}).Error)
+	service.SyncAssetLibraryVerifications(context.Background())
+	stale, err = model.GetAssetLibraryVerificationByToken("tok-stale")
+	require.NoError(t, err)
+	assert.Equal(t, model.AssetLibraryVerificationFailed, stale.Status)
+	assert.Equal(t, "Face verification was not completed within 30 minutes.", stale.FailReason)
 }

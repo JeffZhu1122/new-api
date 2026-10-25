@@ -97,6 +97,9 @@ var assetLibraryActions = map[string]func(*assetLibraryRequest) AssetLibraryResp
 	"UpdateAsset":      (*assetLibraryRequest).updateAsset,
 	"DeleteAsset":      (*assetLibraryRequest).deleteAsset,
 	"ListAssets":       (*assetLibraryRequest).listAssets,
+	// Face verification for real-person groups, see asset_library_verification.go.
+	"CreateVisualValidateSession": (*assetLibraryRequest).createVerification,
+	"GetVisualValidateResult":     (*assetLibraryRequest).getVerificationResult,
 }
 
 // HandleAssetLibraryAction runs one Ark asset action for the caller.
@@ -242,16 +245,10 @@ func (r *assetLibraryRequest) createGroup() AssetLibraryResponse {
 	if request.Description != nil && utf8.RuneCountInString(*request.Description) > assetLibraryDescriptionMaxRunes {
 		return r.fail(http.StatusBadRequest, assetLibraryCodeInvalidParam, "Description must be at most 300 characters.")
 	}
-	if limit := asset_library_setting.GetSetting().MaxGroupsPerUser; limit > 0 {
-		count, err := model.CountAssetLibraryGroups("user_id", r.caller.UserId)
-		if err != nil {
-			return r.internalError(err)
-		}
-		if count >= int64(limit) {
-			return r.fail(http.StatusBadRequest, assetLibraryCodeQuotaExceeded, fmt.Sprintf("You can have at most %d asset groups.", limit))
-		}
+	if response, ok := r.checkUserGroupLimit(); !ok {
+		return response
 	}
-	account, response, ok := r.accountForNewGroup(request.GroupType)
+	account, response, ok := r.accountForNewGroup(request.GroupType, false)
 	if !ok {
 		return response
 	}
@@ -287,25 +284,66 @@ func (r *assetLibraryRequest) createGroup() AssetLibraryResponse {
 	return passThrough(arkResponse)
 }
 
+// checkUserGroupLimit refuses a new group, or a face verification that would
+// create one, when the caller's groups and pending verifications reach the
+// per-user limit.
+func (r *assetLibraryRequest) checkUserGroupLimit() (AssetLibraryResponse, bool) {
+	limit := asset_library_setting.GetSetting().MaxGroupsPerUser
+	if limit <= 0 {
+		return AssetLibraryResponse{}, true
+	}
+	count, err := countAssetLibraryGroupPlaces("user_id", r.caller.UserId)
+	if err != nil {
+		return r.internalError(err), false
+	}
+	if count >= int64(limit) {
+		return r.fail(http.StatusBadRequest, assetLibraryCodeQuotaExceeded, fmt.Sprintf("You can have at most %d asset groups.", limit)), false
+	}
+	return AssetLibraryResponse{}, true
+}
+
+// countAssetLibraryGroupPlaces counts the groups of a user or account plus
+// the pending verifications that may still become groups.
+func countAssetLibraryGroupPlaces(column string, id int) (int64, error) {
+	groups, err := model.CountAssetLibraryGroups(column, id)
+	if err != nil {
+		return 0, err
+	}
+	since := time.Now().Add(-assetLibraryVerificationTTL - assetLibraryVerificationGrace).Unix()
+	pending, err := model.CountPendingAssetLibraryVerifications(column, id, since)
+	return groups + pending, err
+}
+
+// accountTakesGroups reports whether the account creates groups of the type
+// in the given way: real-person groups either directly on an allowlisted
+// account or through face verification on any other.
+func accountTakesGroups(account *model.AssetLibraryAccount, groupType string, verify bool) bool {
+	if groupType == volcark.GroupTypeLivenessFace {
+		return account.LivenessFaceEnabled && account.LivenessFaceVerify == verify
+	}
+	return account.AigcEnabled && !verify
+}
+
 // accountForNewGroup picks the highest-priority enabled account that takes
-// groups of the type from the caller's user group and still has room.
-func (r *assetLibraryRequest) accountForNewGroup(groupType string) (*model.AssetLibraryAccount, AssetLibraryResponse, bool) {
+// groups of the type, created directly or through face verification, from
+// the caller's user group and still has room.
+func (r *assetLibraryRequest) accountForNewGroup(groupType string, verify bool) (*model.AssetLibraryAccount, AssetLibraryResponse, bool) {
 	accounts, err := model.ListAssetLibraryAccounts()
 	if err != nil {
 		return nil, r.internalError(err), false
 	}
-	accepting := false
+	accepting, otherWay := false, false
 	for _, account := range accounts {
-		typeEnabled := account.AigcEnabled
-		if groupType == volcark.GroupTypeLivenessFace {
-			typeEnabled = account.LivenessFaceEnabled
+		if !account.Enabled || !account.UserGroupAllowed(r.caller.UserGroup) {
+			continue
 		}
-		if !account.Enabled || !typeEnabled || !account.UserGroupAllowed(r.caller.UserGroup) {
+		if !accountTakesGroups(account, groupType, verify) {
+			otherWay = otherWay || accountTakesGroups(account, groupType, !verify)
 			continue
 		}
 		accepting = true
 		if account.MaxGroups > 0 {
-			count, err := model.CountAssetLibraryGroups("account_id", account.Id)
+			count, err := countAssetLibraryGroupPlaces("account_id", account.Id)
 			if err != nil {
 				return nil, r.internalError(err), false
 			}
@@ -317,6 +355,12 @@ func (r *assetLibraryRequest) accountForNewGroup(groupType string) (*model.Asset
 	}
 	if accepting {
 		return nil, r.fail(http.StatusBadRequest, assetLibraryCodeQuotaExceeded, "The asset library has no room for new asset groups."), false
+	}
+	if otherWay && verify {
+		return nil, r.fail(http.StatusForbidden, assetLibraryCodeAccessDenied, "Real-person groups need no face verification here: create them with CreateAssetGroup."), false
+	}
+	if otherWay {
+		return nil, r.fail(http.StatusForbidden, assetLibraryCodeAccessDenied, "Real-person groups are created through face verification here: call CreateVisualValidateSession."), false
 	}
 	return nil, r.fail(http.StatusForbidden, assetLibraryCodeAccessDenied, fmt.Sprintf("No asset library account accepts %s groups for you.", groupType)), false
 }

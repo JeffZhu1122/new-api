@@ -906,4 +906,11 @@ export const STATIC_I18N_KEYS = [
   'Channel priorities changed. Refresh and try again.',
   'Invalid channel priority move',
   'Channel priority is outside the sortable range',
+  // Asset library task labels and the fail reasons the gateway writes
+  // (model/asset_library*.go, service/asset_library_verification.go).
+  'Face verification',
+  'Asset processing failed',
+  'Face verification did not pass.',
+  'Face verification was not completed within 30 minutes.',
+  'The Volcengine account of this verification was removed.',
 ] as const
