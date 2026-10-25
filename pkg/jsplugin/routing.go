@@ -479,6 +479,7 @@ var reservedRouteNamespaces = []string{
 	"/503",
 	"/chat2link",
 	"/system-settings",
+	"/asset-library",
 	"/channels",
 	"/chat",
 	"/dashboard",

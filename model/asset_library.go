@@ -312,3 +312,96 @@ func GetAssetLibraryAssetsByRemoteIds(remoteIds []string) ([]*AssetLibraryAsset,
 	err := DB.Where("remote_id IN ?", remoteIds).Find(&assets).Error
 	return assets, err
 }
+
+func GetAssetLibraryGroupByRemoteId(remoteId string) (*AssetLibraryGroup, error) {
+	var group AssetLibraryGroup
+	if err := DB.Where("remote_id = ?", remoteId).First(&group).Error; err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
+func GetAssetLibraryAssetByRemoteId(remoteId string) (*AssetLibraryAsset, error) {
+	var asset AssetLibraryAsset
+	if err := DB.Where("remote_id = ?", remoteId).First(&asset).Error; err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
+// AssetLibraryAdminFilter narrows every user's groups for administrators;
+// zero values match everything.
+type AssetLibraryAdminFilter struct {
+	UserId    int
+	AccountId int
+	GroupType string
+	Keyword   string
+	Offset    int
+	Limit     int
+}
+
+// ListAllAssetLibraryGroups returns one page of every user's groups, newest
+// first, and the total.
+func ListAllAssetLibraryGroups(filter AssetLibraryAdminFilter) ([]*AssetLibraryGroup, int64, error) {
+	query := DB.Model(&AssetLibraryGroup{})
+	if filter.UserId > 0 {
+		query = query.Where("user_id = ?", filter.UserId)
+	}
+	if filter.AccountId > 0 {
+		query = query.Where("account_id = ?", filter.AccountId)
+	}
+	if filter.GroupType != "" {
+		query = query.Where("group_type = ?", filter.GroupType)
+	}
+	if filter.Keyword != "" {
+		pattern := assetLibraryNamePattern(filter.Keyword)
+		query = query.Where("(name LIKE ? ESCAPE '!' OR remote_id LIKE ? ESCAPE '!')", pattern, pattern)
+	}
+	var total int64
+	if err := query.Count(&total).Error; err != nil {
+		return nil, 0, err
+	}
+	var groups []*AssetLibraryGroup
+	err := query.Order("created_time DESC, id DESC").Offset(filter.Offset).Limit(filter.Limit).Find(&groups).Error
+	return groups, total, err
+}
+
+// CountAssetLibraryAssetsByGroup returns how many assets each group holds.
+func CountAssetLibraryAssetsByGroup(groupIds []int) (map[int]int64, error) {
+	var rows []struct {
+		GroupId int
+		Count   int64
+	}
+	err := DB.Model(&AssetLibraryAsset{}).Select("group_id, COUNT(*) AS count").Where("group_id IN ?", groupIds).Group("group_id").Scan(&rows).Error
+	counts := make(map[int]int64, len(rows))
+	for _, row := range rows {
+		counts[row.GroupId] = row.Count
+	}
+	return counts, err
+}
+
+// ListAssetLibraryAssetsInGroup returns a group's assets, newest first.
+func ListAssetLibraryAssetsInGroup(groupId int) ([]*AssetLibraryAsset, error) {
+	var assets []*AssetLibraryAsset
+	err := DB.Where("group_id = ?", groupId).Order("created_time DESC, id DESC").Find(&assets).Error
+	return assets, err
+}
+
+// GetUsernamesByIds returns the usernames of the users, keyed by id.
+func GetUsernamesByIds(ids []int) (map[int]string, error) {
+	names := make(map[int]string, len(ids))
+	if len(ids) == 0 {
+		return names, nil
+	}
+	var users []struct {
+		Id       int
+		Username string
+	}
+	if err := DB.Model(&User{}).Select("id, username").Where("id IN ?", ids).Scan(&users).Error; err != nil {
+		return nil, err
+	}
+	for _, user := range users {
+		names[user.Id] = user.Username
+	}
+	return names, nil
+}

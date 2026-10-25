@@ -55,9 +55,7 @@ const defaultValues: AssetLibrarySettingsValues = {
   block_asset_refs_when_disabled: true,
   max_groups_per_user: 20,
   max_assets_per_user: 200,
-  verify_sessions_per_hour: 5,
   allowed_user_groups: [],
-  callback_base_url: '',
   compliance_notice: '',
 }
 

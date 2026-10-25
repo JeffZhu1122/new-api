@@ -2,7 +2,6 @@ package asset_library_setting
 
 import (
 	"fmt"
-	"net/url"
 	"slices"
 	"strconv"
 	"strings"
@@ -30,13 +29,8 @@ type AssetLibrarySetting struct {
 	MaxAssetsPerUser int `json:"max_assets_per_user"`
 	// User groups that may use the library; empty = every group.
 	AllowedUserGroups []string `json:"allowed_user_groups"`
-	// Base URL the real-person verification page returns to; empty = the
-	// server address.
-	CallbackBaseURL string `json:"callback_base_url"`
-	// Text shown before a user creates a group or starts a verification.
+	// Text a user must agree to before creating a group.
 	ComplianceNotice string `json:"compliance_notice"`
-	// Real-person verifications a user may start per hour; 0 = unlimited.
-	VerifySessionsPerHour int `json:"verify_sessions_per_hour"`
 }
 
 var assetLibrarySetting = AssetLibrarySetting{
@@ -45,7 +39,6 @@ var assetLibrarySetting = AssetLibrarySetting{
 	MaxGroupsPerUser:           20,
 	MaxAssetsPerUser:           200,
 	AllowedUserGroups:          []string{},
-	VerifySessionsPerHour:      5,
 }
 
 func init() {
@@ -72,7 +65,7 @@ func ValidateOption(key string, value string) error {
 		if _, err := strconv.ParseBool(value); err != nil {
 			return fmt.Errorf("%s must be true or false", field)
 		}
-	case "max_groups_per_user", "max_assets_per_user", "verify_sessions_per_hour":
+	case "max_groups_per_user", "max_assets_per_user":
 		number, err := strconv.Atoi(value)
 		if err != nil || number < 0 || number > MaxPerUserLimit {
 			return fmt.Errorf("%s must be an integer from 0 to %d", field, MaxPerUserLimit)
@@ -86,14 +79,6 @@ func ValidateOption(key string, value string) error {
 			if strings.TrimSpace(group) == "" {
 				return fmt.Errorf("allowed_user_groups must not contain empty group names")
 			}
-		}
-	case "callback_base_url":
-		if value == "" {
-			return nil
-		}
-		parsed, err := url.Parse(value)
-		if err != nil || (parsed.Scheme != "https" && parsed.Scheme != "http") || parsed.Host == "" || parsed.RawQuery != "" || parsed.Fragment != "" {
-			return fmt.Errorf("callback_base_url must be an http(s) URL without a query")
 		}
 	case "compliance_notice":
 		if len([]rune(value)) > 5000 {

@@ -21,10 +21,8 @@ func TestValidateOptionAcceptsValidValuesAndRejectsInvalidOnes(t *testing.T) {
 		{"asset_library_setting.allowed_user_groups", `["default","vip"]`, false},
 		{"asset_library_setting.allowed_user_groups", `["default",""]`, true},
 		{"asset_library_setting.allowed_user_groups", `default`, true},
-		{"asset_library_setting.callback_base_url", "", false},
-		{"asset_library_setting.callback_base_url", "https://api.example.com", false},
-		{"asset_library_setting.callback_base_url", "javascript:alert(1)", true},
-		{"asset_library_setting.callback_base_url", "https://api.example.com/?next=1", true},
+		{"asset_library_setting.compliance_notice", "I own these assets.", false},
+		{"asset_library_setting.verify_sessions_per_hour", "5", true},
 		{"asset_library_setting.unknown", "1", true},
 		{"other_setting.enabled", "anything", false},
 	}
