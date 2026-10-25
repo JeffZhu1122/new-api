@@ -466,3 +466,69 @@ func TestAssetLibraryAccountFilterKeepsBoundChannels(t *testing.T) {
 	}
 	assert.True(t, model.FiltersReadExtendConfig(filter), "the filter needs extend settings backfilled")
 }
+
+// The Asset Library page: a user's own config, and the administrators' view
+// of everyone's groups, which can delete any group on Ark.
+func TestAssetLibraryConsoleEndpoints(t *testing.T) {
+	fixture := setupAssetLibraryOpenAPI(t)
+	_, body := callAction(t, 1, "CreateAssetGroup", `{"Name":"alice virtual"}`)
+	aliceGroup := resultId(t, body)
+	callAction(t, 1, "CreateAsset", fmt.Sprintf(`{"GroupId":%q,"URL":"https://cdn.example/a.png","AssetType":"Image"}`, aliceGroup))
+	_, body = callAction(t, 2, "CreateAssetGroup", `{"Name":"bob person","GroupType":"LivenessFace"}`)
+	bobGroup := resultId(t, body)
+	run := func(handler gin.HandlerFunc, method, target string, params gin.Params, userId int) map[string]any {
+		recorder := httptest.NewRecorder()
+		ctx, _ := gin.CreateTestContext(recorder)
+		ctx.Request = httptest.NewRequest(method, target, nil)
+		ctx.Params = params
+		ctx.Set("id", userId)
+		handler(ctx)
+		var decoded map[string]any
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &decoded), recorder.Body.String())
+		decoded["_status"] = float64(recorder.Code)
+		return decoded
+	}
+
+	userConfig := run(GetAssetLibraryConfig, http.MethodGet, "/api/asset-library/config", nil, 1)["data"].(map[string]any)
+	assert.Equal(t, true, userConfig["allowed"])
+	assert.Equal(t, float64(1), userConfig["group_count"])
+	assert.Equal(t, float64(1), userConfig["asset_count"])
+	assert.Equal(t, float64(2), userConfig["max_groups_per_user"])
+	assert.Equal(t, []any{"AIGC", "LivenessFace"}, userConfig["group_types"])
+
+	listed := run(AdminListAssetLibraryGroups, http.MethodGet, "/api/asset-library/admin/groups?p=1&page_size=10", nil, 9)["data"].(map[string]any)
+	assert.Equal(t, float64(2), listed["total"])
+	byId := map[string]map[string]any{}
+	for _, item := range listed["items"].([]any) {
+		byId[item.(map[string]any)["Id"].(string)] = item.(map[string]any)
+	}
+	assert.Equal(t, "alice", byId[aliceGroup]["Username"])
+	assert.Equal(t, "aigc-high", byId[aliceGroup]["AccountName"])
+	assert.Equal(t, float64(1), byId[aliceGroup]["AssetCount"])
+	assert.Equal(t, "people", byId[bobGroup]["AccountName"])
+
+	filtered := run(AdminListAssetLibraryGroups, http.MethodGet, "/api/asset-library/admin/groups?p=1&page_size=10&user_id=2", nil, 9)["data"].(map[string]any)
+	assert.Equal(t, float64(1), filtered["total"])
+
+	assets := run(AdminListAssetLibraryGroupAssets, http.MethodGet, "/api/asset-library/admin/groups/"+aliceGroup+"/assets", gin.Params{{Key: "id", Value: aliceGroup}}, 9)["data"].([]any)
+	require.Len(t, assets, 1)
+	assert.Equal(t, aliceGroup, assets[0].(map[string]any)["GroupId"])
+
+	callsBefore := len(fixture.ark.recorded())
+	deleted := run(AdminDeleteAssetLibraryGroup, http.MethodDelete, "/api/asset-library/admin/groups/"+aliceGroup, gin.Params{{Key: "id", Value: aliceGroup}}, 9)
+	assert.Equal(t, true, deleted["success"], deleted)
+	calls := fixture.ark.recorded()[callsBefore:]
+	require.Len(t, calls, 1)
+	assert.Equal(t, fmt.Sprintf(`DeleteAssetGroup {"Id":%q,"ProjectName":"video"}`, aliceGroup), calls[0])
+	count, err := model.CountAssetLibraryAssets("user_id", 1)
+	require.NoError(t, err)
+	assert.Zero(t, count)
+
+	missing := run(AdminDeleteAssetLibraryAsset, http.MethodDelete, "/api/asset-library/admin/assets/asset-missing", gin.Params{{Key: "id", Value: "asset-missing"}}, 9)
+	assert.Equal(t, false, missing["success"])
+	assert.Equal(t, "Asset not found", missing["message"])
+
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"enabled": "false"}))
+	assert.Equal(t, float64(http.StatusNotFound), run(GetAssetLibraryConfig, http.MethodGet, "/api/asset-library/config", nil, 1)["_status"])
+	assert.Equal(t, float64(http.StatusNotFound), run(AdminListAssetLibraryGroups, http.MethodGet, "/api/asset-library/admin/groups", nil, 9)["_status"])
+}

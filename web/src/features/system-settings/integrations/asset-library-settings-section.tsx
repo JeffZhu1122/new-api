@@ -69,12 +69,7 @@ const assetLibrarySchema = z.object({
   block_asset_refs_when_disabled: z.boolean(),
   max_groups_per_user: z.number().int().min(0),
   max_assets_per_user: z.number().int().min(0),
-  verify_sessions_per_hour: z.number().int().min(0),
   allowed_user_groups: z.array(z.string()),
-  callback_base_url: z
-    .string()
-    .trim()
-    .refine((value) => value === '' || /^https?:\/\/[^?#]+$/.test(value)),
   compliance_notice: z.string().max(5000),
 })
 
@@ -213,29 +208,6 @@ export function AssetLibrarySettingsSection(
           />
           <FormField
             control={form.control}
-            name='verify_sessions_per_hour'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Real-person verifications per hour')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type='number'
-                    min={0}
-                    step={1}
-                    {...safeNumberFieldProps(field)}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'How many verifications one user may start per hour. 0 means unlimited.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
             name='allowed_user_groups'
             render={({ field }) => (
               <FormItem>
@@ -262,28 +234,6 @@ export function AssetLibrarySettingsSection(
           />
           <FormField
             control={form.control}
-            name='callback_base_url'
-            render={({ field }) => (
-              <FormItem>
-                <FormLabel>{t('Verification return address')}</FormLabel>
-                <FormControl>
-                  <Input
-                    type='url'
-                    placeholder='https://api.example.com'
-                    {...field}
-                  />
-                </FormControl>
-                <FormDescription>
-                  {t(
-                    'Where the real-person verification page returns to. Leave blank to use the server address.'
-                  )}
-                </FormDescription>
-                <FormMessage />
-              </FormItem>
-            )}
-          />
-          <FormField
-            control={form.control}
             name='compliance_notice'
             render={({ field }) => (
               <FormItem data-settings-form-span='full'>
@@ -293,7 +243,7 @@ export function AssetLibrarySettingsSection(
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'Shown to users before they create an asset group or start a verification; they must agree to continue.'
+                    'Shown to users before they create an asset group; they must agree to continue.'
                   )}
                 </FormDescription>
                 <FormMessage />

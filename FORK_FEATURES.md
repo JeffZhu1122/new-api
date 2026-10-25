@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 55 个（含本文档相关提交） |
-| 变更规模 | 365 个文件，+34357 / −2220 行（不含本文档） |
+| fork 专有提交数 | 56 个（含本文档相关提交） |
+| 变更规模 | 380 个文件，+36991 / −2222 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -92,7 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
-| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分步交付中） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道 |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 4 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library` |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -916,7 +916,10 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/task.go` | §38 `GetAllUnFinishSyncTasks`、`GetTimedOutUnfinishedTasks`、`HasUnfinishedSyncTasks` 加 `platform <> asset_library`，素材上传任务由素材库自己同步 |
 | `router/main.go` / `main.go` / `constant/task.go` | §38 `SetAssetLibraryRouter`（`/volc`）、主节点启动 `StartAssetLibrarySync`、`TaskPlatformAssetLibrary` |
 | `web/src/features/usage-logs/{constants.ts,lib/task-artifacts.ts}` | §38 任务动作 `CreateAsset` 的名称；素材上传任务不提供产物查看 |
-| `router/api-router.go` | §38 `/api/asset-library/accounts` 路由组（RootAuth），放在 `/plugin/task` 之前 |
+| `router/api-router.go` | §38 `/api/asset-library/accounts` 路由组（RootAuth），放在 `/plugin/task` 之前；页面用的 `/api/asset-library/openapi`、`/config` 与 `admin/*`（`handlePermissionRoute` 挂 `authz.AssetLibraryRead` / `Write`） |
+| `service/authz/authz_test.go` | §38 `TestSetUserPermissionsStoresOnlyOverrides` 的管理员有效权限期望表（两处）加入 `asset_library` |
+| `web/src/hooks/use-sidebar-data.ts` / `web/src/lib/admin-permissions.ts` | §38 侧边栏「素材库管理」（`asset_library_enabled` 时显示，在任务日志之后）；权限资源常量 `ASSET_LIBRARY` |
+| `web/src/routeTree.gen.ts` | §38 新路由 `/_authenticated/asset-library/`（构建时生成，冲突时重新生成即可） |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
 | `web/src/features/dashboard/components/{models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts},flow/flow-charts,users/user-charts}.tsx` | 数据看板各标签页外框改为 `brand-surface rounded-2xl` |
@@ -2000,7 +2003,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 
 ## 38. 素材库管理（火山方舟私域素材库）
 
-分步交付中。本节记录已经完成的部分，后续步骤完成时补充。
+分 4 步交付，均已完成。
 
 ### 动机
 
@@ -2018,13 +2021,11 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 
   | 键 | 默认 | 含义 |
   |---|---|---|
-  | `enabled` | false | 素材库总开关；关闭时页面与接口都不存在（后续步骤实现） |
-  | `block_asset_refs_when_disabled` | true | 关闭时也拒绝带 `asset://` 的请求（后续步骤实现） |
+  | `enabled` | false | 素材库总开关；关闭时菜单、页面与接口都不存在（404） |
+  | `block_asset_refs_when_disabled` | true | 关闭时也拒绝带 `asset://` 的请求（见第 3 步） |
   | `max_groups_per_user` / `max_assets_per_user` | 20 / 200 | 每个用户的上限，0 表示不限制 |
   | `allowed_user_groups` | `[]` | 能使用素材库的用户分组，空表示所有分组 |
-  | `verify_sessions_per_hour` | 5 | 每个用户每小时可发起的真人认证次数，0 表示不限制 |
-  | `callback_base_url` | 空 | 真人认证完成后回跳的地址，空表示服务器地址 |
-  | `compliance_notice` | 空 | 建组或认证前展示的合规提示 |
+  | `compliance_notice` | 空 | 新建素材组前必须同意的合规提示 |
 
 - `/api/status` 多一个 `asset_library_enabled`。
 - **前端**：系统设置 → 运维 → 「素材库」：开关与上限的表单，下面是火山账号表格；新增 / 编辑对话框里可以「测试连接」。
@@ -2071,9 +2072,24 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 - **渠道绑定**：`channel_extend.asset_library_account_id`（0 为不绑定）。渠道编辑抽屉的其他设置里多一个「素材库账号」下拉框，素材库启用或该渠道已绑定时才显示。选项来自 `GET /api/asset_library_options`（需要渠道读权限，只返回 ID、名称、项目和启用状态）。
 - **顺带修复**：没有内存缓存时（例如没配 Redis），`SelectChannelForRequest` 最后的过滤复核读到的是从数据库重新加载、不带 channel_extend 的渠道。原有的输入 token 和时段过滤对没有扩展配置的渠道放行，所以以前没暴露；现在复核前先补上扩展配置，和指定渠道、亲和渠道两条路径一致。
 
-### 后续步骤（规划）
+### 第 4 步：素材库管理页面（已完成）
 
-- **素材库管理页面**（含管理员视角）。
+- **入口**：侧边栏「素材库管理」（任务日志下面），路由 `/asset-library`。素材库关闭时菜单项不显示，直接访问是 404 页面，页面用到的接口也返回 404。
+- **页面顶部**：调用说明和本站的 `/volc` 地址（可复制），以及本人已用 / 上限的素材组数和素材数。数据来自 `GET /api/asset-library/config`（登录会话，访问令牌不可用）：本人分组是否允许、合规提示、上限、已用数、可建的素材组类型（有启用、且允许本人分组的账号支持该类型才算）。
+- **本人视角**：「虚拟人像」「真人人像」两个标签页，各列出本人该类型的素材组（名称、描述、ID、创建时间）。
+  - 新建 / 编辑素材组：名称最多 64 字，描述最多 300 字；设置了合规提示时，新建前必须勾选同意。没有账号支持该类型或已达上限时，新建按钮不可用并说明原因。
+  - 打开素材组是一个侧栏：按 URL 上传素材（图片 / 视频 / 音频，附火山的格式要求，名称可选）；素材列表有预览、状态、失败原因、可复制的 `asset://<ID>`、最近使用时间，可以重命名、删除。有素材在处理中时每 5 秒刷新，变为生效不用手动刷新。预览地址是火山的签名 URL，加载失败（例如已过期）时显示类型占位。
+  - 页面的所有操作都走 `POST /api/asset-library/openapi`，和 `/volc` 是同一套处理：归属、上限、每分钟上传次数、任务日志都一样。
+  - 本人分组不在「允许的用户分组」里时，显示「素材库对你的用户分组未开放」。
+- **管理员视角**：新的权限资源 `asset_library`（读 / 写，默认授予管理员角色）。有读权限时多一个「全部用户」标签页（本人分组不允许使用素材库的管理员只看到这一页）：
+  - 所有用户的素材组，可按用户 ID、名称或 ID、类型筛选，每页 20 条；列出类型、用户（用户名与 ID）、火山账号、素材数。
+  - 可以查看任意素材组的素材（同样会刷新处理中和快过期的素材）；有写权限时可以删除任意素材组或素材，先在火山删除，再删网关记录。
+  - 接口：`GET /api/asset-library/admin/groups`、`GET /api/asset-library/admin/groups/:id/assets`（读权限），`DELETE /api/asset-library/admin/groups/:id`、`DELETE /api/asset-library/admin/assets/:id`（写权限）。
+- **去掉了第 1 步预留的真人认证设置**（每小时认证次数、认证回跳地址）：刷脸认证不做，开白账号直接建真人人像组；合规提示只在新建素材组时出现。
+
+### 已知限制
+
+- 网关只认自己登记过的素材组和素材。直接在火山控制台创建的不会出现在页面和 `/volc` 里，也不能被引用（管理员也不行）；直接在火山控制台删除的，网关记录还在，在网关删除时火山返回资源不存在，记录删不掉，仍占用户上限。目前没有导入和对账功能。
 
 ### 测试
 
@@ -2107,4 +2123,20 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 另一用户直接引用、用转义斜杠引用都是 403，且没有请求发到上游；不带素材的请求仍会用到两个渠道；
   - 取消绑定后带素材的请求找不到渠道，也没有发到上游；关闭素材库且拦截开时 403，拦截关时照常转发。
   - 第 2 步的 `/volc` 端到端在新版本上重跑，20 项通过。
+- 第 4 步 `controller/asset_library_openapi_test.go` `TestAssetLibraryConsoleEndpoints`：本人配置（已用数、上限、可建类型）；管理员列表带用户名、账号名和素材数，按用户 ID 筛选；查看别人素材组的素材；删除别人的素材组时用该账号的项目调用火山并删除记录，不存在时返回「未找到」；素材库关闭时页面接口都是 404。
+- `service/authz/authz_test.go`：管理员的有效权限包含 `asset_library` 的读和写。
+- `setting/asset_library_setting/config_test.go`：合规提示可以保存，去掉的 `verify_sessions_per_hour` 被当作未知设置拒绝。
+- 前端 `asset-library/__tests__/asset-library-page.test.tsx`：
+  - 素材库关闭时页面是 404，不请求配置接口；
+  - 普通用户只看到本人的素材组和上限，没有「全部用户」；没有账号支持的类型不能新建；
+  - 设置了合规提示时不勾选不能新建，勾选后按方舟的请求体调用；
+  - 素材列表显示状态、失败原因和 `asset://`，预览加载失败时换成占位（去掉这个处理后测试失败）；按 URL 上传的请求体；
+  - 管理员看到别人的素材组（用户名与 ID）和删除按钮。
+- `hooks/__tests__/sidebar-config.test.tsx`：素材库启用时侧边栏有「素材库管理」，关闭时没有。
+- 第 4 步浏览器端到端（新版本 + 模拟方舟，无头 Chrome）20 项：
+  - 普通用户：侧边栏入口、本站 `/volc` 地址、上限显示，没有「全部用户」；
+  - 新建素材组时显示合规提示，不勾选时「创建」不可用，建好后出现在列表、已用数加一；
+  - 上传：URL 为空时「上传」不可用，上传后先显示处理中，不刷新页面就变为生效，显示 `asset://` ID；任务日志里有这条 `asset_library` 任务，状态成功，额度 0；
+  - root：「全部用户」里有该用户的素材组（用户名与 ID），按名称筛选，查看素材；
+  - 关闭素材库后页面是 404、侧边栏没有入口，重新打开后恢复；页面无未捕获的错误。中文界面截图核对过文案。
 
