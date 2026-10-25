@@ -117,6 +117,8 @@ type User struct {
 	// ModelDiscount 仅作为 API 传输载体，持久化在 user_extend 表，见 UserExtend；
 	// nil = 不修改，空 map = 清除
 	ModelDiscount map[string]float64 `json:"model_discount,omitempty" gorm:"-:all"`
+	// AssetLibraryLimits 同 rate_limit：持久化在 user_extend 表，nil 不改动，{} 清除
+	AssetLibraryLimits *AssetLibraryLimits `json:"asset_library_limits,omitempty" gorm:"-:all"`
 }
 
 func (user *User) ToBaseUser() *UserBase {

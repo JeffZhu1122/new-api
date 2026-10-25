@@ -289,7 +289,10 @@ func (r *assetLibraryRequest) createGroup() AssetLibraryResponse {
 // create one, when the caller's groups and pending verifications reach the
 // per-user limit.
 func (r *assetLibraryRequest) checkUserGroupLimit() (AssetLibraryResponse, bool) {
-	limit := asset_library_setting.GetSetting().MaxGroupsPerUser
+	limit, _, err := assetLibraryUserLimits(r.caller.UserId)
+	if err != nil {
+		return r.internalError(err), false
+	}
 	if limit <= 0 {
 		return AssetLibraryResponse{}, true
 	}
@@ -301,6 +304,25 @@ func (r *assetLibraryRequest) checkUserGroupLimit() (AssetLibraryResponse, bool)
 		return r.fail(http.StatusBadRequest, assetLibraryCodeQuotaExceeded, fmt.Sprintf("You can have at most %d asset groups.", limit)), false
 	}
 	return AssetLibraryResponse{}, true
+}
+
+// assetLibraryUserLimits returns the group and asset limits of one user: the
+// global per-user settings, replaced by the user's own override where an
+// administrator set one. 0 means unlimited.
+func assetLibraryUserLimits(userId int) (maxGroups int, maxAssets int, err error) {
+	setting := asset_library_setting.GetSetting()
+	maxGroups, maxAssets = setting.MaxGroupsPerUser, setting.MaxAssetsPerUser
+	override, err := model.GetUserAssetLibraryLimits(userId)
+	if err != nil || override == nil {
+		return maxGroups, maxAssets, err
+	}
+	if override.MaxGroups != nil {
+		maxGroups = *override.MaxGroups
+	}
+	if override.MaxAssets != nil {
+		maxAssets = *override.MaxAssets
+	}
+	return maxGroups, maxAssets, nil
 }
 
 // countAssetLibraryGroupPlaces counts the groups of a user or account plus
@@ -512,7 +534,11 @@ func (r *assetLibraryRequest) createAsset() AssetLibraryResponse {
 	if !ok {
 		return response
 	}
-	if limit := asset_library_setting.GetSetting().MaxAssetsPerUser; limit > 0 {
+	_, limit, err := assetLibraryUserLimits(r.caller.UserId)
+	if err != nil {
+		return r.internalError(err)
+	}
+	if limit > 0 {
 		count, err := model.CountAssetLibraryAssets("user_id", r.caller.UserId)
 		if err != nil {
 			return r.internalError(err)

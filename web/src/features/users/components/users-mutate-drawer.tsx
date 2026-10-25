@@ -618,6 +618,57 @@ export function UsersMutateDrawer({
                 </SideDrawerSection>
               )}
 
+              {/* Asset Library Limit Override (Update only) */}
+              {isUpdate && (
+                <SideDrawerSection>
+                  <h3 className='text-sm font-medium'>
+                    {t('Asset Library Limit Override')}
+                  </h3>
+                  <p className='text-muted-foreground text-xs'>
+                    {t(
+                      "Overrides the asset library's global per-user limits for this user. Empty = inherit, 0 = unlimited."
+                    )}
+                  </p>
+
+                  <div className='grid gap-4 md:grid-cols-2'>
+                    <FormField
+                      control={form.control}
+                      name='asset_library_max_groups'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Max asset groups')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              inputMode='numeric'
+                              placeholder={t('Inherit')}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                    <FormField
+                      control={form.control}
+                      name='asset_library_max_assets'
+                      render={({ field }) => (
+                        <FormItem>
+                          <FormLabel>{t('Max assets')}</FormLabel>
+                          <FormControl>
+                            <Input
+                              {...field}
+                              inputMode='numeric'
+                              placeholder={t('Inherit')}
+                            />
+                          </FormControl>
+                          <FormMessage />
+                        </FormItem>
+                      )}
+                    />
+                  </div>
+                </SideDrawerSection>
+              )}
+
               {canEditAdminPermissions &&
                 targetIsAdmin &&
                 permissionCatalog.resources.length > 0 && (

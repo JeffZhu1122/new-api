@@ -31,13 +31,14 @@ func GetAssetLibraryUserConfig(userId int, userGroup string) (*AssetLibraryUserC
 	config := &AssetLibraryUserConfig{
 		Allowed:          setting.UserGroupAllowed(userGroup),
 		ComplianceNotice: setting.ComplianceNotice,
-		MaxGroups:        setting.MaxGroupsPerUser,
-		MaxAssets:        setting.MaxAssetsPerUser,
 		GroupTypes:       []string{},
 
 		VerifySessionsPerHour: setting.VerifySessionsPerHour,
 	}
 	var err error
+	if config.MaxGroups, config.MaxAssets, err = assetLibraryUserLimits(userId); err != nil {
+		return nil, err
+	}
 	if config.GroupCount, err = model.CountAssetLibraryGroups("user_id", userId); err != nil {
 		return nil, err
 	}

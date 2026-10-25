@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 61 个（含本文档相关提交） |
-| 变更规模 | 395 个文件，+39509 / −2241 行（不含本文档） |
+| fork 专有提交数 | 62 个（含本文档相关提交） |
+| 变更规模 | 396 个文件，+39991 / −2248 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -92,7 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
-| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 6 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库 |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 7 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`user_extend.asset_library`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库；管理员可在「编辑用户」里按用户覆盖每用户素材组 / 素材上限 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -150,12 +150,14 @@ fork 的原则是**不修改上游 `channels` / `users` 表结构**，所有 for
 | `user_id` | int, PK | 用户 ID | — |
 | `rate_limit` | text | JSON `dto.RateLimitOverride`，用户级 RPM/TPM 覆盖 | §7 |
 | `model_discount` | text | JSON `map[string]float64`，用户级模型折扣 | §9 |
+| `asset_library` | text | JSON `model.AssetLibraryLimits`，用户级素材库上限覆盖 | §38 |
 
-- 写入：`UpdateUserRateLimitOverride` / `UpdateUserModelDiscount` 用 `clause.OnConflict` 按 `user_id` upsert 且只更新各自的列；内容为空时清空该列，并在**两列都为空**时删除整行（`deleteEmptyUserExtend`）。
-- 缓存：Redis key `user_extend_rl:<userId>` / `user_extend_md:<userId>`，TTL `common.RedisKeyCacheSeconds()`，写穿透，`"null"` 作负缓存。
-- 传输：`model.User` 上新增 `RateLimit *dto.RateLimitOverride`（`json:"rate_limit"`）与 `ModelDiscount map[string]float64`（`json:"model_discount,omitempty"`），均 `gorm:"-:all"`，只作 `GET/PUT /api/user/` 的载体。更新语义：字段缺省 `nil` = 不改动，`{}` = 清除。
+- 写入：`UpdateUserRateLimitOverride` / `UpdateUserModelDiscount` / `UpdateUserAssetLibraryLimits` 用 `clause.OnConflict` 按 `user_id` upsert 且只更新各自的列；内容为空时清空该列，并在**所有覆盖列都为空**时删除整行（`deleteEmptyUserExtend`）。
+  - 后加的列在已有行里是 NULL（MySQL 的 TEXT 列不能设默认值），所以判空用 `COALESCE(列, '') = ''`。否则 §38 加列前写入的行，在清掉其他覆盖后永远删不掉。
+- 缓存：Redis key `user_extend_rl:<userId>` / `user_extend_md:<userId>` / `user_extend_al:<userId>`，TTL `common.RedisKeyCacheSeconds()`，写穿透，`"null"` 作负缓存。
+- 传输：`model.User` 上新增 `RateLimit *dto.RateLimitOverride`（`json:"rate_limit"`）、`ModelDiscount map[string]float64`（`json:"model_discount,omitempty"`）与 `AssetLibraryLimits *model.AssetLibraryLimits`（`json:"asset_library_limits,omitempty"`），均 `gorm:"-:all"`，只作 `GET/PUT /api/user/` 的载体。更新语义：字段缺省 `nil` = 不改动，`{}` = 清除。
 
-测试：`model/user_extend_test.go`（两列各自 round-trip、清一列不影响另一列、两列皆空才删行）。
+测试：`model/user_extend_test.go`（前两列各自 round-trip、清一列不影响另一列、全部清空才删行）；`asset_library` 列见 §38 第 7 步的测试。
 
 ---
 
@@ -884,7 +886,9 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/text_quota.go` / `service/quota.go` / `service/task_billing.go` / `relay/mjproxy_handler.go` | 消费日志参数改为先赋给 `logParams`，再调用 `RecordSettledUsage` 与 `RecordConsumeLog` |
 | `model/log.go` / `controller/log.go` | `SumUsedQuota` 只算额度、`ValidateLogTextPattern`；日志统计接口改读 `service.LogRate` |
 | `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹（渠道表包在上游 rc.45 拖拽排序的 `ChannelPriorityContext` 外层）；§32 去掉渠道表 `initialColumnVisibility` 中的 `models: false` |
-| `controller/user.go` | `UpdateUser` 中 `rate_limit` / `model_discount` 写入紧挨上游的审计调用 |
+| `controller/user.go` | `GetUser` 读取、`UpdateUser` 校验和写入 `rate_limit` / `model_discount` / `asset_library_limits`，写入紧挨上游的审计调用 |
+| `model/user.go` | `User` 结构体末尾的 `RateLimit` / `ModelDiscount` / `AssetLibraryLimits` 传输字段（`gorm:"-:all"`） |
+| `web/src/features/users/components/users-mutate-drawer.tsx` / `lib/user-form.ts` / `types.ts` | 编辑用户抽屉里的限流、折扣、素材库上限三个覆盖分区，以及对应的表单字段和载荷转换 |
 | `middleware/access_token_routes.go` | fork 新增的管理接口若不经 `RequirePermission`，必须在这里声明访问令牌权限，否则上游的覆盖测试失败、令牌被拒；§38 的账号接口用 `option:read` / `option:write` |
 | `web/src/features/users/api.ts` | 文件头 import |
 | `web/src/i18n/locales/*.json` | 新增文案 |
@@ -2008,7 +2012,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 
 ## 38. 素材库管理（火山方舟私域素材库）
 
-分 6 步交付，均已完成。
+分 7 步交付，均已完成。
 
 ### 动机
 
@@ -2033,7 +2037,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   |---|---|---|
   | `enabled` | false | 素材库总开关；关闭时菜单、页面与接口都不存在（404） |
   | `block_asset_refs_when_disabled` | true | 关闭时也拒绝带 `asset://` 的请求（见第 3 步） |
-  | `max_groups_per_user` / `max_assets_per_user` | 20 / 200 | 每个用户的上限，0 表示不限制 |
+  | `max_groups_per_user` / `max_assets_per_user` | 20 / 200 | 每个用户的上限，0 表示不限制；管理员可按用户覆盖（第 7 步） |
   | `allowed_user_groups` | `[]` | 能使用素材库的用户分组，空表示所有分组 |
   | `compliance_notice` | 空 | 新建素材组或发起刷脸认证前必须同意的合规提示 |
   | `verify_sessions_per_hour` | 5 | 每个用户每小时可发起的刷脸认证次数，0 表示不限制（第 5 步） |
@@ -2141,6 +2145,16 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 - **审核**：网关不跳过火山的内容审核。上传内容必须符合虚拟人像库的规则（官方：素材不得与任何自然人肖像雷同），由运营方负责。
 - **位置**：`middleware.AssetLibraryAutoUpload` 挂在插件路由链里 `PrepareTaskPluginRoute` 之前。插件在 `PrepareTaskPluginRoute` 里就解析了请求体，放在 `Distribute` 里改写已经太晚。改写后的请求体同样经过 `Distribute` 里的 `asset://` 校验，并只发往绑定了该素材库账号的渠道。**插件本身没有改动**，更新插件不受影响。
 
+### 第 7 步：按用户覆盖每用户上限（已完成）
+
+- **作用**：管理员在「用户 → 编辑」抽屉的「素材库上限覆盖」里，可以给单个用户设置自己的素材组上限和素材上限，覆盖全局的 `max_groups_per_user` / `max_assets_per_user`。
+  - 留空 = 继承全局，0 = 不限，正整数 = 按这个数限制。两项各自独立：只填一项时，另一项仍继承全局。
+  - 两项都清空并保存，就删除这个用户的覆盖。
+- **存储**：`user_extend.asset_library`（新列，text，JSON `{"max_groups_per_user":n,"max_assets_per_user":n}`），读写与缓存同 §2.2 的另外两列。
+- **生效位置**：`service.assetLibraryUserLimits(userId)` 先取全局值，再用该用户的覆盖替换。三处都用它：建组和发起刷脸认证时的组数检查（`checkUserGroupLimit`）、`CreateAsset` 的素材数检查（自动入库也走这里）、素材库页面显示的「素材组：x / 上限」（`GetAssetLibraryUserConfig`）。账号级的 `max_groups` / `max_assets` 不受影响，照常生效。
+- **接口**：`GET /api/user/:id` 返回 `asset_library_limits`；`PUT /api/user/` 带 `asset_library_limits` 时写入（负数拒绝），不带则不改动，带 `{}` 则清除。与 `rate_limit` / `model_discount` 相同。
+- **前端**：`users-mutate-drawer.tsx` 在「模型折扣覆盖」后新增一个分区，两个输入框的校验与限流覆盖相同（0 到 2147483647 的整数）。顺带补上了这条校验文案在 7 种语言里的翻译（以前限流覆盖的报错也只显示英文）。
+
 ### 已知限制
 
 - 网关只认自己登记过的素材组和素材。直接在火山控制台创建的不会出现在页面和 `/volc` 里，也不能被引用（管理员也不行）；直接在火山控制台删除的，网关记录还在，在网关删除时火山返回资源不存在，记录删不掉，仍占用户上限。目前没有导入和对账功能。
@@ -2225,4 +2239,9 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 开关关闭时 URL 原样到达上游；打开后上游收到 `asset://`，网关先调用了 `CreateAsset`，约 4 秒后素材生效，素材在用户的 `auto-upload` 组里；
   - 同一 URL 第二次请求直接复用，不再上传；`first_frame` 原样；火山判为失败时返回 400 和火山原因，请求没有发到上游。
   - 第一版把改写放在 `Distribute` 里，端到端测试发现上游仍收到原 URL（插件已在之前解析了请求体），因此改为现在的位置。
-
+- 第 7 步：
+  - `TestAssetLibraryUserLimitsOverrideTheGlobalOnes`（全局 2 组 / 3 素材）：覆盖为 3 组、不限素材的用户能建第 3 个组、第 4 个被拒，能传 4 个素材；页面配置返回 3 / 0；另一个用户仍按全局在第 3 个组被拒；只保留组覆盖时，素材上限回到全局，第 5 个素材被拒。让组数检查忽略覆盖后测试失败。
+  - `TestAssetLibraryAccountsAcrossDatabases` 在 SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24 上：显式的 0 能存取（不会变成「继承」）；把一行的 `asset_library` 置为 NULL（模拟加列前写入的行）后，读取得到「无覆盖」，清掉该行的限流覆盖后整行被删除。判空去掉 `COALESCE` 后测试失败。
+  - 前端 `users/components/__tests__/asset-library-limits.test.tsx`：打开抽屉显示已保存的值、空的显示「继承」，填 0 后提交 `{max_groups_per_user: 5, max_assets_per_user: 0}`；两项清空提交 `{}`；负数显示校验错误且不提交。
+  - 升级：三种数据库各三种起点（全新库、官方 `v1.0.0-rc.46` 建的库、上一版 fork 建的库且 `user_extend` 里有一行限流和折扣），新版本各启动两次都正常；第一次启动执行 `ALTER TABLE user_extend ADD asset_library text`，第二次不再改这张表；旧行的两列原样保留，新列为 NULL。
+  - 本地端到端（实例 C，中文界面）11 项：抽屉里有新分区、初始为空、负数被拦下；保存后接口返回覆盖值，重新打开显示保存的值；该用户的配置返回自己的上限，通过 `/volc` 建组能超过全局上限并在自己的上限处被拒；另一个用户仍是全局值；该用户的素材库页面显示「素材组：28 / 28」「素材：21 / ∞」；清空两项后覆盖删除、回到全局值；页面无报错。
