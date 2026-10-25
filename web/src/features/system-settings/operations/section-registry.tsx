@@ -116,6 +116,9 @@ const OPERATIONS_SECTIONS = [
           max_assets_per_user: Number(
             settings['asset_library_setting.max_assets_per_user'] ?? 200
           ),
+          verify_sessions_per_hour: Number(
+            settings['asset_library_setting.verify_sessions_per_hour'] ?? 5
+          ),
           allowed_user_groups: safeJsonParseWithValidation<string[]>(
             settings['asset_library_setting.allowed_user_groups'],
             { fallback: [], validator: isStringArray, silent: true }

@@ -469,6 +469,7 @@ var reservedRouteNamespaces = []string{
 	"/privacy-policy",
 	"/user-agreement",
 	"/about",
+	"/asset-library-verification",
 	"/pricing",
 	"/rankings",
 	"/user",

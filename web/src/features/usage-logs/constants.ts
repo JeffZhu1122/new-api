@@ -189,8 +189,10 @@ export const TASK_ACTIONS = {
   REFERENCE_GENERATE: 'referenceGenerate', // 参照生视频
   REMIX_GENERATE: 'remixGenerate', // 视频 Remix
 
-  // Asset library upload (model.AssetLibraryUploadAction)
+  // Asset library upload and face verification
+  // (model.AssetLibraryUploadAction, model.AssetLibraryVerifyAction)
   ASSET_UPLOAD: 'CreateAsset', // 上传素材
+  ASSET_VERIFY: 'CreateVisualValidateSession', // 真人认证
 } as const
 
 /**
@@ -308,6 +310,7 @@ export const TASK_ACTION_MAPPINGS: Record<string, StatusMapping> = {
     variant: 'blue',
   },
   [TASK_ACTIONS.ASSET_UPLOAD]: { label: 'Upload asset', variant: 'teal' },
+  [TASK_ACTIONS.ASSET_VERIFY]: { label: 'Face verification', variant: 'teal' },
 }
 
 /**

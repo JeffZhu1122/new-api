@@ -24,6 +24,10 @@ type AssetLibraryAccount struct {
 	// Group types users may create in this account.
 	AigcEnabled         bool `json:"aigc_enabled"`
 	LivenessFaceEnabled bool `json:"liveness_face_enabled"`
+	// Real-person groups come from face verification
+	// (CreateVisualValidateSession) instead of CreateAssetGroup, for accounts
+	// Ark has not allowlisted for direct creation.
+	LivenessFaceVerify bool `json:"liveness_face_verify"`
 	// JSON array of user groups allowed to create groups here; "" or "[]" = all.
 	AllowedUserGroups string `json:"-" gorm:"type:text"`
 	// New groups go to the highest-priority account with room.
@@ -88,7 +92,7 @@ func UpdateAssetLibraryAccount(account *AssetLibraryAccount) error {
 	account.UpdatedTime = common.GetTimestamp()
 	return DB.Model(&AssetLibraryAccount{}).Where("id = ?", account.Id).Select(
 		"name", "access_key_id", "secret_access_key", "region", "project_name", "endpoint",
-		"enabled", "aigc_enabled", "liveness_face_enabled", "allowed_user_groups", "priority",
+		"enabled", "aigc_enabled", "liveness_face_enabled", "liveness_face_verify", "allowed_user_groups", "priority",
 		"max_groups", "max_assets", "create_asset_qpm", "updated_time",
 	).Updates(account).Error
 }

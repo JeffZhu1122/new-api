@@ -422,7 +422,9 @@ export function TaskArtifactsCell(props: { log: TaskLog }) {
       </TooltipProvider>
     )
   }
-  if (!shouldLoadTaskArtifacts(props.log, true)) {
+  // 'none' covers unfinished tasks and tasks with nothing to view, such as
+  // asset library uploads and face verifications.
+  if (previewMode === 'none' || !shouldLoadTaskArtifacts(props.log, true)) {
     return <span className='text-muted-foreground/60 text-xs'>-</span>
   }
   if (previewMode === 'legacy-suno') {

@@ -37,6 +37,7 @@ export type AssetLibraryAccount = {
   enabled: boolean
   aigc_enabled: boolean
   liveness_face_enabled: boolean
+  liveness_face_verify: boolean
   allowed_user_groups: string[]
   priority: number
   max_groups: number
@@ -59,6 +60,8 @@ export type AssetLibraryAccountPayload = {
   enabled: boolean
   aigc_enabled: boolean
   liveness_face_enabled: boolean
+  // Real-person groups come from face verification (not allowlisted).
+  liveness_face_verify: boolean
   allowed_user_groups: string[]
   priority: number
   max_groups: number

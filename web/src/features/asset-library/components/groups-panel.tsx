@@ -17,7 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { FolderOpen, Plus } from 'lucide-react'
+import { FolderOpen, Plus, ScanFace } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -38,6 +38,7 @@ import {
 } from '../api'
 import { AssetGroupDialog } from './asset-dialogs'
 import { GroupAssetsSheet } from './group-assets-sheet'
+import { VerificationDialog } from './verification-dialog'
 
 // The signed-in user's own groups of one type.
 export function GroupsPanel(props: {
@@ -50,6 +51,7 @@ export function GroupsPanel(props: {
   const [editing, setEditing] = useState<AssetGroup | null>(null)
   const [deleting, setDeleting] = useState<AssetGroup | null>(null)
   const [viewing, setViewing] = useState<AssetGroup | null>(null)
+  const [verifying, setVerifying] = useState(false)
   const groupsQuery = useQuery({
     queryKey: ['asset-library', 'groups', props.groupType],
     queryFn: () => listAssetGroups(props.groupType),
@@ -64,6 +66,10 @@ export function GroupsPanel(props: {
     onError: (error) => handleServerError(error),
   })
   const typeAvailable = props.config.group_types.includes(props.groupType)
+  // Without an allowlisted account, real-person groups come from face
+  // verification instead of being created directly.
+  const verifies =
+    props.groupType === 'LivenessFace' && props.config.liveness_face_verify
   const groupLimitReached =
     props.config.max_groups_per_user > 0 &&
     props.config.group_count >= props.config.max_groups_per_user
@@ -77,6 +83,11 @@ export function GroupsPanel(props: {
   if (props.groupType === 'LivenessFace') {
     hint = t(
       'One group per real person; add that person’s images, videos and audio to it.'
+    )
+  }
+  if (verifies) {
+    hint = t(
+      'One group per real person, created when that person passes a face verification; then add their images, videos and audio to it.'
     )
   }
   if (groupLimitReached) {
@@ -100,14 +111,25 @@ export function GroupsPanel(props: {
     <div className='flex flex-col gap-3'>
       <div className='flex flex-wrap items-center justify-between gap-2'>
         <p className='text-muted-foreground text-sm'>{hint}</p>
-        <Button
-          size='sm'
-          disabled={!typeAvailable || groupLimitReached}
-          onClick={() => openDialog(null)}
-        >
-          <Plus />
-          {t('New asset group')}
-        </Button>
+        {verifies ? (
+          <Button
+            size='sm'
+            disabled={!typeAvailable || groupLimitReached}
+            onClick={() => setVerifying(true)}
+          >
+            <ScanFace />
+            {t('Start face verification')}
+          </Button>
+        ) : (
+          <Button
+            size='sm'
+            disabled={!typeAvailable || groupLimitReached}
+            onClick={() => openDialog(null)}
+          >
+            <Plus />
+            {t('New asset group')}
+          </Button>
+        )}
       </div>
       <StaticDataTable
         data={groupsQuery.data ?? []}
@@ -191,6 +213,12 @@ export function GroupsPanel(props: {
         groupType={props.groupType}
         group={editing}
         complianceNotice={props.config.compliance_notice}
+      />
+      <VerificationDialog
+        open={verifying}
+        onOpenChange={setVerifying}
+        complianceNotice={props.config.compliance_notice}
+        sessionsPerHour={props.config.verify_sessions_per_hour}
       />
       <GroupAssetsSheet
         group={viewing}

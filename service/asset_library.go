@@ -56,9 +56,10 @@ const (
 	assetLibrarySyncBatch    = 100
 )
 
-// StartAssetLibrarySync polls Ark for assets still being processed, so their
-// status and upload tasks settle even when nobody reads them. It runs on the
-// master node while the asset library is enabled.
+// StartAssetLibrarySync polls Ark for assets still being processed and face
+// verifications still pending, so their status, groups and tasks settle even
+// when nobody reads them. It runs on the master node while the asset library
+// is enabled.
 func StartAssetLibrarySync() {
 	go func() {
 		ticker := time.NewTicker(assetLibrarySyncInterval)
@@ -73,6 +74,7 @@ func StartAssetLibrarySync() {
 				continue
 			}
 			refreshAssetLibraryAssets(context.Background(), assets)
+			SyncAssetLibraryVerifications(context.Background())
 		}
 	}()
 }

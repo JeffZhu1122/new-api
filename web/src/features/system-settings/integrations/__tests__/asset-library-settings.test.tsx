@@ -41,6 +41,7 @@ const storedAccount = {
   enabled: true,
   aigc_enabled: true,
   liveness_face_enabled: false,
+  liveness_face_verify: false,
   allowed_user_groups: [],
   priority: 0,
   max_groups: 1000000,
@@ -55,6 +56,7 @@ const defaultValues: AssetLibrarySettingsValues = {
   block_asset_refs_when_disabled: true,
   max_groups_per_user: 20,
   max_assets_per_user: 200,
+  verify_sessions_per_hour: 5,
   allowed_user_groups: [],
   compliance_notice: '',
 }
@@ -176,6 +178,36 @@ test('editing an account keeps the stored keys when the key fields stay empty', 
         access_key_id: '',
         secret_access_key: '',
         project_name: 'video',
+      })
+    )
+  )
+})
+
+test('the face verification switch appears once real-person groups are on and is saved with the account', async () => {
+  const user = userEvent.setup()
+  renderSettings()
+  const row = (await screen.findByText('Main account')).closest('tr')
+  await user.click(
+    within(row as HTMLElement).getByRole('button', { name: 'Edit' })
+  )
+  const dialog = await screen.findByRole('dialog')
+  expect(
+    within(dialog).queryByRole('switch', { name: 'Face verification required' })
+  ).not.toBeInTheDocument()
+
+  await user.click(within(dialog).getByRole('switch', { name: 'Real people' }))
+  await user.click(
+    within(dialog).getByRole('switch', { name: 'Face verification required' })
+  )
+  await user.click(within(dialog).getByRole('button', { name: 'Update' }))
+
+  await waitFor(() =>
+    expect(api.put).toHaveBeenCalledWith(
+      '/api/asset-library/accounts',
+      expect.objectContaining({
+        id: 3,
+        liveness_face_enabled: true,
+        liveness_face_verify: true,
       })
     )
   )

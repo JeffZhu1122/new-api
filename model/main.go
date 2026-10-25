@@ -388,6 +388,7 @@ func migrateDB() error {
 		&AssetLibraryAccount{},
 		&AssetLibraryGroup{},
 		&AssetLibraryAsset{},
+		&AssetLibraryVerification{},
 	)
 	if err != nil {
 		return err

@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 56 个（含本文档相关提交） |
-| 变更规模 | 380 个文件，+36991 / −2222 行（不含本文档） |
+| fork 专有提交数 | 57 个（含本文档相关提交） |
+| 变更规模 | 391 个文件，+38871 / −2223 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -92,7 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
-| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 4 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library` |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 5 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -858,7 +858,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
 | `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary` |
 | `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数 |
-| `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列；§38 `migrateDB` 的 AutoMigrate 列表末尾加 `&AssetLibraryAccount{}` |
+| `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列；§38 `migrateDB` 的 AutoMigrate 列表末尾加素材库的四张表（`AssetLibraryAccount`、`AssetLibraryGroup`、`AssetLibraryAsset`、`AssetLibraryVerification`） |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
@@ -915,11 +915,13 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/features/channels/{api.ts,types.ts,lib/channel-form*.ts,lib/channel-configuration.ts,components/drawers/channel-mutate-drawer.tsx}` | §38 渠道「素材库账号」选择（extend_config 映射、表单、抽屉字段） |
 | `model/task.go` | §38 `GetAllUnFinishSyncTasks`、`GetTimedOutUnfinishedTasks`、`HasUnfinishedSyncTasks` 加 `platform <> asset_library`，素材上传任务由素材库自己同步 |
 | `router/main.go` / `main.go` / `constant/task.go` | §38 `SetAssetLibraryRouter`（`/volc`）、主节点启动 `StartAssetLibrarySync`、`TaskPlatformAssetLibrary` |
-| `web/src/features/usage-logs/{constants.ts,lib/task-artifacts.ts}` | §38 任务动作 `CreateAsset` 的名称；素材上传任务不提供产物查看 |
-| `router/api-router.go` | §38 `/api/asset-library/accounts` 路由组（RootAuth），放在 `/plugin/task` 之前；页面用的 `/api/asset-library/openapi`、`/config` 与 `admin/*`（`handlePermissionRoute` 挂 `authz.AssetLibraryRead` / `Write`） |
+| `web/src/features/usage-logs/{constants.ts,lib/task-artifacts.ts,components/task-artifacts.tsx}` | §38 任务动作 `CreateAsset`、`CreateVisualValidateSession` 的名称；素材库任务不提供产物查看（`none` 模式在单元格里显示「-」） |
+| `router/api-router.go` | §38 `/api/asset-library/accounts` 路由组（RootAuth），放在 `/plugin/task` 之前；页面用的 `/api/asset-library/openapi`、`/config` 与 `admin/*`（`handlePermissionRoute` 挂 `authz.AssetLibraryRead` / `Write`）；刷脸认证的匿名回跳接口 `/verification/callback`（`CriticalRateLimit`） |
 | `service/authz/authz_test.go` | §38 `TestSetUserPermissionsStoresOnlyOverrides` 的管理员有效权限期望表（两处）加入 `asset_library` |
 | `web/src/hooks/use-sidebar-data.ts` / `web/src/lib/admin-permissions.ts` | §38 侧边栏「素材库管理」（`asset_library_enabled` 时显示，在任务日志之后）；权限资源常量 `ASSET_LIBRARY` |
-| `web/src/routeTree.gen.ts` | §38 新路由 `/_authenticated/asset-library/`（构建时生成，冲突时重新生成即可） |
+| `web/src/routeTree.gen.ts` | §38 新路由 `/_authenticated/asset-library/` 和匿名的 `/asset-library-verification`（构建时生成，冲突时重新生成即可） |
+| `router/access_token_scope_test.go` | §38 匿名的 `POST /api/asset-library/verification/callback` 加入 `accessTokenExemptRoutes` |
+| `web/src/i18n/static-keys.ts` | §38 素材库的任务名和网关写入的失败原因（运行时才传给 `t()`） |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
 | `web/src/features/dashboard/components/{models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts},flow/flow-charts,users/user-charts}.tsx` | 数据看板各标签页外框改为 `brand-surface rounded-2xl` |
@@ -2003,7 +2005,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 
 ## 38. 素材库管理（火山方舟私域素材库）
 
-分 4 步交付，均已完成。
+分 5 步交付，均已完成。
 
 ### 动机
 
@@ -2025,7 +2027,8 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   | `block_asset_refs_when_disabled` | true | 关闭时也拒绝带 `asset://` 的请求（见第 3 步） |
   | `max_groups_per_user` / `max_assets_per_user` | 20 / 200 | 每个用户的上限，0 表示不限制 |
   | `allowed_user_groups` | `[]` | 能使用素材库的用户分组，空表示所有分组 |
-  | `compliance_notice` | 空 | 新建素材组前必须同意的合规提示 |
+  | `compliance_notice` | 空 | 新建素材组或发起刷脸认证前必须同意的合规提示 |
+  | `verify_sessions_per_hour` | 5 | 每个用户每小时可发起的刷脸认证次数，0 表示不限制（第 5 步） |
 
 - `/api/status` 多一个 `asset_library_enabled`。
 - **前端**：系统设置 → 运维 → 「素材库」：开关与上限的表单，下面是火山账号表格；新增 / 编辑对话框里可以「测试连接」。
@@ -2042,9 +2045,9 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   {"GroupId": "group-…", "URL": "https://…/front.png", "AssetType": "Image", "Name": "front"}
   ```
 
-  - 支持 10 个 Action：`CreateAssetGroup`、`GetAssetGroup`、`UpdateAssetGroup`、`DeleteAssetGroup`、`ListAssetGroups`、`CreateAsset`、`GetAsset`、`UpdateAsset`、`DeleteAsset`、`ListAssets`；`Version` 必须是 `2024-01-01`。
+  - 支持 10 个素材 Action：`CreateAssetGroup`、`GetAssetGroup`、`UpdateAssetGroup`、`DeleteAssetGroup`、`ListAssetGroups`、`CreateAsset`、`GetAsset`、`UpdateAsset`、`DeleteAsset`、`ListAssets`；第 5 步再加上刷脸认证的 `CreateVisualValidateSession`、`GetVisualValidateResult`。`Version` 必须是 `2024-01-01`。
   - 返回的是方舟的 `{"ResponseMetadata": …, "Result": …}`，错误在 `ResponseMetadata.Error`。
-  - 真人人像组：开白账号直接 `CreateAssetGroup` 传 `GroupType=LivenessFace`，账号的「真人人像」开关打开即可。刷脸认证（`CreateVisualValidateSession` / `GetVisualValidateResult`）不支持。
+  - 真人人像组：开白账号直接 `CreateAssetGroup` 传 `GroupType=LivenessFace`，账号的「真人人像」开关打开即可；未开白的账号通过刷脸认证产生，见第 5 步。
   - 网页控制台用同一套处理，入口是 `POST /api/asset-library/openapi`（登录会话，访问令牌不可用）。
 - **鉴权**：网关令牌（`Bearer sk-…`），同样检查令牌的 IP 限制和用户状态；失败时也按方舟的格式返回（`InvalidAuthorization` / `AccessDenied`）。素材库关闭时 `/volc` 返回 404，和不存在的路由一样。
 - **用户隔离**（`asset_library_groups` / `asset_library_assets` 记录归属，火山 ID 唯一）：
@@ -2085,11 +2088,37 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 所有用户的素材组，可按用户 ID、名称或 ID、类型筛选，每页 20 条；列出类型、用户（用户名与 ID）、火山账号、素材数。
   - 可以查看任意素材组的素材（同样会刷新处理中和快过期的素材）；有写权限时可以删除任意素材组或素材，先在火山删除，再删网关记录。
   - 接口：`GET /api/asset-library/admin/groups`、`GET /api/asset-library/admin/groups/:id/assets`（读权限），`DELETE /api/asset-library/admin/groups/:id`、`DELETE /api/asset-library/admin/assets/:id`（写权限）。
-- **去掉了第 1 步预留的真人认证设置**（每小时认证次数、认证回跳地址）：刷脸认证不做，开白账号直接建真人人像组；合规提示只在新建素材组时出现。
+- **去掉了第 1 步预留的「认证回跳地址」设置**：页面发起刷脸认证时用当前站点的地址作为回跳页（见第 5 步），`/volc` 的调用方自己传 `CallbackURL`。
+
+### 第 5 步：未开白账号的真人刷脸认证（已完成）
+
+- **账号模式**：火山账号的「真人人像」打开后，多一个「需要刷脸认证」开关（`asset_library_accounts.liveness_face_verify`，默认关）。
+  - 关：账号已开白，`CreateAssetGroup` 直接建真人人像组，和原来一样。升级后已有的账号保持这个模式。
+  - 开：账号未开白，真人人像组只能通过刷脸认证产生。这时 `CreateAssetGroup` 传 `LivenessFace` 会被拒绝，并提示改用 `CreateVisualValidateSession`；反过来，只有开白账号时发起刷脸认证也会被拒绝并提示直接建组。
+  - 账号表格的素材组类型显示「真人人像（刷脸认证）」。
+- **`/volc` 新增两个 Action，用法与方舟一致**：
+  - `CreateVisualValidateSession {"CallbackURL": "https://…"}`：网关检查每用户素材组上限和每小时认证次数，选一个刷脸模式、允许该用户分组、还有余量的账号，原样返回方舟的 `BytedToken` 与 `H5Link`。可以多传 `Name`、`Description`（网关扩展，不发给火山），素材组建好后用它们命名。
+  - `GetVisualValidateResult {"BytedToken": "…"}`：只有发起人能查，别人查回 404 `ResourceNotFound` 且不调火山。人还没通过时原样返回火山的错误；拿到 `GroupId` 后把这个素材组登记到发起人名下，之后的上传、引用和权限隔离与其他素材组相同，再查由网关直接回答。认证失败或过期后查询返回 `VerificationFailed`。
+- **登记与收尾**（新表 `asset_library_verifications`；`BytedToken` 唯一，只用来向火山查询，任何接口、任务和日志都不返回）。素材组由以下任一途径登记，先到者生效（条件更新，多节点不会重复登记）：
+  1. 发起人调用 `GetVisualValidateResult`。
+  2. 回跳页上报。页面发起的认证以本站 `/asset-library-verification` 为 `CallbackURL`，手机完成认证后打开这个页面（不需要登录），页面把 `bytedToken` 和 `resultCode` 交给 `POST /api/asset-library/verification/callback`。这个接口匿名可用、按关键接口限流，对任何令牌都回答一样的结果。网关先向火山查一次，有素材组就登记；结果码不是 `10000` 且火山没有素材组时，认证直接判为失败。
+  3. 主节点的后台同步（每 15 秒一轮）对 30 秒内没查过的待完成认证向火山查询。发起后超过 32 分钟（令牌 30 分钟有效期加 2 分钟余量）仍没有素材组，就判为失败。这样即使调用方从不查询，人通过认证后素材组也不会成为无主资源。
+- **限制**：
+  - `verify_sessions_per_hour`（默认 5，0 不限）：每个用户每小时可发起的认证次数，超出返回 429 `RequestLimitExceeded`，不调火山。
+  - 32 分钟内待完成的认证计入每用户和每账号的素材组上限。
+- **任务日志**：每次认证一条任务（平台 `asset_library`、动作 `CreateVisualValidateSession`、额度 0），显示为「素材库 · 刷脸认证」。通过时成功并记下 `GroupId`；失败原因是「刷脸认证未通过」「刷脸认证未在 30 分钟内完成」或「本次认证所用的火山账号已被删除」，回跳页上报的结果码记在任务数据里。
+- **页面**：只有刷脸账号时，真人人像标签页的按钮是「发起刷脸认证」。
+  - 填素材组名称和描述、同意合规提示后点「获取认证链接」，弹窗显示二维码和「复制认证链接」。链接的 `lng` 参数换成当前界面语言（zh、zh-Hant 或 en），其余部分原样保留。
+  - 弹窗每 3 秒查询一次，通过后自动关闭并刷新列表；失败时显示原因和「重新发起认证」。关闭弹窗不影响认证，通过后素材组照样出现在列表里。
+  - 手机打开的回跳页显示通过或未通过（附结果码），提示回到电脑上的素材库管理页面。
+- **顺带修复（第 2 步）**：任务日志的「制品」列原来对素材库任务也显示「制品」按钮，打开后什么都没有，因为 `none` 预览模式没有在单元格里生效；现在显示「-」。失败原因「素材处理失败」也补上了翻译。
 
 ### 已知限制
 
 - 网关只认自己登记过的素材组和素材。直接在火山控制台创建的不会出现在页面和 `/volc` 里，也不能被引用（管理员也不行）；直接在火山控制台删除的，网关记录还在，在网关删除时火山返回资源不存在，记录删不掉，仍占用户上限。目前没有导入和对账功能。
+- 刷脸认证只用模拟的火山接口测过。火山在人还没完成认证时返回的具体错误码、`GetVisualValidateResult` 能否重复调用，都没有在真实账号上确认；网关把火山的任何错误都当作「还没完成」，所以需要用真实账号和手机实际走一遍。
+- `/volc` 的调用方用自己的 `CallbackURL` 时，网关收不到认证结果：人没通过的认证要到 32 分钟后才判为失败，期间占一个素材组名额。
+- H5 链接里带有火山签发的临时凭证。按设计它要交给被认证的人，页面会显示二维码和复制按钮；网关不保存这个链接。
 
 ### 测试
 
@@ -2139,4 +2168,23 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 上传：URL 为空时「上传」不可用，上传后先显示处理中，不刷新页面就变为生效，显示 `asset://` ID；任务日志里有这条 `asset_library` 任务，状态成功，额度 0；
   - root：「全部用户」里有该用户的素材组（用户名与 ID），按名称筛选，查看素材；
   - 关闭素材库后页面是 404、侧边栏没有入口，重新打开后恢复；页面无未捕获的错误。中文界面截图核对过文案。
+- 第 5 步 `controller/asset_library_openapi_test.go`：
+  - `TestAssetLibraryFaceVerificationRecordsTheGroupForItsUser`：开白账号拒绝刷脸、刷脸账号拒绝直建，并互相提示；非法 CallbackURL 不调火山；发起时只把 CallbackURL 和账号的项目发给火山；任务进行中、额度 0，任务数据里没有令牌；别人查询 404 且不调火山；未完成时原样返回火山的错误；通过后按要求命名、登记到发起人名下、任务成功；再查不调火山；别人看不到这个素材组。
+  - `TestAssetLibraryFaceVerificationLimitsAndEndings`：每小时次数用完返回 429 且不调火山；待完成的认证占素材组名额；回跳页上报未通过时认证失败，任务失败并记下结果码；未知令牌不调火山；后台同步登记没人查询的素材组；超时的认证判为失败。
+  - 去掉归属查询里的 `user_id` 条件，或不再把待完成的认证计入名额，对应的测试失败。
+- 第 5 步三种数据库（`TestAssetLibraryAccountsAcrossDatabases`）：`liveness_face_verify` 的保存与清除；认证记录和任务一起写入，令牌唯一，待完成计数和按检查时间列出；两个节点同时登记时只有一个成功，已登记的认证不会再被判为失败。
+- 第 5 步前端：
+  - `asset-library-page.test.tsx`：刷脸账号下真人人像标签页的「发起刷脸认证」；名称和合规提示的校验；发起时的请求体（回跳到本站页面）；二维码、等待提示和轮询请求；通过后弹窗关闭；失败时显示原因，可以重新发起。
+  - `face-verification.test.tsx`：链接语言参数的替换与追加（其余参数逐字保留）；回跳页通过、未通过（附结果码）的显示和上报，没有令牌时不上报。
+  - `asset-library-settings.test.tsx`：打开「真人人像」后才出现「需要刷脸认证」，保存时带上这个字段。
+  - `task-artifacts-cell.test.tsx`：素材库的上传和刷脸认证任务不显示「制品」按钮（修复前这个测试失败）。
+- 第 5 步接口端到端 24 项。模拟方舟增加了 H5 页面，有「通过」「不通过」两个链接，按文档把 `bytedToken`、`resultCode` 拼到 CallbackURL 后跳转。
+  - 切换账号模式后直建被拒；发起时火山收到调用方的 CallbackURL 和账号的项目，不含 Name；另一用户查询 404 且不调火山；未完成时透传火山的错误。
+  - H5 页面带 `lng=zh`，通过后跳回 CallbackURL 并带 `resultCode=10000`；查询拿到 GroupId，素材组在本人的列表里且按要求命名，火山收到了改名请求；另一用户读不到；可以往里上传素材。
+  - 任务日志里是成功、额度 0 的刷脸认证任务，任何任务都不含令牌。
+  - 没人查询时，后台同步登记了另一用户的素材组。
+  - 回跳页上报未通过后，查询返回 `VerificationFailed`，任务失败并带原因；未知令牌得到同样的回答且不调火山。
+  - 超过每小时次数返回 429 且不调火山；关闭素材库后回跳接口 404；所有火山调用的签名和项目都正确。连续跑两次都通过。
+- 第 5 步浏览器端到端 17 项（中文界面，电脑和手机两个标签页）：发起刷脸认证、合规提示、二维码；手机通过后电脑上的弹窗自动关闭、列表出现新素材组；手机未通过时显示结果码，电脑弹窗显示原因并可重新发起；任务日志显示「刷脸认证」和失败原因，「制品」列是「-」；系统设置里账号显示「真人人像（刷脸认证）」，编辑时开关是开的。第 2、3、4 步的端到端在新版本上重跑，分别 20、12、20 项通过。
+- 第 5 步数据库：三种数据库的矩阵测试通过（MySQL 5.7.44、PostgreSQL 9.6.24）。官方 rc.46 建的库、第 3 步版本建的库（预先写入一个账号）和空库，分别在 SQLite、MySQL、PostgreSQL 上用新版本启动两次，都正常、日志无错误。新列在三种库上都是可空布尔，已有账号通过接口读出来是关（保持直接建组）；新表的 `byted_token` 唯一索引都在。
 

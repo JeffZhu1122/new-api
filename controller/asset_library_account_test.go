@@ -32,7 +32,7 @@ func setupAssetLibraryAccountTestDB(t *testing.T) {
 	dsn := fmt.Sprintf("file:%s?mode=memory&cache=shared", strings.ReplaceAll(t.Name(), "/", "_"))
 	db, err := gorm.Open(sqlite.Open(dsn), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.Task{}, &model.User{}))
+	require.NoError(t, db.AutoMigrate(&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.AssetLibraryVerification{}, &model.Task{}, &model.User{}))
 	model.DB, model.LOG_DB = db, db
 	previousRedis := common.RedisEnabled
 	common.RedisEnabled = false
@@ -185,7 +185,7 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 				t.Skip(dialect.env + " is not configured")
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
-			tables := []any{&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.Task{}, &model.ChannelExtend{}}
+			tables := []any{&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.AssetLibraryVerification{}, &model.Task{}, &model.ChannelExtend{}}
 			require.NoError(t, db.AutoMigrate(tables...))
 
 			capture := &sqlStatementCapture{Interface: gormlogger.Discard}
@@ -195,17 +195,21 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 				assert.False(t, strings.HasPrefix(upper, "ALTER") || strings.HasPrefix(upper, "CREATE"), "second migration ran %s", statement)
 			}
 
-			low := &model.AssetLibraryAccount{Name: "low", AccessKeyId: "AKLTlow", SecretAccessKey: "sk-low", Region: "cn-beijing", ProjectName: "default", Enabled: true, AigcEnabled: true, Priority: 1, MaxAssets: 50, CreateAssetQPM: 3}
+			low := &model.AssetLibraryAccount{Name: "low", AccessKeyId: "AKLTlow", SecretAccessKey: "sk-low", Region: "cn-beijing", ProjectName: "default", Enabled: true, AigcEnabled: true, LivenessFaceVerify: true, Priority: 1, MaxAssets: 50, CreateAssetQPM: 3}
 			high := &model.AssetLibraryAccount{Name: "high", AccessKeyId: "AKLThigh", SecretAccessKey: "sk-high", Region: "cn-beijing", ProjectName: "video", Enabled: true, LivenessFaceEnabled: true, Priority: 9, AllowedUserGroups: `["vip"]`}
 			require.NoError(t, model.CreateAssetLibraryAccount(low))
 			require.NoError(t, model.CreateAssetLibraryAccount(high))
 
-			low.Enabled, low.AigcEnabled, low.MaxAssets, low.CreateAssetQPM, low.Priority = false, false, 0, 0, 0
-			require.NoError(t, model.UpdateAssetLibraryAccount(low))
 			stored, err := model.GetAssetLibraryAccount(low.Id)
+			require.NoError(t, err)
+			assert.True(t, stored.LivenessFaceVerify)
+			low.Enabled, low.AigcEnabled, low.LivenessFaceVerify, low.MaxAssets, low.CreateAssetQPM, low.Priority = false, false, false, 0, 0, 0
+			require.NoError(t, model.UpdateAssetLibraryAccount(low))
+			stored, err = model.GetAssetLibraryAccount(low.Id)
 			require.NoError(t, err)
 			assert.False(t, stored.Enabled)
 			assert.False(t, stored.AigcEnabled)
+			assert.False(t, stored.LivenessFaceVerify)
 			assert.Zero(t, stored.MaxAssets)
 			assert.Zero(t, stored.CreateAssetQPM)
 			assert.Equal(t, "sk-low", stored.SecretAccessKey)
@@ -260,6 +264,48 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 			count, err := model.CountAssetLibraryAssets("user_id", 1)
 			require.NoError(t, err)
 			assert.Zero(t, count)
+
+			// A face verification records its task and holds a group place
+			// while pending; of two nodes completing it only one records the
+			// group, and a completed verification no longer fails.
+			verification := &model.AssetLibraryVerification{UserId: 3, AccountId: low.Id, BytedToken: "tok-1", Name: "Ann"}
+			require.NoError(t, model.CreateAssetLibraryVerification(verification, "default"))
+			require.Error(t, model.CreateAssetLibraryVerification(&model.AssetLibraryVerification{UserId: 4, AccountId: low.Id, BytedToken: "tok-1"}, "default"))
+			since := time.Now().Add(-time.Hour).Unix()
+			pending, err := model.CountPendingAssetLibraryVerifications("account_id", low.Id, since)
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), pending)
+			started, err := model.CountAssetLibraryVerificationsSince(3, since)
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), started)
+			due, err := model.ListPendingAssetLibraryVerifications(verification.LastCheckedTime+1, 10)
+			require.NoError(t, err)
+			require.Len(t, due, 1)
+			assert.Equal(t, "tok-1", due[0].BytedToken)
+
+			racing := *verification
+			completed, err := model.CompleteAssetLibraryVerification(verification, &model.AssetLibraryGroup{UserId: 3, AccountId: low.Id, RemoteId: "group-person", GroupType: "LivenessFace", Name: "Ann"})
+			require.NoError(t, err)
+			assert.True(t, completed)
+			completed, err = model.CompleteAssetLibraryVerification(&racing, &model.AssetLibraryGroup{UserId: 3, AccountId: low.Id, RemoteId: "group-person", GroupType: "LivenessFace", Name: "Ann"})
+			require.NoError(t, err)
+			assert.False(t, completed)
+			failed, err := model.FailAssetLibraryVerification(&racing, "Face verification did not pass.", "10001")
+			require.NoError(t, err)
+			assert.False(t, failed)
+			groups, err := model.CountAssetLibraryGroups("user_id", 3)
+			require.NoError(t, err)
+			assert.Equal(t, int64(1), groups)
+			pending, err = model.CountPendingAssetLibraryVerifications("user_id", 3, since)
+			require.NoError(t, err)
+			assert.Zero(t, pending)
+			verifyTask, exists, err := model.GetByTaskId(3, verification.TaskId)
+			require.NoError(t, err)
+			require.True(t, exists)
+			assert.Equal(t, model.TaskStatus(model.TaskStatusSuccess), verifyTask.Status)
+			var verifyData map[string]any
+			require.NoError(t, common.Unmarshal(verifyTask.Data, &verifyData))
+			assert.Equal(t, "group-person", verifyData["GroupId"])
 
 			// A channel's binding to an account round-trips and clears with 0.
 			require.NoError(t, model.UpsertChannelExtend(model.DB, 77, relaykitdto.ChannelExtendSettings{AssetLibraryAccountId: low.Id}))

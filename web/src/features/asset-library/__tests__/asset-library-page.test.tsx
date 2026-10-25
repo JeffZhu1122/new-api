@@ -48,6 +48,8 @@ const config = {
   group_count: 1,
   asset_count: 2,
   group_types: ['AIGC'],
+  liveness_face_verify: false,
+  verify_sessions_per_hour: 5,
 }
 const group = {
   Id: 'group-1',
@@ -256,4 +258,137 @@ test('an administrator also sees every user’s groups', async () => {
   expect(
     screen.getByRole('button', { name: 'Delete asset group' })
   ).toBeVisible()
+})
+
+// The real-person tab of a user whose accounts need face verification.
+function useVerificationConfig() {
+  const get = vi.mocked(api.get).getMockImplementation()
+  vi.spyOn(api, 'get').mockImplementation(async (url: string, ...rest) => {
+    if (url === '/api/asset-library/config') {
+      return {
+        data: {
+          success: true,
+          data: {
+            ...config,
+            group_types: ['AIGC', 'LivenessFace'],
+            liveness_face_verify: true,
+          },
+        },
+      }
+    }
+    return get?.(url, ...rest)
+  })
+}
+
+async function startVerification(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(await screen.findByRole('tab', { name: 'Real people' }))
+  await user.click(
+    await screen.findByRole('button', { name: 'Start face verification' })
+  )
+  const dialog = await screen.findByRole('dialog')
+  const start = within(dialog).getByRole('button', {
+    name: 'Get verification link',
+  })
+  await user.type(within(dialog).getByLabelText('Asset group name'), 'Alice')
+  expect(start).toBeDisabled()
+  await user.click(
+    within(dialog).getByRole('checkbox', {
+      name: 'I have read and agree to the notice above',
+    })
+  )
+  await user.click(start)
+  return dialog
+}
+
+test('without an allowlisted account a real-person group starts with a face verification that shows a QR code until the person passes', async () => {
+  useVerificationConfig()
+  vi.mocked(api.post).mockImplementation(async (url: string) => {
+    if (url.includes('Action=ListAssetGroups')) return ark({ Items: [] })
+    if (url.includes('Action=CreateVisualValidateSession')) {
+      return ark({
+        BytedToken: 'tok-1',
+        H5Link: 'https://h5.example/?bytedToken=tok-1&lng=zh',
+      })
+    }
+    return {
+      status: 400,
+      data: {
+        ResponseMetadata: {
+          Error: { Code: 'InvalidParameter.BytedToken', Message: 'not yet' },
+        },
+      },
+    }
+  })
+  const user = userEvent.setup()
+  renderPage(true)
+
+  const dialog = await startVerification(user)
+
+  expect(await within(dialog).findByTestId('verification-qr')).toBeVisible()
+  expect(
+    within(dialog).getByText('Waiting for the verification…')
+  ).toBeVisible()
+  expect(api.post).toHaveBeenCalledWith(
+    '/api/asset-library/openapi?Action=CreateVisualValidateSession&Version=2024-01-01',
+    {
+      CallbackURL: `${window.location.origin}/asset-library-verification`,
+      Name: 'Alice',
+      Description: '',
+    },
+    expect.anything()
+  )
+  await waitFor(() =>
+    expect(api.post).toHaveBeenCalledWith(
+      '/api/asset-library/openapi?Action=GetVisualValidateResult&Version=2024-01-01',
+      { BytedToken: 'tok-1' },
+      expect.anything()
+    )
+  )
+})
+
+test('a passed face verification closes the dialog and a failed one offers a new start', async () => {
+  useVerificationConfig()
+  let sessions = 0
+  let outcome: unknown = ark({ GroupId: 'group-alice' })
+  vi.mocked(api.post).mockImplementation(async (url: string) => {
+    if (url.includes('Action=ListAssetGroups')) return ark({ Items: [] })
+    if (url.includes('Action=CreateVisualValidateSession')) {
+      sessions += 1
+      return ark({
+        BytedToken: `tok-${sessions}`,
+        H5Link: 'https://h5.example/?a=1',
+      })
+    }
+    return outcome as ReturnType<typeof ark>
+  })
+  const user = userEvent.setup()
+  renderPage(true)
+
+  await startVerification(user)
+  await waitFor(() =>
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument()
+  )
+
+  outcome = {
+    status: 400,
+    data: {
+      ResponseMetadata: {
+        Error: {
+          Code: 'VerificationFailed',
+          Message: 'Face verification did not pass.',
+        },
+      },
+    },
+  }
+  const dialog = await startVerification(user)
+  expect(
+    await within(dialog).findByText('Face verification did not pass.')
+  ).toBeVisible()
+  expect(
+    within(dialog).queryByTestId('verification-qr')
+  ).not.toBeInTheDocument()
+  await user.click(
+    within(dialog).getByRole('button', { name: 'Start a new verification' })
+  )
+  expect(within(dialog).getByLabelText('Asset group name')).toBeVisible()
 })

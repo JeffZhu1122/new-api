@@ -57,6 +57,9 @@ export type AssetLibraryConfig = {
   group_count: number
   asset_count: number
   group_types: AssetGroupType[]
+  // Real-person groups are created through face verification only.
+  liveness_face_verify: boolean
+  verify_sessions_per_hour: number
 }
 
 export type AdminAssetGroup = AssetGroup & {
@@ -74,10 +77,13 @@ type ArkEnvelope<T> = {
 // An error the asset library or Ark returned, with Ark's error code.
 export class AssetLibraryError extends Error {
   code: string
+  // The message without the code; the gateway's own are locale keys.
+  reason: string
 
   constructor(code: string, message: string) {
     super(code ? `${code}: ${message}` : message)
     this.code = code
+    this.reason = message
   }
 }
 
@@ -177,6 +183,55 @@ export function updateAsset(body: { Id: string; Name: string }) {
 
 export function deleteAsset(id: string): Promise<unknown> {
   return callAction('DeleteAsset', { Id: id })
+}
+
+// Face verification: a real-person group is created once the person passes
+// the check on the H5 page Ark links to.
+
+export type VerificationSession = { BytedToken: string; H5Link: string }
+
+export function createVerification(body: {
+  CallbackURL: string
+  Name: string
+  Description: string
+}): Promise<VerificationSession> {
+  return callAction('CreateVisualValidateSession', body)
+}
+
+export type VerificationState =
+  | { status: 'passed'; groupId: string }
+  | { status: 'failed'; reason: string }
+  | { status: 'waiting' }
+
+// checkVerification asks for the group; Ark answers with an error until the
+// person has passed, so only the gateway's VerificationFailed ends the wait.
+export async function checkVerification(
+  bytedToken: string
+): Promise<VerificationState> {
+  try {
+    const result = await callAction<{ GroupId: string }>(
+      'GetVisualValidateResult',
+      { BytedToken: bytedToken }
+    )
+    return { status: 'passed', groupId: result.GroupId }
+  } catch (error) {
+    if (
+      error instanceof AssetLibraryError &&
+      error.code === 'VerificationFailed'
+    ) {
+      return { status: 'failed', reason: error.reason }
+    }
+    return { status: 'waiting' }
+  }
+}
+
+// reportVerificationResult passes on what the H5 page appended to the
+// callback URL; the phone that opens it is not signed in.
+export async function reportVerificationResult(body: {
+  byted_token: string
+  result_code: string
+}): Promise<void> {
+  await api.post('/api/asset-library/verification/callback', body)
 }
 
 // Administrators: every user's library.
