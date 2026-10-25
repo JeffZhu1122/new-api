@@ -158,3 +158,36 @@ func TestAutoDisableKeepsManualDisable(t *testing.T) {
 		}
 	}
 }
+
+// A channel created after the last cache sync, such as a new channel saved
+// disabled, is enabled in the database even though the memory cache does not
+// hold it yet.
+func TestUpdateChannelStatusEnablesAChannelTheCacheDoesNotHoldYet(t *testing.T) {
+	setupChannelStatusTest(t)
+	common.MemoryCacheEnabled = true
+	InitChannelCache()
+
+	channel := Channel{Name: "added-disabled", Key: "key", Models: "gpt-test", Group: "default", Status: common.ChannelStatusManuallyDisabled}
+	require.NoError(t, BatchInsertChannels([]Channel{channel}))
+	var stored Channel
+	require.NoError(t, DB.Where("name = ?", "added-disabled").First(&stored).Error)
+
+	// The stored row still guards the manual disable when the cache misses it.
+	require.False(t, UpdateChannelStatus(stored.Id, "", common.ChannelStatusAutoDisabled, "provider rejected key"))
+	require.NoError(t, DB.First(&stored, stored.Id).Error)
+	assert.Equal(t, common.ChannelStatusManuallyDisabled, stored.Status)
+
+	require.True(t, UpdateChannelStatus(stored.Id, "", common.ChannelStatusEnabled, "manual operation"))
+
+	require.NoError(t, DB.First(&stored, stored.Id).Error)
+	assert.Equal(t, common.ChannelStatusEnabled, stored.Status)
+	var abilities []Ability
+	require.NoError(t, DB.Where("channel_id = ?", stored.Id).Find(&abilities).Error)
+	require.NotEmpty(t, abilities)
+	for _, ability := range abilities {
+		assert.True(t, ability.Enabled)
+	}
+
+	InitChannelCache()
+	assert.False(t, UpdateChannelStatus(stored.Id, "", common.ChannelStatusEnabled, "manual operation"), "an already enabled cached channel is left alone")
+}

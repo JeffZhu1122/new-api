@@ -795,30 +795,31 @@ func UpdateChannelStatus(channelId int, usingKey string, status int, reason stri
 	defer pollingLock.Unlock()
 
 	if common.MemoryCacheEnabled {
-		channelCache, _ := CacheGetChannel(channelId)
-		if channelCache == nil {
-			return false
-		}
-		// A request failure must not replace an admin's manual disable;
-		// otherwise automatic recovery could re-enable the channel later.
-		if status == common.ChannelStatusAutoDisabled && channelCache.Status == common.ChannelStatusManuallyDisabled {
-			return false
-		}
-		if channelCache.ChannelInfo.IsMultiKey {
-			beforeStatus := channelCache.Status
-			// 如果是多Key模式，更新缓存中的状态
-			handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
-			if beforeStatus != channelCache.Status {
-				CacheUpdateChannelStatus(channelId, channelCache.Status)
-			}
-			//CacheUpdateChannel(channelCache)
-			//return true
-		} else {
-			// 如果缓存渠道存在，且状态已是目标状态，直接返回
-			if channelCache.Status == status {
+		// A channel added since the last cache sync is not cached yet (new
+		// channels are saved disabled); its status is still changed in the
+		// database below.
+		if channelCache, _ := CacheGetChannel(channelId); channelCache != nil {
+			// A request failure must not replace an admin's manual disable;
+			// otherwise automatic recovery could re-enable the channel later.
+			if status == common.ChannelStatusAutoDisabled && channelCache.Status == common.ChannelStatusManuallyDisabled {
 				return false
 			}
-			CacheUpdateChannelStatus(channelId, status)
+			if channelCache.ChannelInfo.IsMultiKey {
+				beforeStatus := channelCache.Status
+				// 如果是多Key模式，更新缓存中的状态
+				handlerMultiKeyUpdate(channelCache, usingKey, status, reason)
+				if beforeStatus != channelCache.Status {
+					CacheUpdateChannelStatus(channelId, channelCache.Status)
+				}
+				//CacheUpdateChannel(channelCache)
+				//return true
+			} else {
+				// 如果缓存渠道存在，且状态已是目标状态，直接返回
+				if channelCache.Status == status {
+					return false
+				}
+				CacheUpdateChannelStatus(channelId, status)
+			}
 		}
 	}
 
