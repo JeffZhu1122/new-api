@@ -31,6 +31,7 @@ type assetLibraryAccountView struct {
 	Enabled             bool     `json:"enabled"`
 	AigcEnabled         bool     `json:"aigc_enabled"`
 	LivenessFaceEnabled bool     `json:"liveness_face_enabled"`
+	LivenessFaceVerify  bool     `json:"liveness_face_verify"`
 	AllowedUserGroups   []string `json:"allowed_user_groups"`
 	Priority            int      `json:"priority"`
 	MaxGroups           int      `json:"max_groups"`
@@ -53,6 +54,7 @@ type assetLibraryAccountRequest struct {
 	Enabled             bool     `json:"enabled"`
 	AigcEnabled         bool     `json:"aigc_enabled"`
 	LivenessFaceEnabled bool     `json:"liveness_face_enabled"`
+	LivenessFaceVerify  bool     `json:"liveness_face_verify"`
 	AllowedUserGroups   []string `json:"allowed_user_groups"`
 	Priority            int      `json:"priority"`
 	MaxGroups           int      `json:"max_groups"`
@@ -83,6 +85,7 @@ func newAssetLibraryAccountView(account *model.AssetLibraryAccount) assetLibrary
 		Enabled:             account.Enabled,
 		AigcEnabled:         account.AigcEnabled,
 		LivenessFaceEnabled: account.LivenessFaceEnabled,
+		LivenessFaceVerify:  account.LivenessFaceVerify,
 		AllowedUserGroups:   account.AllowedUserGroupList(),
 		Priority:            account.Priority,
 		MaxGroups:           account.MaxGroups,
@@ -159,6 +162,7 @@ func (r assetLibraryAccountRequest) toAccount(c *gin.Context, base *model.AssetL
 	account.Enabled = r.Enabled
 	account.AigcEnabled = r.AigcEnabled
 	account.LivenessFaceEnabled = r.LivenessFaceEnabled
+	account.LivenessFaceVerify = r.LivenessFaceVerify
 	account.Priority = r.Priority
 	account.MaxGroups = r.MaxGroups
 	account.MaxAssets = r.MaxAssets

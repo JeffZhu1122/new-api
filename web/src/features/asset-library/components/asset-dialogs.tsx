@@ -152,23 +152,40 @@ export function AssetGroupDialog(props: {
         />
       </div>
       {needsAgreement && (
-        <div className='bg-muted/50 space-y-3 rounded-md border p-3'>
-          <p className='text-sm whitespace-pre-wrap'>
-            {props.complianceNotice}
-          </p>
-          <div className='flex items-center gap-2'>
-            <Checkbox
-              id='asset-group-agree'
-              checked={agreed}
-              onCheckedChange={(checked) => setAgreed(checked === true)}
-            />
-            <Label htmlFor='asset-group-agree' className='font-normal'>
-              {t('I have read and agree to the notice above')}
-            </Label>
-          </div>
-        </div>
+        <ComplianceAgreement
+          id='asset-group-agree'
+          notice={props.complianceNotice}
+          agreed={agreed}
+          onAgreedChange={setAgreed}
+        />
       )}
     </Dialog>
+  )
+}
+
+// The administrator's compliance notice and the box a user ticks to accept
+// it before creating a group or starting a face verification.
+export function ComplianceAgreement(props: {
+  id: string
+  notice: string
+  agreed: boolean
+  onAgreedChange: (agreed: boolean) => void
+}) {
+  const { t } = useTranslation()
+  return (
+    <div className='bg-muted/50 space-y-3 rounded-md border p-3'>
+      <p className='text-sm whitespace-pre-wrap'>{props.notice}</p>
+      <div className='flex items-center gap-2'>
+        <Checkbox
+          id={props.id}
+          checked={props.agreed}
+          onCheckedChange={(checked) => props.onAgreedChange(checked === true)}
+        />
+        <Label htmlFor={props.id} className='font-normal'>
+          {t('I have read and agree to the notice above')}
+        </Label>
+      </div>
+    </div>
   )
 }
 

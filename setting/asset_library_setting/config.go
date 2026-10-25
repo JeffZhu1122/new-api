@@ -29,8 +29,11 @@ type AssetLibrarySetting struct {
 	MaxAssetsPerUser int `json:"max_assets_per_user"`
 	// User groups that may use the library; empty = every group.
 	AllowedUserGroups []string `json:"allowed_user_groups"`
-	// Text a user must agree to before creating a group.
+	// Text a user must agree to before creating a group or starting a face
+	// verification.
 	ComplianceNotice string `json:"compliance_notice"`
+	// Face verifications a user may start per hour; 0 = unlimited.
+	VerifySessionsPerHour int `json:"verify_sessions_per_hour"`
 }
 
 var assetLibrarySetting = AssetLibrarySetting{
@@ -39,6 +42,7 @@ var assetLibrarySetting = AssetLibrarySetting{
 	MaxGroupsPerUser:           20,
 	MaxAssetsPerUser:           200,
 	AllowedUserGroups:          []string{},
+	VerifySessionsPerHour:      5,
 }
 
 func init() {
@@ -65,7 +69,7 @@ func ValidateOption(key string, value string) error {
 		if _, err := strconv.ParseBool(value); err != nil {
 			return fmt.Errorf("%s must be true or false", field)
 		}
-	case "max_groups_per_user", "max_assets_per_user":
+	case "max_groups_per_user", "max_assets_per_user", "verify_sessions_per_hour":
 		number, err := strconv.Atoi(value)
 		if err != nil || number < 0 || number > MaxPerUserLimit {
 			return fmt.Errorf("%s must be an integer from 0 to %d", field, MaxPerUserLimit)

@@ -69,6 +69,7 @@ const assetLibrarySchema = z.object({
   block_asset_refs_when_disabled: z.boolean(),
   max_groups_per_user: z.number().int().min(0),
   max_assets_per_user: z.number().int().min(0),
+  verify_sessions_per_hour: z.number().int().min(0),
   allowed_user_groups: z.array(z.string()),
   compliance_notice: z.string().max(5000),
 })
@@ -208,6 +209,29 @@ export function AssetLibrarySettingsSection(
           />
           <FormField
             control={form.control}
+            name='verify_sessions_per_hour'
+            render={({ field }) => (
+              <FormItem>
+                <FormLabel>{t('Face verifications per hour')}</FormLabel>
+                <FormControl>
+                  <Input
+                    type='number'
+                    min={0}
+                    step={1}
+                    {...safeNumberFieldProps(field)}
+                  />
+                </FormControl>
+                <FormDescription>
+                  {t(
+                    'How many verifications one user may start per hour. 0 means unlimited.'
+                  )}
+                </FormDescription>
+                <FormMessage />
+              </FormItem>
+            )}
+          />
+          <FormField
+            control={form.control}
             name='allowed_user_groups'
             render={({ field }) => (
               <FormItem>
@@ -243,7 +267,7 @@ export function AssetLibrarySettingsSection(
                 </FormControl>
                 <FormDescription>
                   {t(
-                    'Shown to users before they create an asset group; they must agree to continue.'
+                    'Shown to users before they create an asset group or start a face verification; they must agree to continue.'
                   )}
                 </FormDescription>
                 <FormMessage />
@@ -329,13 +353,18 @@ function AssetLibraryAccounts(props: { userGroups: string[] }) {
           {
             id: 'types',
             header: t('Group types'),
-            cell: (account) =>
-              [
-                account.aigc_enabled ? t('Virtual avatars') : null,
-                account.liveness_face_enabled ? t('Real people') : null,
-              ]
-                .filter(Boolean)
-                .join(' / ') || '-',
+            cell: (account) => {
+              const types: string[] = []
+              if (account.aigc_enabled) types.push(t('Virtual avatars'))
+              if (account.liveness_face_enabled) {
+                types.push(
+                  account.liveness_face_verify
+                    ? t('Real people (face verification)')
+                    : t('Real people')
+                )
+              }
+              return types.join(' / ') || '-'
+            },
           },
           {
             id: 'priority',

@@ -3,6 +3,7 @@ package controller
 import (
 	"context"
 	"errors"
+	"io"
 	"strconv"
 	"strings"
 	"time"
@@ -117,5 +118,26 @@ func adminDeleteAssetLibraryResource(c *gin.Context, remove func(context.Context
 		common.ApiErrorT(c, "Volcengine refused the request: {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
+	common.ApiSuccess(c, nil)
+}
+
+// AssetLibraryVerificationCallback receives the result the face verification
+// page appended to the gateway's callback page. The person's phone opens that
+// page without signing in, so the answer is the same whatever the token is.
+func AssetLibraryVerificationCallback(c *gin.Context) {
+	if !assetLibraryAvailable(c) {
+		return
+	}
+	var request struct {
+		BytedToken string `json:"byted_token"`
+		ResultCode string `json:"result_code"`
+	}
+	if err := common.DecodeJson(io.LimitReader(c.Request.Body, 4096), &request); err != nil {
+		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	ctx, cancel := context.WithTimeout(c.Request.Context(), 20*time.Second)
+	defer cancel()
+	service.HandleAssetLibraryVerificationCallback(ctx, strings.TrimSpace(request.BytedToken), strings.TrimSpace(request.ResultCode))
 	common.ApiSuccess(c, nil)
 }

@@ -20,6 +20,10 @@ type AssetLibraryUserConfig struct {
 	AssetCount       int64  `json:"asset_count"`
 	// Group types an enabled account accepts from the user's group.
 	GroupTypes []string `json:"group_types"`
+	// Real-person groups can only be created through face verification: no
+	// account that takes them from the user's group is allowlisted.
+	LivenessFaceVerify    bool `json:"liveness_face_verify"`
+	VerifySessionsPerHour int  `json:"verify_sessions_per_hour"`
 }
 
 func GetAssetLibraryUserConfig(userId int, userGroup string) (*AssetLibraryUserConfig, error) {
@@ -30,6 +34,8 @@ func GetAssetLibraryUserConfig(userId int, userGroup string) (*AssetLibraryUserC
 		MaxGroups:        setting.MaxGroupsPerUser,
 		MaxAssets:        setting.MaxAssetsPerUser,
 		GroupTypes:       []string{},
+
+		VerifySessionsPerHour: setting.VerifySessionsPerHour,
 	}
 	var err error
 	if config.GroupCount, err = model.CountAssetLibraryGroups("user_id", userId); err != nil {
@@ -42,19 +48,21 @@ func GetAssetLibraryUserConfig(userId int, userGroup string) (*AssetLibraryUserC
 	if err != nil {
 		return nil, err
 	}
-	aigc, people := false, false
+	aigc, peopleDirect, peopleVerified := false, false, false
 	for _, account := range accounts {
 		if account.Enabled && account.UserGroupAllowed(userGroup) {
-			aigc = aigc || account.AigcEnabled
-			people = people || account.LivenessFaceEnabled
+			aigc = aigc || accountTakesGroups(account, volcark.GroupTypeAIGC, false)
+			peopleDirect = peopleDirect || accountTakesGroups(account, volcark.GroupTypeLivenessFace, false)
+			peopleVerified = peopleVerified || accountTakesGroups(account, volcark.GroupTypeLivenessFace, true)
 		}
 	}
 	if aigc {
 		config.GroupTypes = append(config.GroupTypes, volcark.GroupTypeAIGC)
 	}
-	if people {
+	if peopleDirect || peopleVerified {
 		config.GroupTypes = append(config.GroupTypes, volcark.GroupTypeLivenessFace)
 	}
+	config.LivenessFaceVerify = peopleVerified && !peopleDirect
 	return config, nil
 }
 

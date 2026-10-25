@@ -19,7 +19,7 @@ For commercial licensing, please contact support@quantumnous.com
 import { zodResolver } from '@hookform/resolvers/zod'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
-import { useForm } from 'react-hook-form'
+import { useForm, useWatch } from 'react-hook-form'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import * as z from 'zod'
@@ -84,6 +84,7 @@ const createAccountSchema = (
     enabled: z.boolean(),
     aigc_enabled: z.boolean(),
     liveness_face_enabled: z.boolean(),
+    liveness_face_verify: z.boolean(),
     allowed_user_groups: z.array(z.string()),
     priority: z.number().int(),
     max_groups: z.number().int().min(0),
@@ -114,6 +115,7 @@ function accountFormValues(
     enabled: account?.enabled ?? true,
     aigc_enabled: account?.aigc_enabled ?? true,
     liveness_face_enabled: account?.liveness_face_enabled ?? true,
+    liveness_face_verify: account?.liveness_face_verify ?? false,
     allowed_user_groups: account?.allowed_user_groups ?? [],
     priority: account?.priority ?? 0,
     max_groups: account?.max_groups ?? 1000000,
@@ -136,6 +138,42 @@ export function AssetLibraryAccountDialog(
     resolver: zodResolver(createAccountSchema(t, !isEdit)),
     values,
   })
+
+  const livenessFaceEnabled = useWatch({
+    control: form.control,
+    name: 'liveness_face_enabled',
+  })
+  const switchFields: [
+    (
+      | 'enabled'
+      | 'aigc_enabled'
+      | 'liveness_face_enabled'
+      | 'liveness_face_verify'
+    ),
+    string,
+    string,
+  ][] = [
+    ['enabled', t('Enabled'), t('Disabled accounts take no new groups.')],
+    [
+      'aigc_enabled',
+      t('Virtual avatars'),
+      t('Users may create virtual avatar (AIGC) groups here.'),
+    ],
+    [
+      'liveness_face_enabled',
+      t('Real people'),
+      t('Users may create verified real-person groups here.'),
+    ],
+  ]
+  if (livenessFaceEnabled) {
+    switchFields.push([
+      'liveness_face_verify',
+      t('Face verification required'),
+      t(
+        'Turn on for accounts Volcengine has not allowlisted: a real-person group is created once the person passes a face verification. Allowlisted accounts create them directly.'
+      ),
+    ])
+  }
 
   const toPayload = (
     values: AccountFormValues
@@ -424,25 +462,7 @@ export function AssetLibraryAccountDialog(
               )}
             />
           </div>
-          {(
-            [
-              [
-                'enabled',
-                t('Enabled'),
-                t('Disabled accounts take no new groups.'),
-              ],
-              [
-                'aigc_enabled',
-                t('Virtual avatars'),
-                t('Users may create virtual avatar (AIGC) groups here.'),
-              ],
-              [
-                'liveness_face_enabled',
-                t('Real people'),
-                t('Users may create verified real-person groups here.'),
-              ],
-            ] as const
-          ).map(([name, label, description]) => (
+          {switchFields.map(([name, label, description]) => (
             <FormField
               key={name}
               control={form.control}

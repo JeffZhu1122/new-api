@@ -282,6 +282,8 @@ func SetApiRouter(router *gin.Engine) {
 		}
 		apiRouter.POST("/asset-library/openapi", middleware.UserAuth(), controller.AssetLibraryOpenAPI)
 		apiRouter.GET("/asset-library/config", middleware.UserAuth(), controller.GetAssetLibraryConfig)
+		// Opened by the phone of the person being verified, who is not signed in.
+		apiRouter.POST("/asset-library/verification/callback", middleware.CriticalRateLimit(), controller.AssetLibraryVerificationCallback)
 		assetLibraryAdminRoute := apiRouter.Group("", middleware.AdminAuth())
 		handlePermissionRoute(assetLibraryAdminRoute, http.MethodGet, "/asset-library/admin/groups", authz.AssetLibraryRead, controller.AdminListAssetLibraryGroups)
 		handlePermissionRoute(assetLibraryAdminRoute, http.MethodGet, "/asset-library/admin/groups/:id/assets", authz.AssetLibraryRead, controller.AdminListAssetLibraryGroupAssets)

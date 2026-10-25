@@ -74,6 +74,26 @@ describe('task artifacts cell', () => {
     expect(screen.queryByText('Result not retained')).not.toBeInTheDocument()
   })
 
+  test.each(['CreateAsset', 'CreateVisualValidateSession'])(
+    'given a successful asset library %s task, no artifacts button is offered',
+    (action) => {
+      renderCell(
+        taskLog({
+          platform: 'asset_library',
+          action,
+          channel_id: 0,
+          quota: 0,
+          admin_info: undefined,
+        })
+      )
+
+      expect(screen.getByText('-')).toBeVisible()
+      expect(
+        screen.queryByRole('button', { name: /Artifacts/ })
+      ).not.toBeInTheDocument()
+    }
+  )
+
   test('given an unfinished task, neither the button nor the hint is shown', () => {
     renderCell(taskLog({ status: 'IN_PROGRESS', result_discarded: true }))
 

@@ -67,6 +67,9 @@ var accessTokenExemptRoutes = []string{
 	"GET /api/subscription/epay/return",
 	"POST /api/subscription/epay/return",
 
+	// Face verification result, sent by the verified person's phone.
+	"POST /api/asset-library/verification/callback",
+
 	// API key authentication (TokenAuthReadOnly).
 	"GET /api/usage/token/",
 	"GET /api/log/token",
