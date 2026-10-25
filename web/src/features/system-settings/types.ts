@@ -403,6 +403,14 @@ export type OperationsSettings = {
   LogConsumeEnabled: boolean
   'log_setting.user_export_enabled': boolean
   'log_setting.max_range_days': number
+  'asset_library_setting.enabled': boolean
+  'asset_library_setting.block_asset_refs_when_disabled': boolean
+  'asset_library_setting.max_groups_per_user': number
+  'asset_library_setting.max_assets_per_user': number
+  'asset_library_setting.verify_sessions_per_hour': number
+  'asset_library_setting.allowed_user_groups': string
+  'asset_library_setting.callback_base_url': string
+  'asset_library_setting.compliance_notice': string
   'log_file_cleanup_setting.enabled': boolean
   'log_file_cleanup_setting.frequency': 'daily' | 'weekly' | 'monthly'
   'log_file_cleanup_setting.weekday': number

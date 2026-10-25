@@ -13,6 +13,7 @@ import (
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting"
+	"github.com/QuantumNous/new-api/setting/asset_library_setting"
 	"github.com/QuantumNous/new-api/setting/billing_setting"
 	"github.com/QuantumNous/new-api/setting/console_setting"
 	"github.com/QuantumNous/new-api/setting/log_file_cleanup_setting"
@@ -209,6 +210,12 @@ func UpdateOption(c *gin.Context) {
 	default:
 		if isPaymentComplianceOptionKey(option.Key) {
 			common.ApiErrorT(c, "Compliance confirmation fields cannot be changed through the general settings API")
+			return
+		}
+	}
+	if strings.HasPrefix(option.Key, "asset_library_setting.") {
+		if err := asset_library_setting.ValidateOption(option.Key, option.Value.(string)); err != nil {
+			common.ApiErrorMsg(c, err.Error())
 			return
 		}
 	}

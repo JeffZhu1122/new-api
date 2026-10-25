@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 52 个（含本文档相关提交） |
-| 变更规模 | 336 个文件，+29018 / −2215 行（不含本文档） |
+| fork 专有提交数 | 53 个（含本文档相关提交） |
+| 变更规模 | 350 个文件，+31927 / −2215 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -52,6 +52,7 @@
 35. [服务器日志的请求汇总行与报错行中的渠道](#35-服务器日志的请求汇总行与报错行中的渠道)
 36. [渠道测试：选择 max_tokens 或 max_completion_tokens](#36-渠道测试选择-max_tokens-或-max_completion_tokens)
 37. [渠道报错行带模型名](#37-渠道报错行带模型名)
+38. [素材库管理（火山方舟私域素材库）](#38-素材库管理火山方舟私域素材库)
 
 ---
 
@@ -91,6 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分步交付中） | 关闭 | `asset_library_accounts`（新表）、`asset_library_setting.*` | 新增设置项与火山账号管理接口；后续步骤见该节 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -856,7 +858,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
 | `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary` |
 | `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数 |
-| `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列 |
+| `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列；§38 `migrateDB` 的 AutoMigrate 列表末尾加 `&AssetLibraryAccount{}` |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
@@ -882,7 +884,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `model/log.go` / `controller/log.go` | `SumUsedQuota` 只算额度、`ValidateLogTextPattern`；日志统计接口改读 `service.LogRate` |
 | `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹（渠道表包在上游 rc.45 拖拽排序的 `ChannelPriorityContext` 外层）；§32 去掉渠道表 `initialColumnVisibility` 中的 `models: false` |
 | `controller/user.go` | `UpdateUser` 中 `rate_limit` / `model_discount` 写入紧挨上游的审计调用 |
-| `middleware/access_token_routes.go` | fork 新增的管理接口若不经 `RequirePermission`，必须在这里声明访问令牌权限，否则上游的覆盖测试失败、令牌被拒 |
+| `middleware/access_token_routes.go` | fork 新增的管理接口若不经 `RequirePermission`，必须在这里声明访问令牌权限，否则上游的覆盖测试失败、令牌被拒；§38 的账号接口用 `option:read` / `option:write` |
 | `web/src/features/users/api.ts` | 文件头 import |
 | `web/src/i18n/locales/*.json` | 新增文案 |
 | `web/src/components/ui/button.tsx` | `data-variant` / `data-size` 两个属性，是 `brand.css` 按钮钩子的契约（§22） |
@@ -900,11 +902,13 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/components/layout/components/section-page-layout.tsx` | 控制台页面的 `data-slot='section-page-*'` 钩子与标题 class；标题容器 `flex-auto`（上游为 `flex-1`），右侧操作区放不下时换行而不是把标题挤没 |
 | `web/src/components/data-table/layout/data-table-page.tsx` | 固定高度的卡片网格与移动端列表滚动容器加 `data-slot='data-table-scroll'` 钩子（仅属性） |
 | `controller/performance.go` | 日志文件列表与清理逻辑移到 `service/log_file_cleanup.go`（`LogFileInfo` 改为类型别名），手动清理接口的参数校验与响应不变 |
-| `controller/option.go` | `log_file_cleanup_setting.*` 保存前的校验块 |
+| `controller/option.go` | `log_file_cleanup_setting.*` 与 §38 `asset_library_setting.*` 保存前的校验块 |
 | `web/src/features/system-settings/maintenance/log-settings-section.tsx` / `server-log-files.tsx` | 表单 schema / 默认值 / 保存逻辑加入定时清理字段（`scheduleDefaults` 可省略）；`ServerLogFiles` 加了 `renderSchedule` 插槽，在手动清理下方渲染定时清理组件 |
 | `relay/constant/relay_mode.go` / `relaykit/types/relay_format.go` | 双方都在末尾追加常量（fork：count_tokens / input_tokens，上游：tools search / fetch），合并时都保留；relay mode 的数值只在请求上下文里使用，不持久化，顺序变化无影响 |
 | `service/channel.go` | §15 达上限通知改用上游 rc.45 的 `NotifyChannelWatchers` |
-| `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` / `api.ts` | 定时清理 option 默认值、传参、类型与状态接口 |
+| `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` / `api.ts` | 定时清理 option 默认值、传参、类型与状态接口；§38 「素材库」一节（`asset-library`）的默认值、传参与类型 |
+| `controller/misc.go` | §38 `/api/status` 多一个 `asset_library_enabled` |
+| `router/api-router.go` | §38 `/api/asset-library/accounts` 路由组（RootAuth），放在 `/plugin/task` 之前 |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
 | `web/src/features/dashboard/components/{models/{log-stat-cards,performance-overview,consumption-distribution-chart,model-charts},flow/flow-charts,users/user-charts}.tsx` | 数据看板各标签页外框改为 `brand-surface rounded-2xl` |
@@ -1983,3 +1987,55 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - `TestChannelErrorLineNamesTheModelTheChannelWasAskedFor`：有重定向时写重定向后的模型（有、无上游请求 ID 两种格式）；没有渠道信息时写请求的模型；
   - 原有的快照测试断言带 `model "gpt-test"` 的完整格式。
 - 没有做本地端到端：测试实例 B 的登录凭据文件已不在，没有为此重新生成凭据。
+
+---
+
+## 38. 素材库管理（火山方舟私域素材库）
+
+分步交付中。本节记录已经完成的部分，后续步骤完成时补充。
+
+### 动机
+
+火山方舟的 Seedance 2.0 / 2.5 只能用入库的私域素材（`asset://<素材ID>`）生成含人像的视频，素材库按火山账号和项目（Project）隔离，**没有终端用户的概念**：同一项目的任何 API Key 都能引用任何素材 ID，管理接口只支持 AK/SK 签名。网关把一个或多个火山账号的素材库分给用户使用，需要自己做用户隔离。
+
+### 第 1 步：火山账号与开关（已完成）
+
+- **签名客户端** `pkg/volcark`：按火山签名方法（HMAC-SHA256，签 `host;x-date`）调用 `https://ark.<region>.volcengineapi.com/?Action=…&Version=2024-01-01`，解析 `ResponseMetadata.Error`。单元测试用火山签名文档里的 GET / POST 两个示例核对签名结果。
+- **火山账号表** `asset_library_accounts`：名称、AK、SK、Region（默认 `cn-beijing`）、ProjectName（默认 `default`）、可选的接口地址、启用、可建的素材组类型（虚拟人像 / 真人人像）、允许的用户分组、优先级、账号配额（素材组数、素材数）、每分钟上传次数。
+- **账号管理接口** `/api/asset-library/accounts`（RootAuth，访问令牌需 `option:read` / `option:write`）：
+  - 列表只返回脱敏的 AK（前 4 位 + 后 4 位）和 `has_secret`，**从不返回 SK**；
+  - 修改时 AK / SK 留空表示保留原值；
+  - `POST /test` 测试未保存或已保存的账号：对每种启用的素材组类型调一次 `ListAssetGroups`（`MaxResults=1`），同时验证 AK/SK、权限和项目。
+- **全局设置** `asset_library_setting.*`：
+
+  | 键 | 默认 | 含义 |
+  |---|---|---|
+  | `enabled` | false | 素材库总开关；关闭时页面与接口都不存在（后续步骤实现） |
+  | `block_asset_refs_when_disabled` | true | 关闭时也拒绝带 `asset://` 的请求（后续步骤实现） |
+  | `max_groups_per_user` / `max_assets_per_user` | 20 / 200 | 每个用户的上限，0 表示不限制 |
+  | `allowed_user_groups` | `[]` | 能使用素材库的用户分组，空表示所有分组 |
+  | `verify_sessions_per_hour` | 5 | 每个用户每小时可发起的真人认证次数，0 表示不限制 |
+  | `callback_base_url` | 空 | 真人认证完成后回跳的地址，空表示服务器地址 |
+  | `compliance_notice` | 空 | 建组或认证前展示的合规提示 |
+
+- `/api/status` 多一个 `asset_library_enabled`。
+- **前端**：系统设置 → 运维 → 「素材库」：开关与上限的表单，下面是火山账号表格；新增 / 编辑对话框里可以「测试连接」。
+
+### 后续步骤（规划）
+
+1. **与官方一致的调用方式**：用户用和火山官方完全相同的 Action / Version、请求体和返回结构调用网关，只有域名或路径不同；用户只能看到、操作自己名下的素材组和素材。
+2. **上传写入任务日志**：每次 `CreateAsset` 记一条任务（不扣额度），状态随素材处理结果更新。
+3. **真人认证**、**转发时的素材归属校验**、**渠道绑定火山账号**、**素材库管理页面**、**后台同步与管理员视角**。
+
+### 测试
+
+- `pkg/volcark/client_test.go`：签名与火山文档的两个官方示例一致；`Call` 发出带签名的 Action 请求并解析 `Result`；火山错误带错误码和请求 ID 返回。
+- `setting/asset_library_setting/config_test.go`：每个设置项的取值校验。
+- `controller/asset_library_account_test.go`：
+  - 创建 / 列表 / 修改都不返回 SK，AK 脱敏；修改时留空的 AK / SK 保留原值；false 与 0 能保存；
+  - 非法账号（缺密钥、名称、地域、接口地址、负数配额、空分组）被拒且不入库；
+  - 测试连接按启用的类型调用 `ListAssetGroups`，修改时用已保存的密钥签名，失败时返回火山的错误码与请求 ID；
+  - 三种数据库：SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24 上建表、第二次迁移不再执行任何 `CREATE` / `ALTER`、增删改查与排序（`TEST_MYSQL_DSN` / `TEST_POSTGRES_DSN`）。
+- 升级验证：用官方 `v1.0.0-rc.46` 镜像分别在三种数据库上建好库，再用本分支启动两次：都正常启动、日志无错误，新表结构正确。
+- 前端 `integrations/__tests__/asset-library-settings.test.tsx`：账号列表只显示脱敏 AK；新增账号缺密钥时不提交；测试连接发送对话框里的值且不保存；编辑时密钥留空即保留；开关只保存改动的项。
+
