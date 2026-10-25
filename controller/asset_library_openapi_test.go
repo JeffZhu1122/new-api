@@ -14,6 +14,7 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
+	"github.com/QuantumNous/new-api/i18n"
 	"github.com/QuantumNous/new-api/model"
 	relaykitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
@@ -22,6 +23,7 @@ import (
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/tidwall/gjson"
 )
 
 // fakeArk is an Ark asset OpenAPI that keeps resources in memory and records
@@ -34,6 +36,8 @@ type fakeArk struct {
 	failAction  string
 	// Group Ark created for each face verification token that passed.
 	verified map[string]string
+	// Name each asset was created with, as GetAsset reports it.
+	names map[string]string
 }
 
 func (f *fakeArk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -55,6 +59,11 @@ func (f *fakeArk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "CreateAssetGroup":
 		_, _ = fmt.Fprintf(w, `{%s,"Result":{"Id":"group-%d"}}`, metadata, f.next)
 	case "CreateAsset":
+		if f.names == nil {
+			f.names = map[string]string{}
+		}
+		name, _ := request["Name"].(string)
+		f.names[fmt.Sprintf("asset-%d", f.next)] = name
 		_, _ = fmt.Fprintf(w, `{%s,"Result":{"Id":"asset-%d"}}`, metadata, f.next)
 	case "CreateVisualValidateSession":
 		_, _ = fmt.Fprintf(w, `{%s,"Result":{"BytedToken":"tok-%d","H5Link":"https://h5.example/?bytedToken=tok-%d","CallbackURL":%q}}`, metadata, f.next, f.next, request["CallbackURL"])
@@ -72,7 +81,8 @@ func (f *fakeArk) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if f.assetStatus == "Failed" {
 			errorField = `,"Error":{"Code":"FaceMismatch","Message":"face does not match"}`
 		}
-		_, _ = fmt.Fprintf(w, `{%s,"Result":{"Id":%q,"Name":"renamed by ark","AssetType":"Image","GroupId":"g","Status":%q,"ProjectName":"video","URL":"https://tos.example/%s?sig=1","CreateTime":"2026-10-01T00:00:00Z","UpdateTime":"2026-10-01T00:01:00Z"%s}}`, metadata, request["Id"], f.assetStatus, request["Id"], errorField)
+		id, _ := request["Id"].(string)
+		_, _ = fmt.Fprintf(w, `{%s,"Result":{"Id":%q,"Name":%q,"AssetType":"Image","GroupId":"g","Status":%q,"ProjectName":"video","URL":"https://tos.example/%s?sig=1","CreateTime":"2026-10-01T00:00:00Z","UpdateTime":"2026-10-01T00:01:00Z"%s}}`, metadata, id, f.names[id], f.assetStatus, id, errorField)
 	default:
 		_, _ = fmt.Fprintf(w, `{%s,"Result":{}}`, metadata)
 	}
@@ -104,11 +114,11 @@ func setupAssetLibraryOpenAPI(t *testing.T) *assetLibraryFixture {
 	setupAssetLibraryAccountTestDB(t)
 	previous := config.GlobalConfig.ExportAllConfigs()
 	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{
-		"enabled": "true", "max_groups_per_user": "2", "max_assets_per_user": "3", "allowed_user_groups": "[]", "verify_sessions_per_hour": "5",
+		"enabled": "true", "max_groups_per_user": "2", "max_assets_per_user": "3", "allowed_user_groups": "[]", "verify_sessions_per_hour": "5", "auto_upload_references": "false",
 	}))
 	t.Cleanup(func() {
 		restore := map[string]string{}
-		for _, key := range []string{"enabled", "max_groups_per_user", "max_assets_per_user", "allowed_user_groups", "verify_sessions_per_hour"} {
+		for _, key := range []string{"enabled", "max_groups_per_user", "max_assets_per_user", "allowed_user_groups", "verify_sessions_per_hour", "auto_upload_references"} {
 			restore[key] = previous["asset_library_setting."+key]
 		}
 		_ = config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), restore)
@@ -739,4 +749,84 @@ func TestAssetLibraryFaceVerificationLimitsAndEndings(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, model.AssetLibraryVerificationFailed, stale.Status)
 	assert.Equal(t, "Face verification was not completed within 30 minutes.", stale.FailReason)
+}
+
+func countArkCalls(calls []string, action string) int {
+	count := 0
+	for _, call := range calls {
+		if strings.HasPrefix(call, action+" ") {
+			count++
+		}
+	}
+	return count
+}
+
+// With auto upload on, URL references of a Seedance 2.x request become
+// asset:// references to uploads in the caller's auto-upload group. The same
+// URL is uploaded once, other roles and models are left alone, and an upload
+// Ark refuses fails the request with Ark's reason.
+func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
+	fixture := setupAssetLibraryOpenAPI(t)
+	caller := service.AssetLibraryCaller{UserId: 1, UserGroup: "default"}
+	modelName := "doubao-seedance-2-0-fast-260128"
+	body := []byte(`{"model":"doubao-seedance-2-0-fast-260128","content":[{"type":"text","text":"x"},` +
+		`{"type":"image_url","image_url":{"url":"https://cdn.example/a.png"},"role":"reference_image"},` +
+		`{"type":"image_url","image_url":{"url":"https://cdn.example/first.png"},"role":"first_frame"},` +
+		`{"type":"video_url","video_url":{"url":"https://cdn.example/v.mp4"},"role":"reference_video"},` +
+		`{"type":"image_url","image_url":{"url":"asset://asset-own"},"role":"reference_image"}]}`)
+
+	upload := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, body, "req")
+	assert.Nil(t, upload.Body, "the switch is off by default")
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"auto_upload_references": "true"}))
+
+	upload = service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, body, "req")
+	require.Zero(t, upload.StatusCode, upload)
+	imageRef := gjson.GetBytes(upload.Body, "content.1.image_url.url").String()
+	videoRef := gjson.GetBytes(upload.Body, "content.3.video_url.url").String()
+	assert.True(t, strings.HasPrefix(imageRef, "asset://asset-"), imageRef)
+	assert.True(t, strings.HasPrefix(videoRef, "asset://asset-"), videoRef)
+	assert.Equal(t, "https://cdn.example/first.png", gjson.GetBytes(upload.Body, "content.2.image_url.url").String())
+	assert.Equal(t, "asset://asset-own", gjson.GetBytes(upload.Body, "content.4.image_url.url").String())
+	assert.Equal(t, "x", gjson.GetBytes(upload.Body, "content.0.text").String())
+	group, err := model.GetUserAssetLibraryGroupByName(1, "AIGC", service.AssetLibraryAutoUploadGroupName)
+	require.NoError(t, err)
+	assert.Equal(t, fixture.accounts["aigc-high"].Id, group.AccountId)
+	calls := fixture.ark.recorded()
+	assert.Equal(t, 1, countArkCalls(calls, "CreateAssetGroup"))
+	require.Equal(t, 2, countArkCalls(calls, "CreateAsset"))
+	assert.Contains(t, calls[1], `"AssetType":"Image"`)
+	assert.Contains(t, calls[1], `"URL":"https://cdn.example/a.png"`)
+	assert.Contains(t, calls[2], `"AssetType":"Video"`)
+
+	// The same URLs are reused, not uploaded again.
+	again := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, body, "req")
+	require.Zero(t, again.StatusCode, again)
+	assert.Equal(t, imageRef, gjson.GetBytes(again.Body, "content.1.image_url.url").String())
+	assert.Equal(t, videoRef, gjson.GetBytes(again.Body, "content.3.video_url.url").String())
+	assert.Equal(t, 2, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
+
+	// Seedance 1.x takes no asset:// references.
+	before := len(fixture.ark.recorded())
+	other := service.AutoUploadAssetLibraryReferences(context.Background(), caller, "doubao-seedance-1-0-pro-250528", body, "req")
+	assert.Nil(t, other.Body)
+	assert.Zero(t, other.StatusCode)
+	assert.Len(t, fixture.ark.recorded(), before)
+
+	// More references than allowed are refused before Ark.
+	refs := make([]string, 10)
+	for i := range refs {
+		refs[i] = fmt.Sprintf(`{"type":"image_url","image_url":{"url":"https://cdn.example/%d.png"},"role":"reference_image"}`, i)
+	}
+	many := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, []byte(`{"content":[`+strings.Join(refs, ",")+`]}`), "req")
+	assert.Equal(t, http.StatusBadRequest, many.StatusCode)
+	assert.Equal(t, i18n.MsgAssetLibraryAutoUploadTooMany, many.MessageID)
+	assert.Len(t, fixture.ark.recorded(), before)
+
+	// An upload Ark refuses fails the request with Ark's reason.
+	fixture.ark.assetStatus = "Failed"
+	refused := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName,
+		[]byte(`{"content":[{"type":"image_url","image_url":{"url":"https://cdn.example/face.png"},"role":"reference_image"}]}`), "req")
+	assert.Equal(t, http.StatusBadRequest, refused.StatusCode)
+	assert.Equal(t, i18n.MsgAssetLibraryAutoUploadFailed, refused.MessageID)
+	assert.Equal(t, map[string]any{"Index": 1, "Reason": "FaceMismatch: face does not match"}, refused.Params)
 }

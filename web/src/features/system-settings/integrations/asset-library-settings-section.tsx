@@ -67,6 +67,7 @@ import {
 const assetLibrarySchema = z.object({
   enabled: z.boolean(),
   block_asset_refs_when_disabled: z.boolean(),
+  auto_upload_references: z.boolean(),
   max_groups_per_user: z.number().int().min(0),
   max_assets_per_user: z.number().int().min(0),
   verify_sessions_per_hour: z.number().int().min(0),
@@ -157,6 +158,30 @@ export function AssetLibrarySettingsSection(
                   <FormDescription>
                     {t(
                       'Any API key of the Volcengine project can use any asset ID, so while the library is off, requests referencing asset:// are refused unless this is turned off.'
+                    )}
+                  </FormDescription>
+                </SettingsSwitchContent>
+                <FormControl>
+                  <Switch
+                    checked={field.value}
+                    onCheckedChange={field.onChange}
+                  />
+                </FormControl>
+              </SettingsSwitchItem>
+            )}
+          />
+          <FormField
+            control={form.control}
+            name='auto_upload_references'
+            render={({ field }) => (
+              <SettingsSwitchItem>
+                <SettingsSwitchContent>
+                  <FormLabel>
+                    {t('Upload URL references automatically')}
+                  </FormLabel>
+                  <FormDescription>
+                    {t(
+                      "Seedance 2.x requests on the native video API that reference images, videos or audio by URL have them added to the user's virtual avatar library first and sent as asset://. Volcengine still reviews every upload, and uploads must follow the virtual avatar library rules."
                     )}
                   </FormDescription>
                 </SettingsSwitchContent>

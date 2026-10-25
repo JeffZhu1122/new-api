@@ -15,6 +15,8 @@ func TestValidateOptionAcceptsValidValuesAndRejectsInvalidOnes(t *testing.T) {
 		{"asset_library_setting.enabled", "true", false},
 		{"asset_library_setting.enabled", "yes", true},
 		{"asset_library_setting.block_asset_refs_when_disabled", "false", false},
+		{"asset_library_setting.auto_upload_references", "true", false},
+		{"asset_library_setting.auto_upload_references", "on", true},
 		{"asset_library_setting.max_groups_per_user", "0", false},
 		{"asset_library_setting.max_assets_per_user", "-1", true},
 		{"asset_library_setting.max_assets_per_user", "1000001", true},
