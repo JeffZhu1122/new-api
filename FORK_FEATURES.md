@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 59 个（含本文档相关提交） |
-| 变更规模 | 391 个文件，+39002 / −2223 行（不含本文档） |
+| fork 专有提交数 | 60 个（含本文档相关提交） |
+| 变更规模 | 392 个文件，+39049 / −2241 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -561,6 +561,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 - **新建**：后端 `AddChannel` 不强制状态，沿用请求体 `status`。默认来自前端 `channel-form.ts` `CHANNEL_FORM_DEFAULT_VALUES.status = CHANNEL_STATUS.MANUAL_DISABLED`（上游为 ENABLED）；管理员可在保存前把开关切回启用。直接调 API 的客户端仍可传 `status = 1`。
 - **复制**：后端 `CopyChannel`（`controller/channel.go`）无条件 `clone.Status = ChannelStatusManuallyDisabled`（上游沿用源渠道状态），无参数可关闭。
 - **ability 跟随**：`model/ability.go` `AddAbilities` 写入 `Enabled: channel.Status == ChannelStatusEnabled`，因此禁用渠道的 ability 行全部 `enabled = false`，选路不会命中。后续启用走 `UpdateChannelStatus` / `BatchUpdateChannelStatus`。
+- **新建后直接启用（修复）**：开了内存缓存时（例如配置了 Redis），`AddChannel` 只写库、不刷新渠道缓存，而 `model.UpdateChannelStatus` 原来发现渠道不在缓存里就直接返回「未改变」：接口回 `success: true, data: false`，前端提示已启用，渠道却还是禁用，要进渠道点一次保存（`UpdateChannel` 会刷新缓存）才能启用。现在渠道不在缓存里时跳过缓存那一步，照常改数据库和 ability，接口随后刷新缓存。多节点部署中，其他节点的缓存在下一次同步前同样没有这个渠道，也由此修复。
 
 ### 前端
 
@@ -568,7 +569,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 ### 测试
 
-`controller/channel_test_internal_test.go` `TestCopyChannelCreatesManuallyDisabledClone`（clone 状态 2、ability 全部禁用、源渠道不变）、`web/.../__tests__/channel-form-defaults.test.ts`（默认值、create payload、显式 status=1 可覆盖）。
+`controller/channel_test_internal_test.go` `TestCopyChannelCreatesManuallyDisabledClone`（clone 状态 2、ability 全部禁用、源渠道不变）、`model/channel_status_test.go` `TestUpdateChannelStatusEnablesAChannelTheCacheDoesNotHoldYet`（开内存缓存、渠道在缓存同步后新增：启用成功，状态和 ability 都改为启用；修复前失败）、`web/.../__tests__/channel-form-defaults.test.ts`（默认值、create payload、显式 status=1 可覆盖）。
 
 ---
 
@@ -920,6 +921,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/authz/authz_test.go` | §38 `TestSetUserPermissionsStoresOnlyOverrides` 的管理员有效权限期望表（两处）加入 `asset_library` |
 | `web/src/hooks/use-sidebar-data.ts` / `web/src/lib/admin-permissions.ts` | §38 侧边栏「素材库管理」（`asset_library_enabled` 时显示，在任务日志之后）；权限资源常量 `ASSET_LIBRARY` |
 | `web/src/routeTree.gen.ts` | §38 新路由 `/_authenticated/asset-library/` 和匿名的 `/asset-library-verification`（构建时生成，冲突时重新生成即可） |
+| `model/channel.go` | §12 `UpdateChannelStatus`：开内存缓存时渠道不在缓存里不再直接返回 false，照常改数据库（新建的禁用渠道可以直接启用） |
 | `router/access_token_scope_test.go` | §38 匿名的 `POST /api/asset-library/verification/callback` 加入 `accessTokenExemptRoutes` |
 | `web/src/i18n/static-keys.ts` | §38 素材库的任务名和网关写入的失败原因（运行时才传给 `t()`） |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
