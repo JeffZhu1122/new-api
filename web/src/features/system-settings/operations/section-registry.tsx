@@ -110,6 +110,9 @@ const OPERATIONS_SECTIONS = [
           block_asset_refs_when_disabled:
             settings['asset_library_setting.block_asset_refs_when_disabled'] ??
             true,
+          auto_upload_references: Boolean(
+            settings['asset_library_setting.auto_upload_references']
+          ),
           max_groups_per_user: Number(
             settings['asset_library_setting.max_groups_per_user'] ?? 20
           ),

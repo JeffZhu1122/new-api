@@ -34,6 +34,9 @@ type AssetLibrarySetting struct {
 	ComplianceNotice string `json:"compliance_notice"`
 	// Face verifications a user may start per hour; 0 = unlimited.
 	VerifySessionsPerHour int `json:"verify_sessions_per_hour"`
+	// Add URL references of Seedance 2.x video requests to the caller's
+	// virtual avatar library and send them as asset:// references.
+	AutoUploadReferences bool `json:"auto_upload_references"`
 }
 
 var assetLibrarySetting = AssetLibrarySetting{
@@ -65,7 +68,7 @@ func ValidateOption(key string, value string) error {
 		return nil
 	}
 	switch field {
-	case "enabled", "block_asset_refs_when_disabled":
+	case "enabled", "block_asset_refs_when_disabled", "auto_upload_references":
 		if _, err := strconv.ParseBool(value); err != nil {
 			return fmt.Errorf("%s must be true or false", field)
 		}

@@ -409,6 +409,7 @@ export type OperationsSettings = {
   'system_task_setting.retention_days': number
   'asset_library_setting.enabled': boolean
   'asset_library_setting.block_asset_refs_when_disabled': boolean
+  'asset_library_setting.auto_upload_references': boolean
   'asset_library_setting.max_groups_per_user': number
   'asset_library_setting.max_assets_per_user': number
   'asset_library_setting.verify_sessions_per_hour': number

@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 60 个（含本文档相关提交） |
-| 变更规模 | 392 个文件，+39049 / −2241 行（不含本文档） |
+| fork 专有提交数 | 61 个（含本文档相关提交） |
+| 变更规模 | 395 个文件，+39509 / −2241 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -92,7 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
-| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 5 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证 |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 6 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -922,6 +922,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/hooks/use-sidebar-data.ts` / `web/src/lib/admin-permissions.ts` | §38 侧边栏「素材库管理」（`asset_library_enabled` 时显示，在任务日志之后）；权限资源常量 `ASSET_LIBRARY` |
 | `web/src/routeTree.gen.ts` | §38 新路由 `/_authenticated/asset-library/` 和匿名的 `/asset-library-verification`（构建时生成，冲突时重新生成即可） |
 | `model/channel.go` | §12 `UpdateChannelStatus`：开内存缓存时渠道不在缓存里不再直接返回 false，照常改数据库（新建的禁用渠道可以直接启用） |
+| `router/plugin-router.go` | §38 插件路由链在 `PrepareTaskPluginRoute` 之前插入 `middleware.AssetLibraryAutoUpload()`（必须在插件解析请求体之前） |
 | `router/access_token_scope_test.go` | §38 匿名的 `POST /api/asset-library/verification/callback` 加入 `accessTokenExemptRoutes` |
 | `web/src/i18n/static-keys.ts` | §38 素材库的任务名和网关写入的失败原因（运行时才传给 `t()`） |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
@@ -2007,7 +2008,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 
 ## 38. 素材库管理（火山方舟私域素材库）
 
-分 5 步交付，均已完成。
+分 6 步交付，均已完成。
 
 ### 动机
 
@@ -2036,6 +2037,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   | `allowed_user_groups` | `[]` | 能使用素材库的用户分组，空表示所有分组 |
   | `compliance_notice` | 空 | 新建素材组或发起刷脸认证前必须同意的合规提示 |
   | `verify_sessions_per_hour` | 5 | 每个用户每小时可发起的刷脸认证次数，0 表示不限制（第 5 步） |
+  | `auto_upload_references` | false | 视频请求里的 URL 参考素材自动传入虚拟人像库（第 6 步） |
 
 - `/api/status` 多一个 `asset_library_enabled`。
 - **前端**：系统设置 → 运维 → 「素材库」：开关与上限的表单，下面是火山账号表格；新增 / 编辑对话框里可以「测试连接」。
@@ -2121,11 +2123,30 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 手机打开的回跳页显示通过或未通过（附结果码），提示回到电脑上的素材库管理页面。
 - **顺带修复（第 2 步）**：任务日志的「制品」列原来对素材库任务也显示「制品」按钮，打开后什么都没有，因为 `none` 预览模式没有在单元格里生效；现在显示「-」。失败原因「素材处理失败」也补上了翻译。
 
+### 第 6 步：URL 参考素材自动入库（已完成，默认关闭）
+
+- **作用**：打开「自动将 URL 参考素材传入素材库」后，用户调用 Seedance 2.x 的原生视频接口（豆包插件的 `…/contents/generations/tasks`）时，`content` 里以 URL 引用、角色为 `reference_image` / `reference_video` / `reference_audio` 的图片、视频、音频，会先由网关传入该用户的虚拟人像素材库，再换成 `asset://<素材ID>` 提交。用户不用自己调用素材库接口。
+- **处理范围**：
+  - 只处理模型名含 `seedance-2` 的请求（Seedance 1.x 不支持 `asset://`）。
+  - `first_frame` 等其他角色、已经是 `asset://` 的引用、base64 内容都原样不动。
+  - 一个请求最多自动入库 9 个参考素材，超过返回 400。
+- **入库方式**：与 `/volc` 的 `CreateAsset` 走同一套处理，归属、每用户上限、账号每分钟上传次数、任务日志（免费）都相同。
+  - 素材放在该用户名为 `auto-upload` 的虚拟人像组里，第一次使用时自动创建。
+  - 素材名是 `auto-` 加 URL 的 SHA-256 前 16 位。同一用户再次引用同一个 URL 时，直接复用未失败的那个素材，不重复上传。
+- **等待与失败**：
+  - 网关轮询素材状态，最多等 120 秒，生效后改写请求体再交给插件。
+  - 火山审核不通过（素材变为 Failed）时，请求返回 400「第 N 个参考素材未能加入素材库：<火山的错误码和说明>」，不会提交到上游。
+  - 超时返回 504「仍在处理中，请稍后重试」。素材会继续处理，下次请求直接复用。
+  - 错误信息走后端 i18n（en / zh-CN / zh-TW）。
+- **审核**：网关不跳过火山的内容审核。上传内容必须符合虚拟人像库的规则（官方：素材不得与任何自然人肖像雷同），由运营方负责。
+- **位置**：`middleware.AssetLibraryAutoUpload` 挂在插件路由链里 `PrepareTaskPluginRoute` 之前。插件在 `PrepareTaskPluginRoute` 里就解析了请求体，放在 `Distribute` 里改写已经太晚。改写后的请求体同样经过 `Distribute` 里的 `asset://` 校验，并只发往绑定了该素材库账号的渠道。**插件本身没有改动**，更新插件不受影响。
+
 ### 已知限制
 
 - 网关只认自己登记过的素材组和素材。直接在火山控制台创建的不会出现在页面和 `/volc` 里，也不能被引用（管理员也不行）；直接在火山控制台删除的，网关记录还在，在网关删除时火山返回资源不存在，记录删不掉，仍占用户上限。目前没有导入和对账功能。
 - 刷脸认证只用模拟的火山接口测过。火山在人还没完成认证时返回的具体错误码、`GetVisualValidateResult` 能否重复调用，都没有在真实账号上确认；网关把火山的任何错误都当作「还没完成」，所以需要用真实账号和手机实际走一遍。
 - `/volc` 的调用方用自己的 `CallbackURL` 时，网关收不到认证结果：人没通过的认证要到 32 分钟后才判为失败，期间占一个素材组名额。
+- 自动入库按「模型名含 `seedance-2`」和「路由以 `/contents/generations/tasks` 结尾」判断。插件以后如果改了原生路由的路径，或者出现新的 Seedance 系列命名，需要同步调整。等待素材生效会让请求多等几秒到两分钟。自动入库的素材同样占每用户素材上限，用户需要在素材库页面里自行清理 `auto-upload` 组。
 - H5 链接里带有火山签发的临时凭证。按设计它要交给被认证的人，页面会显示二维码和复制按钮；网关不保存这个链接。
 
 ### 测试
@@ -2197,4 +2218,11 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 超过每小时次数返回 429 且不调火山；关闭素材库后回跳接口 404；所有火山调用的签名和项目都正确。连续跑两次都通过。
 - 第 5 步浏览器端到端 17 项（中文界面，电脑和手机两个标签页）：发起刷脸认证、合规提示、二维码；手机通过后电脑上的弹窗自动关闭、列表出现新素材组；手机未通过时显示结果码，电脑弹窗显示原因并可重新发起；任务日志显示「刷脸认证」和失败原因，「制品」列是「-」；系统设置里账号显示「真人人像（刷脸认证）」，编辑时开关是开的。第 2、3、4 步的端到端在新版本上重跑，分别 20、12、20 项通过。
 - 第 5 步数据库：三种数据库的矩阵测试通过（MySQL 5.7.44、PostgreSQL 9.6.24）。官方 rc.46 建的库、第 3 步版本建的库（预先写入一个账号）和空库，分别在 SQLite、MySQL、PostgreSQL 上用新版本启动两次，都正常、日志无错误。新列在三种库上都是可空布尔，已有账号通过接口读出来是关（保持直接建组）；新表的 `byted_token` 唯一索引都在。
+- 第 6 步 `TestAssetLibraryAutoUploadsReferenceURLs`（模拟方舟）：开关默认关闭时不处理；打开后 `reference_image` / `reference_video` 的 URL 换成 `asset://`，`first_frame` 和已有的 `asset://` 不动，并自动建 `auto-upload` 组；同一 URL 再次请求不重复上传；Seedance 1.x 不处理；超过 9 个参考返回 400 且不调火山；火山判为失败时返回火山的原因。去掉复用逻辑或角色过滤后，测试失败。模拟方舟改为在 `GetAsset` 里返回上传时的素材名，与真实方舟一致。
+- 第 6 步三种数据库：矩阵测试加入按名称精确查找素材组和素材，失败的素材不会被复用（SQLite、MySQL 5.7.44、PostgreSQL 9.6.24）。没有表结构变化。
+- 第 6 步前端 `asset-library-settings.test.tsx`：打开自动入库开关后保存 `asset_library_setting.auto_upload_references`。
+- 第 6 步本地端到端（本地实例 + 豆包插件 + 模拟方舟，模拟方舟记录上游实际收到的视频请求体）10 项：
+  - 开关关闭时 URL 原样到达上游；打开后上游收到 `asset://`，网关先调用了 `CreateAsset`，约 4 秒后素材生效，素材在用户的 `auto-upload` 组里；
+  - 同一 URL 第二次请求直接复用，不再上传；`first_frame` 原样；火山判为失败时返回 400 和火山原因，请求没有发到上游。
+  - 第一版把改写放在 `Distribute` 里，端到端测试发现上游仍收到原 URL（插件已在之前解析了请求体），因此改为现在的位置。
 
