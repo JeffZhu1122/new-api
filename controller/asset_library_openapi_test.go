@@ -11,7 +11,10 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
+	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/model"
+	relaykitdto "github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/config"
 
 	"github.com/gin-gonic/gin"
@@ -372,4 +375,94 @@ func TestTaskPollingSkipsAssetLibraryUploads(t *testing.T) {
 	assert.Equal(t, []string{"video-1"}, ids(model.GetTimedOutUnfinishedTasks(100, 10)))
 	require.NoError(t, model.DB.Where("task_id = ?", "video-1").Delete(&model.Task{}).Error)
 	assert.False(t, model.HasUnfinishedSyncTasks())
+}
+
+// asset:// references in relayed requests: the caller's own Active assets of
+// one account pass and pin routing to that account; everything else is
+// refused, including references hidden behind JSON escapes.
+func TestAssetLibraryReferenceCheck(t *testing.T) {
+	fixture := setupAssetLibraryOpenAPI(t)
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 2).Update("role", common.RoleAdminUser).Error)
+	require.NoError(t, model.DB.Create(&model.User{Id: 3, Username: "carol", AffCode: "carol", Group: "default", Status: common.UserStatusEnabled}).Error)
+	_, body := callAction(t, 1, "CreateAssetGroup", `{"Name":"virtual"}`)
+	virtualGroup := resultId(t, body)
+	_, body = callAction(t, 1, "CreateAssetGroup", `{"Name":"person","GroupType":"LivenessFace"}`)
+	personGroup := resultId(t, body)
+	upload := func(groupId string) string {
+		_, body := callAction(t, 1, "CreateAsset", fmt.Sprintf(`{"GroupId":%q,"URL":"https://cdn.example/a.png","AssetType":"Image"}`, groupId))
+		return resultId(t, body)
+	}
+	active, processing, otherAccount := upload(virtualGroup), upload(virtualGroup), upload(personGroup)
+	require.NoError(t, model.DB.Model(&model.AssetLibraryAsset{}).Where("remote_id IN ?", []string{active, otherAccount}).Update("status", model.AssetLibraryAssetActive).Error)
+	request := func(urls ...string) []byte {
+		content := make([]string, 0, len(urls))
+		for _, url := range urls {
+			content = append(content, fmt.Sprintf(`{"type":"image_url","image_url":{"url":%q}}`, url))
+		}
+		return []byte(`{"model":"doubao-seedance-2-0-260128","content":[` + strings.Join(content, ",") + `]}`)
+	}
+	virtualAccount := fixture.accounts["aigc-high"].Id
+
+	cases := []struct {
+		name    string
+		userId  int
+		body    []byte
+		status  int
+		message string
+		account int
+	}{
+		{"no reference", 3, request("https://cdn.example/a.png"), 0, "", 0},
+		{"own active asset", 1, request("asset://" + active), 0, "", virtualAccount},
+		{"escaped slashes", 3, []byte(`{"content":[{"image_url":{"url":"asset:\/\/` + active + `"}}]}`), http.StatusForbidden, "asset_library.asset_not_owned", 0},
+		{"unicode escape", 3, []byte(`{"content":[{"image_url":{"url":"\u0061sset://` + active + `"}}]}`), http.StatusForbidden, "asset_library.asset_not_owned", 0},
+		{"upper-case scheme", 3, request("ASSET://" + active), http.StatusForbidden, "asset_library.asset_not_owned", 0},
+		{"another user's asset", 3, request("asset://" + active), http.StatusForbidden, "asset_library.asset_not_owned", 0},
+		{"administrator", 2, request("asset://" + active), 0, "", virtualAccount},
+		{"unknown asset", 1, request("asset://asset-unknown"), http.StatusForbidden, "asset_library.asset_not_owned", 0},
+		{"empty id", 1, request("asset://"), http.StatusBadRequest, "asset_library.reference_invalid", 0},
+		{"still processing", 1, request("asset://" + processing), http.StatusBadRequest, "asset_library.asset_not_ready", 0},
+		{"two accounts", 1, request("asset://"+active, "asset://"+otherAccount), http.StatusBadRequest, "asset_library.mixed_accounts", 0},
+		{"multipart field", 3, []byte("--b\r\nContent-Disposition: form-data; name=\"image\"\r\n\r\nasset://" + active + "\r\n--b--\r\n"), http.StatusForbidden, "asset_library.asset_not_owned", 0},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			check := service.CheckAssetLibraryReferences(tc.userId, tc.body)
+
+			assert.Equal(t, tc.status, check.StatusCode)
+			assert.Equal(t, tc.message, check.MessageID)
+			assert.Equal(t, tc.account, check.AccountId)
+		})
+	}
+
+	// While the library is off, references are refused unless blocking is turned off too.
+	for _, blocking := range []struct {
+		value  string
+		status int
+	}{{"true", http.StatusForbidden}, {"false", 0}} {
+		require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"enabled": "false", "block_asset_refs_when_disabled": blocking.value}))
+		check := service.CheckAssetLibraryReferences(1, request("asset://"+active))
+		assert.Equal(t, blocking.status, check.StatusCode, "blocking %s", blocking.value)
+		assert.Zero(t, check.AccountId, "blocking %s", blocking.value)
+	}
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"block_asset_refs_when_disabled": "true"}))
+}
+
+// Only channels bound to the asset's account pass the routing filter.
+func TestAssetLibraryAccountFilterKeepsBoundChannels(t *testing.T) {
+	filter := []dto.ChannelFilter{{Kind: dto.FilterAssetLibraryAccount, AssetLibraryAccountId: 4}}
+	bound := &model.Channel{Id: 1, ExtendConfig: &relaykitdto.ChannelExtendSettings{AssetLibraryAccountId: 4}}
+	otherAccount := &model.Channel{Id: 2, ExtendConfig: &relaykitdto.ChannelExtendSettings{AssetLibraryAccountId: 5}}
+	unbound := &model.Channel{Id: 3}
+
+	for _, tc := range []struct {
+		channel *model.Channel
+		pass    bool
+	}{{bound, true}, {otherAccount, false}, {unbound, false}} {
+		pass, kind := model.ChannelSatisfiesFilters(tc.channel, "doubao-seedance-2-0-260128", filter)
+		assert.Equal(t, tc.pass, pass, "channel %d", tc.channel.Id)
+		if !tc.pass {
+			assert.Equal(t, dto.FilterAssetLibraryAccount, kind)
+		}
+	}
+	assert.True(t, model.FiltersReadExtendConfig(filter), "the filter needs extend settings backfilled")
 }

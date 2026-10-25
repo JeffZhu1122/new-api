@@ -181,3 +181,38 @@ func TestSelectChannelForRequestPinnedChannelOutsideSchedule(t *testing.T) {
 	require.NotNil(t, channel)
 	assert.Equal(t, 2701, channel.Id)
 }
+
+// Requests using asset library assets only select channels bound to the
+// assets' account, with and without the channel memory cache (the DB-direct
+// path reloads the chosen channel without its channel_extend settings).
+func TestSelectChannelForRequestKeepsAssetLibraryAccountChannels(t *testing.T) {
+	for _, memoryCache := range []bool{true, false} {
+		t.Run(map[bool]string{true: "memory cache", false: "database"}[memoryCache], func(t *testing.T) {
+			db := setupChannelSelectAutoGroupsTest(t)
+			require.NoError(t, db.AutoMigrate(&model.ChannelExtend{}))
+			common.MemoryCacheEnabled = memoryCache
+			const modelName = "asset-library-model"
+			createChannelSelectAutoGroupsChannel(t, db, 2701, "default", modelName)
+			createChannelSelectAutoGroupsChannel(t, db, 2702, "default", modelName)
+			require.NoError(t, model.UpsertChannelExtend(db, 2701, kitdto.ChannelExtendSettings{AssetLibraryAccountId: 7}))
+			model.InitChannelCache()
+			selectFor := func(accountId int) (*model.Channel, *ChannelSelectError) {
+				ctx := scheduleSelectContext(wednesdayMorning)
+				GetChannelConstraints(ctx).AddFilter(dto.ChannelFilter{Kind: dto.FilterAssetLibraryAccount, AssetLibraryAccountId: accountId})
+				channel, _, selectErr := SelectChannelForRequest(ctx, modelName, scheduleRetryParam(ctx, modelName))
+				return channel, selectErr
+			}
+
+			for range 20 {
+				channel, selectErr := selectFor(7)
+				require.Nil(t, selectErr)
+				require.NotNil(t, channel)
+				assert.Equal(t, 2701, channel.Id)
+			}
+			channel, selectErr := selectFor(8)
+			assert.Nil(t, channel)
+			require.NotNil(t, selectErr)
+			assert.True(t, selectErr.NoAvailableChannel)
+		})
+	}
+}

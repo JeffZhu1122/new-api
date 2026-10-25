@@ -285,3 +285,27 @@ func TestAssetLibraryAccount(c *gin.Context) {
 	}
 	common.ApiSuccessT(c, "Connection test succeeded", nil)
 }
+
+// assetLibraryAccountOption is what the channel editor needs to bind a
+// channel to an account, without any key.
+type assetLibraryAccountOption struct {
+	Id          int    `json:"id"`
+	Name        string `json:"name"`
+	ProjectName string `json:"project_name"`
+	Enabled     bool   `json:"enabled"`
+}
+
+// ListAssetLibraryAccountOptions lists the accounts a channel can be bound
+// to, for administrators who edit channels but cannot see the keys.
+func ListAssetLibraryAccountOptions(c *gin.Context) {
+	accounts, err := model.ListAssetLibraryAccounts()
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	options := make([]assetLibraryAccountOption, 0, len(accounts))
+	for _, account := range accounts {
+		options = append(options, assetLibraryAccountOption{Id: account.Id, Name: account.Name, ProjectName: account.ProjectName, Enabled: account.Enabled})
+	}
+	common.ApiSuccess(c, options)
+}

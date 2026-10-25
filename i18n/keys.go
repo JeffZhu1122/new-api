@@ -115,3 +115,13 @@ const (
 	MsgChannelUpstreamUpdateFailedChannels  = "channel.upstream_update_failed_channels"
 	MsgChannelUpstreamUpdateMoreOmitted     = "channel.upstream_update_more_omitted"
 )
+
+// Asset library references (asset://) in relayed requests
+const (
+	MsgAssetLibraryReferencesBlocked = "asset_library.references_blocked"
+	MsgAssetLibraryTooManyReferences = "asset_library.too_many_references"
+	MsgAssetLibraryReferenceInvalid  = "asset_library.reference_invalid"
+	MsgAssetLibraryAssetNotOwned     = "asset_library.asset_not_owned"
+	MsgAssetLibraryAssetNotReady     = "asset_library.asset_not_ready"
+	MsgAssetLibraryMixedAccounts     = "asset_library.mixed_accounts"
+)

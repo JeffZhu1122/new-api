@@ -38,6 +38,8 @@ type ChannelExtend struct {
 	ForceRetry bool `json:"force_retry"`
 	// Turn a text generation response without any output into an error
 	EmptyOutputError bool `json:"empty_output_error"`
+	// Asset library account the channel's API key belongs to, 0 = none
+	AssetLibraryAccountId int `json:"asset_library_account_id" gorm:"default:0;index"`
 }
 
 func (ChannelExtend) TableName() string {
@@ -61,6 +63,8 @@ func (ce *ChannelExtend) ToSettings() dto.ChannelExtendSettings {
 		QuotaLimit:         ce.QuotaLimit,
 		ForceRetry:         ce.ForceRetry,
 		EmptyOutputError:   ce.EmptyOutputError,
+
+		AssetLibraryAccountId: ce.AssetLibraryAccountId,
 	}
 	if ce.ResponseHeaders != "" {
 		if err := common.Unmarshal([]byte(ce.ResponseHeaders), &settings.ResponseHeaders); err != nil {
@@ -122,10 +126,12 @@ func UpsertChannelExtend(tx *gorm.DB, channelId int, settings dto.ChannelExtendS
 		Schedule:           schedule,
 		ForceRetry:         settings.ForceRetry,
 		EmptyOutputError:   settings.EmptyOutputError,
+
+		AssetLibraryAccountId: settings.AssetLibraryAccountId,
 	}
 	return tx.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "channel_id"}},
-		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode", "response_header_mode", "response_headers", "cost_ratio", "quota_limit", "schedule", "force_retry", "empty_output_error"}),
+		DoUpdates: clause.AssignmentColumns([]string{"relay_timeout", "streaming_timeout", "min_input_tokens", "max_input_tokens", "rpm_limit", "tpm_limit", "claude_auth_mode", "response_header_mode", "response_headers", "cost_ratio", "quota_limit", "schedule", "force_retry", "empty_output_error", "asset_library_account_id"}),
 	}).Create(&extend).Error
 }
 

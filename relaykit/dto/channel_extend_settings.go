@@ -289,11 +289,19 @@ type ChannelExtendSettings struct {
 	// empty_response error, so it is retried on another channel and not
 	// billed. Streams are held back until their first output for this.
 	EmptyOutputError bool `json:"empty_output_error,omitempty"`
+	// AssetLibraryAccountId binds the channel to an asset library account
+	// whose Volcengine project its API key belongs to; requests referencing
+	// that account's assets (asset://...) only route to bound channels.
+	// 0 = not bound.
+	AssetLibraryAccountId int `json:"asset_library_account_id,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
 	if s == nil {
 		return nil
+	}
+	if s.AssetLibraryAccountId < 0 {
+		return fmt.Errorf("invalid asset_library_account_id: %d", s.AssetLibraryAccountId)
 	}
 	if s.RelayTimeout < 0 || s.RelayTimeout > MaxChannelTimeoutSeconds {
 		return fmt.Errorf("invalid relay_timeout: %d, must be within [0, %d]", s.RelayTimeout, MaxChannelTimeoutSeconds)
@@ -376,7 +384,7 @@ func (s *ChannelExtendSettings) IsZero() bool {
 		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey) &&
 		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0 &&
 		s.CostRatio == 0 && s.QuotaLimit == 0 && s.Schedule == nil && !s.ForceRetry &&
-		!s.EmptyOutputError)
+		!s.EmptyOutputError && s.AssetLibraryAccountId == 0)
 }
 
 // AvailableAt reports whether the channel may be selected at the given
