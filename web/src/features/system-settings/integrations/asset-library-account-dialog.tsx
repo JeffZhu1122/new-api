@@ -80,6 +80,17 @@ const createAccountSchema = (
       .refine(
         (value) => value === '' || /^https?:\/\/[^?#]+$/.test(value),
         t('Invalid endpoint URL')
+      )
+      // ark.<region>.volces.com and BytePlus's ark.<region>.bytepluses.com are
+      // the model inference APIs, which refuse Access Keys.
+      .refine(
+        (value) =>
+          !/^https?:\/\/[^/?#]*\.(?:volces|bytepluses)\.com(?::\d+)?(?:[/?#]|$)/i.test(
+            value
+          ),
+        t(
+          'This is a model inference address, which does not accept Access Keys. Leave the endpoint blank for Volcengine, or enter https://ark.ap-southeast-1.byteplusapi.com for BytePlus.'
+        )
       ),
     enabled: z.boolean(),
     aigc_enabled: z.boolean(),
@@ -348,7 +359,9 @@ export function AssetLibraryAccountDialog(
                   />
                 </FormControl>
                 <FormDescription>
-                  {t('Leave blank to use the public endpoint of the region.')}
+                  {t(
+                    'Leave blank for Volcengine (ark.<region>.volcengineapi.com). For BytePlus, enter https://ark.ap-southeast-1.byteplusapi.com.'
+                  )}
                 </FormDescription>
                 <FormMessage />
               </FormItem>

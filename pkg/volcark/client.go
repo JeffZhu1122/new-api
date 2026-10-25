@@ -99,7 +99,17 @@ type responseMetadata struct {
 type envelope struct {
 	ResponseMetadata responseMetadata `json:"ResponseMetadata"`
 	Result           any              `json:"Result"`
+	// Other Volcengine front doors, such as the model inference address
+	// ark.<region>.volces.com, refuse a request with {"error": {...}}.
+	OtherError *struct {
+		Code    string `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
 }
+
+// errorExcerptRunes bounds how much of an error body Ark did not wrap is
+// quoted in the error.
+const errorExcerptRunes = 200
 
 // Response is Ark's raw answer to one action, kept byte for byte so a gateway
 // can return it unchanged.
@@ -166,17 +176,33 @@ func (r *Response) Decode(action string, out any) error {
 	}
 	if err := common.Unmarshal(r.Body, &decoded); err != nil {
 		if r.StatusCode >= http.StatusBadRequest {
-			return &Error{Action: action, StatusCode: r.StatusCode, Message: http.StatusText(r.StatusCode)}
+			return &Error{Action: action, StatusCode: r.StatusCode, Message: r.errorExcerpt()}
 		}
 		return fmt.Errorf("volcengine ark %s returned an invalid response: %w", action, err)
 	}
 	if apiErr := decoded.ResponseMetadata.Error; apiErr != nil && (apiErr.Code != "" || apiErr.Message != "") {
 		return &Error{Action: action, StatusCode: r.StatusCode, Code: apiErr.Code, Message: apiErr.Message, RequestID: decoded.ResponseMetadata.RequestId}
 	}
+	if other := decoded.OtherError; other != nil && (other.Code != "" || other.Message != "") {
+		return &Error{Action: action, StatusCode: r.StatusCode, Code: other.Code, Message: other.Message}
+	}
 	if r.StatusCode >= http.StatusBadRequest {
-		return &Error{Action: action, StatusCode: r.StatusCode, Message: http.StatusText(r.StatusCode), RequestID: decoded.ResponseMetadata.RequestId}
+		return &Error{Action: action, StatusCode: r.StatusCode, Message: r.errorExcerpt(), RequestID: decoded.ResponseMetadata.RequestId}
 	}
 	return nil
+}
+
+// errorExcerpt is the start of an error body in no format Ark uses, so the
+// error still says who refused the request; an empty body gives the status.
+func (r *Response) errorExcerpt() string {
+	text := strings.Join(strings.Fields(string(r.Body)), " ")
+	if text == "" {
+		return http.StatusText(r.StatusCode)
+	}
+	if runes := []rune(text); len(runes) > errorExcerptRunes {
+		return string(runes[:errorExcerptRunes]) + "…"
+	}
+	return text
 }
 
 func (c *Client) endpoint() (*url.URL, error) {
