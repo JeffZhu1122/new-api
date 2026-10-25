@@ -103,10 +103,22 @@ func TestCallReturnsTheArkErrorWithItsCodeAndRequestID(t *testing.T) {
 			want:   Error{Action: "ListAssetGroups", StatusCode: http.StatusForbidden, Code: "AccessDenied", Message: "no permission", RequestID: "req-2"},
 		},
 		{
+			// What the model inference address answers to an Access Key.
+			name:   "inference address error",
+			status: http.StatusForbidden,
+			body:   `{"error":{"code":"UnsuportAuthentication","message":"Unsupported aksk authentication method. Please check your access link.","param":"","type":"Unauthorized"}}`,
+			want:   Error{Action: "ListAssetGroups", StatusCode: http.StatusForbidden, Code: "UnsuportAuthentication", Message: "Unsupported aksk authentication method. Please check your access link."},
+		},
+		{
 			name:   "HTTP error without an envelope",
 			status: http.StatusBadGateway,
-			body:   `upstream down`,
-			want:   Error{Action: "ListAssetGroups", StatusCode: http.StatusBadGateway, Message: "Bad Gateway"},
+			body:   "<html>\n  upstream down\n</html>",
+			want:   Error{Action: "ListAssetGroups", StatusCode: http.StatusBadGateway, Message: "<html> upstream down </html>"},
+		},
+		{
+			name:   "empty error body",
+			status: http.StatusForbidden,
+			want:   Error{Action: "ListAssetGroups", StatusCode: http.StatusForbidden, Message: "Forbidden"},
 		},
 	}
 	for _, tc := range cases {

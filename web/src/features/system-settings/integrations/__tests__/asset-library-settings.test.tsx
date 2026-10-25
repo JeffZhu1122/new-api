@@ -129,6 +129,35 @@ test('a new account needs both keys before it can be added', async () => {
   expect(api.post).not.toHaveBeenCalled()
 })
 
+test.each([
+  'https://ark.cn-beijing.volces.com/api/v3',
+  'https://ark.ap-southeast.bytepluses.com/api/v3',
+])(
+  'the model inference address %s is refused as the endpoint',
+  async (endpoint) => {
+    const user = userEvent.setup()
+    renderSettings()
+    await user.click(await screen.findByRole('button', { name: 'Add account' }))
+    const dialog = await screen.findByRole('dialog')
+
+    await user.type(within(dialog).getByLabelText('Name'), 'Backup')
+    await user.type(within(dialog).getByLabelText('Access Key ID'), 'AKLTnew')
+    await user.type(within(dialog).getByLabelText('Secret Access Key'), 'sk')
+    await user.type(
+      within(dialog).getByLabelText('Endpoint (optional)'),
+      endpoint
+    )
+    await user.click(within(dialog).getByRole('button', { name: 'Add' }))
+
+    expect(
+      await within(dialog).findByText(
+        'This is a model inference address, which does not accept Access Keys. Leave the endpoint blank for Volcengine, or enter https://ark.ap-southeast-1.byteplusapi.com for BytePlus.'
+      )
+    ).toBeVisible()
+    expect(api.post).not.toHaveBeenCalled()
+  }
+)
+
 test('testing a new account sends the typed keys without saving it', async () => {
   const user = userEvent.setup()
   renderSettings()

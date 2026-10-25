@@ -138,6 +138,14 @@ func (r assetLibraryAccountRequest) toAccount(c *gin.Context, base *model.AssetL
 			common.ApiErrorT(c, "Invalid endpoint URL")
 			return nil, false
 		}
+		// ark.<region>.volces.com and BytePlus's ark.<region>.bytepluses.com
+		// are the model inference APIs; they refuse Access Key requests with
+		// an error that is easy to misread.
+		host := strings.ToLower(parsed.Hostname())
+		if strings.HasSuffix(host, ".volces.com") || strings.HasSuffix(host, ".bytepluses.com") {
+			common.ApiErrorT(c, "This is a model inference address, which does not accept Access Keys. Leave the endpoint blank for Volcengine, or enter https://ark.ap-southeast-1.byteplusapi.com for BytePlus.")
+			return nil, false
+		}
 	}
 	if r.MaxGroups < 0 || r.MaxGroups > maxAssetLibraryAccountLimit || r.MaxAssets < 0 || r.MaxAssets > maxAssetLibraryAccountLimit ||
 		r.CreateAssetQPM < 0 || r.CreateAssetQPM > maxAssetLibraryAccountLimit || r.Priority < -maxAssetLibraryPriority || r.Priority > maxAssetLibraryPriority {

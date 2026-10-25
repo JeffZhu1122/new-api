@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 57 个（含本文档相关提交） |
-| 变更规模 | 391 个文件，+38871 / −2223 行（不含本文档） |
+| fork 专有提交数 | 58 个（含本文档相关提交） |
+| 变更规模 | 391 个文件，+38968 / −2223 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -2014,11 +2014,16 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 ### 第 1 步：火山账号与开关（已完成）
 
 - **签名客户端** `pkg/volcark`：按火山签名方法（HMAC-SHA256，签 `host;x-date`）调用 `https://ark.<region>.volcengineapi.com/?Action=…&Version=2024-01-01`，解析 `ResponseMetadata.Error`。单元测试用火山签名文档里的 GET / POST 两个示例核对签名结果。
+  - 错误不是这个格式时也要说清是谁拒绝的：模型推理地址返回的 `{"error":{"code","message"}}` 照样取出错误码和说明（例如 HTTP 403 `UnsuportAuthentication`）；其他内容带上响应开头 200 个字，空响应才只写 HTTP 状态。
 - **火山账号表** `asset_library_accounts`：名称、AK、SK、Region（默认 `cn-beijing`）、ProjectName（默认 `default`）、可选的接口地址、启用、可建的素材组类型（虚拟人像 / 真人人像）、允许的用户分组、优先级、账号配额（素材组数、素材数）、每分钟上传次数。
 - **账号管理接口** `/api/asset-library/accounts`（RootAuth，访问令牌需 `option:read` / `option:write`）：
   - 列表只返回脱敏的 AK（前 4 位 + 后 4 位）和 `has_secret`，**从不返回 SK**；
   - 修改时 AK / SK 留空表示保留原值；
+  - 接口地址留空即用火山的 `ark.<region>.volcengineapi.com`。填了模型推理地址（火山的 `*.volces.com` 或 BytePlus 的 `*.bytepluses.com`，都不接受 AK/SK）时，保存会被拒绝并说明原因，前端表单也同样校验；
   - `POST /test` 测试未保存或已保存的账号：对每种启用的素材组类型调一次 `ListAssetGroups`（`MaxResults=1`），同时验证 AK/SK、权限和项目。
+- **海外版 BytePlus**：接口与火山相同（同样的 Action、`Version=2024-01-01`、服务名 `ark`、同样的 HMAC-SHA256 签名），只是地址和地域不同。账号填地域 `ap-southeast-1`、接口地址 `https://ark.ap-southeast-1.byteplusapi.com`，其余照常。
+  - 据 BytePlus 文档，真人人像库目前只对受邀用户开放，需要先开通 Advanced Creation Rights（与虚拟人像库共用容量）；刷脸认证同样是 `CreateVisualValidateSession` / `GetVisualValidateResult`，AK 所属账号需要对应项目的 `ArkFullAccess`。
+  - 已核对：这个地址用 `ap-southeast-1` 签名的请求按 Ark 的格式回答（无效密钥返回 `InvalidAccessKey` 和请求 ID）。还没有用真实的 BytePlus 账号测过。
 - **全局设置** `asset_library_setting.*`：
 
   | 键 | 默认 | 含义 |
@@ -2122,7 +2127,8 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 
 ### 测试
 
-- `pkg/volcark/client_test.go`：签名与火山文档的两个官方示例一致；`Call` 发出带签名的 Action 请求并解析 `Result`；火山错误带错误码和请求 ID 返回。
+- `pkg/volcark/client_test.go`：签名与火山文档的两个官方示例一致；`Call` 发出带签名的 Action 请求并解析 `Result`；火山错误带错误码和请求 ID 返回；推理地址格式的错误带出错误码和说明；无法解析的错误带响应开头，空响应写 HTTP 状态。
+- 接口地址：后端拒绝火山和 BytePlus 的推理地址（`TestAssetLibraryAccountAPIRejectsInvalidAccounts`），前端表单对两者都显示原因且不提交（`asset-library-settings.test.tsx`，去掉这条校验后测试失败）。对真实地址核对过：火山 `ark.cn-beijing.volces.com` 和 BytePlus `ark.ap-southeast.bytepluses.com` 收到 AK/SK 签名请求时都返回 HTTP 403 和 `{"error":{"code":"UnsuportAuthentication",…}}`；`ark.cn-beijing.volcengineapi.com` 和 `ark.ap-southeast-1.byteplusapi.com` 对无效密钥都返回带错误码和请求 ID 的 `ResponseMetadata.Error`。
 - `setting/asset_library_setting/config_test.go`：每个设置项的取值校验。
 - `controller/asset_library_account_test.go`：
   - 创建 / 列表 / 修改都不返回 SK，AK 脱敏；修改时留空的 AK / SK 保留原值；false 与 0 能保存；
