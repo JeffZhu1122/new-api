@@ -412,6 +412,11 @@ func GetUser(c *gin.Context) {
 	} else {
 		common.SysError(fmt.Sprintf("failed to load model discount for user %d: %s", user.Id, err.Error()))
 	}
+	if limits, err := model.GetUserAssetLibraryLimits(user.Id); err == nil {
+		user.AssetLibraryLimits = limits
+	} else {
+		common.SysError(fmt.Sprintf("failed to load asset library limits for user %d: %s", user.Id, err.Error()))
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
@@ -684,6 +689,12 @@ func UpdateUser(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
+	if limits := updatedUser.AssetLibraryLimits; limits != nil {
+		if (limits.MaxGroups != nil && *limits.MaxGroups < 0) || (limits.MaxAssets != nil && *limits.MaxAssets < 0) {
+			common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": "asset library limits must not be negative"})
+			return
+		}
+	}
 	originUser, err := model.GetUserById(updatedUser.Id, false)
 	if err != nil {
 		common.ApiError(c, err)
@@ -754,6 +765,13 @@ func UpdateUser(c *gin.Context) {
 	// model_discount 同 rate_limit：持久化在 user_extend 表，nil 不改动，空 map 清除。
 	if updatedUser.ModelDiscount != nil {
 		if err := model.UpdateUserModelDiscount(updatedUser.Id, updatedUser.ModelDiscount); err != nil {
+			common.ApiError(c, err)
+			return
+		}
+	}
+	// asset_library_limits 同 rate_limit：nil 不改动，{} 清除。
+	if updatedUser.AssetLibraryLimits != nil {
+		if err := model.UpdateUserAssetLibraryLimits(updatedUser.Id, updatedUser.AssetLibraryLimits); err != nil {
 			common.ApiError(c, err)
 			return
 		}
