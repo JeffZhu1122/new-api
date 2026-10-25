@@ -399,6 +399,7 @@ func TaskGetAllTasks(startIdx int, num int, queryParams SyncTaskQueryParams) []*
 func GetTimedOutUnfinishedTasks(cutoffUnix int64, limit int) []*Task {
 	var tasks []*Task
 	err := DB.Where("status NOT IN ?", []string{TaskStatusFailure, TaskStatusSuccess}).
+		Where("platform <> ?", constant.TaskPlatformAssetLibrary).
 		Where("submit_time < ?", cutoffUnix).
 		Order("submit_time").
 		Limit(limit).
@@ -413,7 +414,8 @@ func GetAllUnFinishSyncTasks(limit int) []*Task {
 	var tasks []*Task
 	var err error
 	// Upstream progress can reach 100% before the task enters a terminal state.
-	err = DB.Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).Limit(limit).Order("id").Find(&tasks).Error
+	err = DB.Where("status != ?", TaskStatusFailure).Where("status != ?", TaskStatusSuccess).
+		Where("platform <> ?", constant.TaskPlatformAssetLibrary).Limit(limit).Order("id").Find(&tasks).Error
 	if err != nil {
 		return nil
 	}
@@ -429,6 +431,7 @@ func HasUnfinishedSyncTasks() bool {
 	err := DB.Model(&Task{}).
 		Where("status != ?", TaskStatusFailure).
 		Where("status != ?", TaskStatusSuccess).
+		Where("platform <> ?", constant.TaskPlatformAssetLibrary).
 		Limit(1).
 		Pluck("id", &id).Error
 	return err == nil && id != 0

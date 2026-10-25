@@ -188,6 +188,9 @@ export const TASK_ACTIONS = {
   FIRST_TAIL_GENERATE: 'firstTailGenerate', // 首尾生视频
   REFERENCE_GENERATE: 'referenceGenerate', // 参照生视频
   REMIX_GENERATE: 'remixGenerate', // 视频 Remix
+
+  // Asset library upload (model.AssetLibraryUploadAction)
+  ASSET_UPLOAD: 'CreateAsset', // 上传素材
 } as const
 
 /**
@@ -304,6 +307,7 @@ export const TASK_ACTION_MAPPINGS: Record<string, StatusMapping> = {
     label: 'Video Remix',
     variant: 'blue',
   },
+  [TASK_ACTIONS.ASSET_UPLOAD]: { label: 'Upload asset', variant: 'teal' },
 }
 
 /**

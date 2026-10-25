@@ -220,6 +220,9 @@ export function resolveTaskPreviewMode(
   // A synchronous result was returned inline and never persisted; there is
   // nothing to project, so the viewer explains that instead of opening.
   if (log.result_discarded === true) return 'discarded'
+  // An asset library upload's result is the asset itself, managed on the
+  // Asset Library page; the task has no artifacts.
+  if (log.platform === 'asset_library') return 'none'
   if (hasProjectedArtifacts) return 'plugin'
   if (log.admin_info?.task_plugin) return 'plugin'
   if (log.platform === 'suno') return 'legacy-suno'

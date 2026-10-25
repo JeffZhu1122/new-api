@@ -101,12 +101,16 @@ type envelope struct {
 	Result           any              `json:"Result"`
 }
 
+// Response is Ark's raw answer to one action, kept byte for byte so a gateway
+// can return it unchanged.
+type Response struct {
+	StatusCode int
+	Body       []byte
+}
+
 // Call sends action with the JSON body and decodes the Result object into
 // out (when out is not nil).
 func (c *Client) Call(ctx context.Context, action string, body any, out any) error {
-	if c.credentials.AccessKeyID == "" || c.credentials.SecretAccessKey == "" {
-		return errors.New("volcengine ark access key is not configured")
-	}
 	payload := []byte("{}")
 	if body != nil {
 		encoded, err := common.Marshal(body)
@@ -115,42 +119,62 @@ func (c *Client) Call(ctx context.Context, action string, body any, out any) err
 		}
 		payload = encoded
 	}
-	endpoint, err := c.endpoint()
+	response, err := c.CallRaw(ctx, action, payload)
 	if err != nil {
 		return err
+	}
+	return response.Decode(action, out)
+}
+
+// CallRaw sends action with an already encoded JSON payload and returns Ark's
+// response as it came. Only transport failures are errors here; use Decode
+// to read the Result or the Ark error.
+func (c *Client) CallRaw(ctx context.Context, action string, payload []byte) (*Response, error) {
+	if c.credentials.AccessKeyID == "" || c.credentials.SecretAccessKey == "" {
+		return nil, errors.New("volcengine ark access key is not configured")
+	}
+	endpoint, err := c.endpoint()
+	if err != nil {
+		return nil, err
 	}
 	endpoint.RawQuery = url.Values{"Action": {action}, "Version": {APIVersion}}.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, endpoint.String(), bytes.NewReader(payload))
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Content-Type", "application/json")
 	signRequest(req, payload, c.credentials, Service, c.now().UTC())
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf("volcengine ark %s request failed: %w", action, err)
+		return nil, fmt.Errorf("volcengine ark %s request failed: %w", action, err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, maxResponseBytes))
 	if err != nil {
-		return fmt.Errorf("volcengine ark %s response read failed: %w", action, err)
+		return nil, fmt.Errorf("volcengine ark %s response read failed: %w", action, err)
 	}
+	return &Response{StatusCode: resp.StatusCode, Body: data}, nil
+}
+
+// Decode returns the Ark error of the response, or decodes its Result into
+// out (when out is not nil).
+func (r *Response) Decode(action string, out any) error {
 	var decoded envelope
 	if out != nil {
 		decoded.Result = out
 	}
-	if err := common.Unmarshal(data, &decoded); err != nil {
-		if resp.StatusCode >= http.StatusBadRequest {
-			return &Error{Action: action, StatusCode: resp.StatusCode, Message: http.StatusText(resp.StatusCode)}
+	if err := common.Unmarshal(r.Body, &decoded); err != nil {
+		if r.StatusCode >= http.StatusBadRequest {
+			return &Error{Action: action, StatusCode: r.StatusCode, Message: http.StatusText(r.StatusCode)}
 		}
 		return fmt.Errorf("volcengine ark %s returned an invalid response: %w", action, err)
 	}
 	if apiErr := decoded.ResponseMetadata.Error; apiErr != nil && (apiErr.Code != "" || apiErr.Message != "") {
-		return &Error{Action: action, StatusCode: resp.StatusCode, Code: apiErr.Code, Message: apiErr.Message, RequestID: decoded.ResponseMetadata.RequestId}
+		return &Error{Action: action, StatusCode: r.StatusCode, Code: apiErr.Code, Message: apiErr.Message, RequestID: decoded.ResponseMetadata.RequestId}
 	}
-	if resp.StatusCode >= http.StatusBadRequest {
-		return &Error{Action: action, StatusCode: resp.StatusCode, Message: http.StatusText(resp.StatusCode), RequestID: decoded.ResponseMetadata.RequestId}
+	if r.StatusCode >= http.StatusBadRequest {
+		return &Error{Action: action, StatusCode: r.StatusCode, Message: http.StatusText(r.StatusCode), RequestID: decoded.ResponseMetadata.RequestId}
 	}
 	return nil
 }

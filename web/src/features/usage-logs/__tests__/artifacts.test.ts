@@ -337,6 +337,19 @@ describe('legacy task preview compatibility', () => {
       'plugin'
     )
   })
+
+  test('given a finished asset library upload, no artifact viewer is offered', () => {
+    assert.equal(
+      resolveTaskPreviewMode(
+        taskFixture({
+          platform: 'asset_library',
+          action: 'CreateAsset',
+          admin_info: undefined,
+        })
+      ),
+      'none'
+    )
+  })
 })
 
 describe('synchronous results the gateway did not retain', () => {

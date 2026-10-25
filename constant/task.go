@@ -5,6 +5,9 @@ type TaskPlatform string
 const (
 	TaskPlatformSuno       TaskPlatform = "suno"
 	TaskPlatformMidjourney              = "mj"
+	// Asset library uploads: no channel and no quota; the asset library sync
+	// finishes them, so the task poller and the timeout sweep skip them.
+	TaskPlatformAssetLibrary TaskPlatform = "asset_library"
 )
 
 const (

@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
 | 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 53 个（含本文档相关提交） |
-| 变更规模 | 350 个文件，+31927 / −2215 行（不含本文档） |
+| fork 专有提交数 | 54 个（含本文档相关提交） |
+| 变更规模 | 360 个文件，+33844 / −2216 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -92,7 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
-| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分步交付中） | 关闭 | `asset_library_accounts`（新表）、`asset_library_setting.*` | 新增设置项与火山账号管理接口；后续步骤见该节 |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分步交付中） | 关闭 | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets`（新表）、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；任务轮询与超时清理跳过素材库任务 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -908,6 +908,9 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/channel.go` | §15 达上限通知改用上游 rc.45 的 `NotifyChannelWatchers` |
 | `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` / `api.ts` | 定时清理 option 默认值、传参、类型与状态接口；§38 「素材库」一节（`asset-library`）的默认值、传参与类型 |
 | `controller/misc.go` | §38 `/api/status` 多一个 `asset_library_enabled` |
+| `model/task.go` | §38 `GetAllUnFinishSyncTasks`、`GetTimedOutUnfinishedTasks`、`HasUnfinishedSyncTasks` 加 `platform <> asset_library`，素材上传任务由素材库自己同步 |
+| `router/main.go` / `main.go` / `constant/task.go` | §38 `SetAssetLibraryRouter`（`/volc`）、主节点启动 `StartAssetLibrarySync`、`TaskPlatformAssetLibrary` |
+| `web/src/features/usage-logs/{constants.ts,lib/task-artifacts.ts}` | §38 任务动作 `CreateAsset` 的名称；素材上传任务不提供产物查看 |
 | `router/api-router.go` | §38 `/api/asset-library/accounts` 路由组（RootAuth），放在 `/plugin/task` 之前 |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
 | `web/src/features/dashboard/components/overview/{overview-dashboard,summary-cards,performance-health-panel,api-info-item}.tsx` / `components/ui/{panel-wrapper,stat-card}.tsx` | 概览面板改用 `brand-surface`、设置引导背景层、余额面板深色渐变、API 地址行截断规则、说明文字去掉透明度 |
@@ -2021,11 +2024,38 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 - `/api/status` 多一个 `asset_library_enabled`。
 - **前端**：系统设置 → 运维 → 「素材库」：开关与上限的表单，下面是火山账号表格；新增 / 编辑对话框里可以「测试连接」。
 
+### 第 2 步：与方舟一致的 `/volc` 接口，上传写入任务日志（已完成）
+
+- **调用方式**：和方舟素材 OpenAPI 完全相同，只有地址和鉴权不同：
+
+  ```
+  POST https://<网关域名>/volc?Action=CreateAsset&Version=2024-01-01
+  Authorization: Bearer sk-<网关令牌>
+  Content-Type: application/json
+
+  {"GroupId": "group-…", "URL": "https://…/front.png", "AssetType": "Image", "Name": "front"}
+  ```
+
+  - 支持 10 个 Action：`CreateAssetGroup`、`GetAssetGroup`、`UpdateAssetGroup`、`DeleteAssetGroup`、`ListAssetGroups`、`CreateAsset`、`GetAsset`、`UpdateAsset`、`DeleteAsset`、`ListAssets`；`Version` 必须是 `2024-01-01`。
+  - 返回的是方舟的 `{"ResponseMetadata": …, "Result": …}`，错误在 `ResponseMetadata.Error`。
+  - 真人人像组：开白账号直接 `CreateAssetGroup` 传 `GroupType=LivenessFace`，账号的「真人人像」开关打开即可。刷脸认证（`CreateVisualValidateSession` / `GetVisualValidateResult`）不支持。
+  - 网页控制台用同一套处理，入口是 `POST /api/asset-library/openapi`（登录会话，访问令牌不可用）。
+- **鉴权**：网关令牌（`Bearer sk-…`），同样检查令牌的 IP 限制和用户状态；失败时也按方舟的格式返回（`InvalidAuthorization` / `AccessDenied`）。素材库关闭时 `/volc` 返回 404，和不存在的路由一样。
+- **用户隔离**（`asset_library_groups` / `asset_library_assets` 记录归属，火山 ID 唯一）：
+  - 单个资源的读写先查归属，别人的资源一律回 404 `ResourceNotFound`，**不会发到火山**；通过后发给资源所在的火山账号，原样返回火山的响应（火山的 RequestId、错误码都保留）。
+  - 两个 List 由网关按本人的记录回答，字段与方舟一致，支持方舟的两种分页（`MaxResults` + `NextToken`，或 `PageNumber` + `PageSize` 返回 `TotalCount`）和排序；`NextToken` 只编码本人记录的偏移量。`ListAssets` 时对还在处理中、或签名 URL 快过期（11 小时）的素材向火山重新查询。
+  - 请求里的 `ProjectName` 被忽略，发给火山时一律用该账号的项目。
+- **建组时选账号**：启用、支持该类型、允许该用户分组、且未达账号配额的账号中，优先级最高的那个。
+- **限制**：每用户素材组 / 素材上限（`asset_library_setting`），账号配额，账号每分钟上传次数（开了 Redis 时多节点共用计数）。网关自己的检查用这些错误码：`InvalidActionOrVersion`、`InvalidParameter`、`ResourceNotFound`、`AccessDenied`、`QuotaExceeded`、`RequestLimitExceeded`、`InternalError`。
+- 火山已创建、但网关记录失败的组或素材会立即删掉，不留下无主资源。删除仍有素材组的火山账号会被拒绝。
+- **任务日志**：每次 `CreateAsset` 成功后写一条任务（平台 `asset_library`、动作 `CreateAsset`、任务 ID 为素材 ID、额度 0、进行中）。素材变为 Active 或 Failed 时任务随之成功或失败，失败原因是火山的错误码和说明（如 `FaceMismatch: …`）。
+  - 状态来源：`GetAsset` / `ListAssets` 读到的结果，以及主节点每 15 秒一次的后台同步（只在素材库启用时）。
+  - 原有的任务轮询和超时清理跳过这个平台，否则它们会因为没有渠道把任务判为失败。
+  - 任务日志里显示为「素材库 · 上传素材」，不提供产物查看。
+
 ### 后续步骤（规划）
 
-1. **与官方一致的调用方式**：用户用和火山官方完全相同的 Action / Version、请求体和返回结构调用网关，只有域名或路径不同；用户只能看到、操作自己名下的素材组和素材。
-2. **上传写入任务日志**：每次 `CreateAsset` 记一条任务（不扣额度），状态随素材处理结果更新。
-3. **真人认证**、**转发时的素材归属校验**、**渠道绑定火山账号**、**素材库管理页面**、**后台同步与管理员视角**。
+- **转发时的素材归属校验**与「关闭时也拦截所有 asset://」、**渠道绑定火山账号**、**素材库管理页面**（含管理员视角）。
 
 ### 测试
 
@@ -2038,4 +2068,14 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 三种数据库：SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24 上建表、第二次迁移不再执行任何 `CREATE` / `ALTER`、增删改查与排序（`TEST_MYSQL_DSN` / `TEST_POSTGRES_DSN`）。
 - 升级验证：用官方 `v1.0.0-rc.46` 镜像分别在三种数据库上建好库，再用本分支启动两次：都正常启动、日志无错误，新表结构正确。
 - 前端 `integrations/__tests__/asset-library-settings.test.tsx`：账号列表只显示脱敏 AK；新增账号缺密钥时不提交；测试连接发送对话框里的值且不保存；编辑时密钥留空即保留；开关只保存改动的项。
+- 第 2 步 `controller/asset_library_openapi_test.go`（模拟方舟服务）：
+  - 建组选优先级最高的对应类型账号，转发的请求体带账号的项目，返回方舟的原始响应；超出每用户上限返回 `QuotaExceeded` 且不调火山；
+  - 别人的组和素材 7 种操作都回 `ResourceNotFound`，且不调火山；List 看不到别人的资源；
+  - 上传写入任务（平台、动作、额度 0、无渠道），`GetAsset` 读到 Active / Failed 后任务成功 / 失败并带失败原因；
+  - 火山的错误原样返回且不留记录；超过账号每分钟上传次数返回 429；两种分页与互斥校验；不支持的 Action / Version；
+  - `/volc` 令牌鉴权、无令牌时方舟格式的 401、素材库关闭时 404；任务轮询、超时清理和「是否有未完成任务」都跳过素材库任务。
+  - 去掉归属查询里的 `user_id` 条件后，隔离测试失败。
+- 第 2 步数据库：`TestAssetLibraryAccountsAcrossDatabases` 扩展到三张表和任务表：名称搜索在三种库上正确转义 `%` 与 `_`（用 `!` 作 ESCAPE），火山 ID 唯一，上传与任务一起写入且随素材失败而失败，删除组连带删除素材。再次用官方 rc.46 建库后升级两次，三种库都正常。
+- 第 2 步本地端到端（全新 SQLite 实例 + Python 模拟方舟，模拟器用独立实现的签名算法验签）21 项：关闭时 404、测试连接、无令牌 401、建虚拟与真人组、上传、列表中的处理中状态、任务日志、`GetAsset` 变为 Active、后台同步把坏素材的任务判为失败（`FaceMismatch`）、按状态与页码列出、另一个用户 4 种操作都是 `ResourceNotFound` 且没有发到火山、网关校验的错误格式、删除组；模拟器收到的 11 次调用签名全部正确、项目全部是账号的项目。
+- 前端 `usage-logs/__tests__/artifacts.test.ts`：素材上传任务不提供产物查看。
 

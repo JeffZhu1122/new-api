@@ -241,6 +241,15 @@ func DeleteAssetLibraryAccount(c *gin.Context) {
 	if _, ok := storedAssetLibraryAccount(c, id); !ok {
 		return
 	}
+	groups, err := model.CountAssetLibraryGroups("account_id", id)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	if groups > 0 {
+		common.ApiErrorT(c, "This account still holds {{count}} asset groups and cannot be deleted", map[string]any{"count": groups})
+		return
+	}
 	if err := model.DeleteAssetLibraryAccount(id); err != nil {
 		common.ApiError(c, err)
 		return

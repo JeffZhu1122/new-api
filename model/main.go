@@ -386,6 +386,8 @@ func migrateDB() error {
 		&AuthzRole{},
 		&UserAccessToken{},
 		&AssetLibraryAccount{},
+		&AssetLibraryGroup{},
+		&AssetLibraryAsset{},
 	)
 	if err != nil {
 		return err
