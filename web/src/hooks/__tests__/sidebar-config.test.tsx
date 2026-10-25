@@ -320,3 +320,40 @@ describe('model pricing badge', () => {
     expect(badgedEntries()).toHaveLength(0)
   })
 })
+
+describe('asset library sidebar entry', () => {
+  function urlsWith(status: object) {
+    const client = new QueryClient({
+      defaultOptions: { queries: { retry: false } },
+    })
+    client.setQueryData(['status'], { SidebarModulesAdmin: '', ...status })
+    useAuthStore.getState().auth.setUser({ id: 1, username: 'alice', role: 1 })
+    function Wrapper(props: { children: ReactNode }) {
+      return (
+        <QueryClientProvider client={client}>
+          {props.children}
+        </QueryClientProvider>
+      )
+    }
+    const { result } = renderHook(
+      () => useSidebarConfig(useSidebarData().navGroups),
+      { wrapper: Wrapper }
+    )
+    return result.current.flatMap((group) =>
+      group.items.map((item) => ('url' in item ? item.url : undefined))
+    )
+  }
+
+  it('given the asset library enabled, the entry follows Task Logs', () => {
+    const urls = urlsWith({ asset_library_enabled: true })
+    expect(urls.indexOf('/asset-library')).toBe(
+      urls.indexOf('/usage-logs/task') + 1
+    )
+  })
+
+  it('given the asset library disabled, there is no entry', () => {
+    expect(urlsWith({ asset_library_enabled: false })).not.toContain(
+      '/asset-library'
+    )
+  })
+})

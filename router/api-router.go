@@ -281,6 +281,12 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
 		apiRouter.POST("/asset-library/openapi", middleware.UserAuth(), controller.AssetLibraryOpenAPI)
+		apiRouter.GET("/asset-library/config", middleware.UserAuth(), controller.GetAssetLibraryConfig)
+		assetLibraryAdminRoute := apiRouter.Group("", middleware.AdminAuth())
+		handlePermissionRoute(assetLibraryAdminRoute, http.MethodGet, "/asset-library/admin/groups", authz.AssetLibraryRead, controller.AdminListAssetLibraryGroups)
+		handlePermissionRoute(assetLibraryAdminRoute, http.MethodGet, "/asset-library/admin/groups/:id/assets", authz.AssetLibraryRead, controller.AdminListAssetLibraryGroupAssets)
+		handlePermissionRoute(assetLibraryAdminRoute, http.MethodDelete, "/asset-library/admin/groups/:id", authz.AssetLibraryWrite, controller.AdminDeleteAssetLibraryGroup)
+		handlePermissionRoute(assetLibraryAdminRoute, http.MethodDelete, "/asset-library/admin/assets/:id", authz.AssetLibraryWrite, controller.AdminDeleteAssetLibraryAsset)
 		assetLibraryAccountRoute := apiRouter.Group("/asset-library/accounts")
 		assetLibraryAccountRoute.Use(middleware.RootAuth())
 		{

@@ -818,27 +818,32 @@ func (r *assetLibraryRequest) listAssets() AssetLibraryResponse {
 	}
 	items := make([]map[string]any, 0, len(assets))
 	for _, asset := range assets {
-		item := map[string]any{
-			"Id":          asset.RemoteId,
-			"Name":        asset.Name,
-			"AssetType":   asset.AssetType,
-			"CreateTime":  asset.RemoteCreateTime,
-			"UpdateTime":  asset.RemoteUpdateTime,
-			"ProjectName": projects[asset.AccountId],
-			"URL":         asset.URL,
-			"GroupId":     asset.RemoteGroupId,
-			"Status":      asset.Status,
-			"Moderation":  map[string]any{"Strategy": "Default"},
-		}
-		if asset.LastInferenceTime != "" {
-			item["LastInferenceTime"] = asset.LastInferenceTime
-		}
-		if asset.ErrorCode != "" || asset.ErrorMessage != "" {
-			item["Error"] = map[string]any{"Code": asset.ErrorCode, "Message": asset.ErrorMessage}
-		}
-		items = append(items, item)
+		items = append(items, assetLibraryAssetItem(asset, projects))
 	}
 	return r.respond(http.StatusOK, "", pageResult(map[string]any{"Items": items}, page, len(items), total), nil)
+}
+
+// assetLibraryAssetItem is an asset in the shape of Ark's ListAssets items.
+func assetLibraryAssetItem(asset *model.AssetLibraryAsset, projects map[int]string) map[string]any {
+	item := map[string]any{
+		"Id":          asset.RemoteId,
+		"Name":        asset.Name,
+		"AssetType":   asset.AssetType,
+		"CreateTime":  asset.RemoteCreateTime,
+		"UpdateTime":  asset.RemoteUpdateTime,
+		"ProjectName": projects[asset.AccountId],
+		"URL":         asset.URL,
+		"GroupId":     asset.RemoteGroupId,
+		"Status":      asset.Status,
+		"Moderation":  map[string]any{"Strategy": "Default"},
+	}
+	if asset.LastInferenceTime != "" {
+		item["LastInferenceTime"] = asset.LastInferenceTime
+	}
+	if asset.ErrorCode != "" || asset.ErrorMessage != "" {
+		item["Error"] = map[string]any{"Code": asset.ErrorCode, "Message": asset.ErrorMessage}
+	}
+	return item
 }
 
 // refreshAssetLibraryAssets asks Ark again about the listed assets that are
