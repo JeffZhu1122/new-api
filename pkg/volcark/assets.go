@@ -44,3 +44,30 @@ func (c *Client) ListAssetGroups(ctx context.Context, request ListAssetGroupsReq
 	}
 	return &result, nil
 }
+
+// CreatedResource is the Result of CreateAssetGroup and CreateAsset.
+type CreatedResource struct {
+	Id string `json:"Id"`
+}
+
+// Asset is the Result of GetAsset and an item of ListAssets.
+type Asset struct {
+	Id                string      `json:"Id"`
+	Name              string      `json:"Name"`
+	AssetType         string      `json:"AssetType"`
+	GroupId           string      `json:"GroupId"`
+	Status            string      `json:"Status"`
+	ProjectName       string      `json:"ProjectName"`
+	URL               string      `json:"URL"`
+	CreateTime        string      `json:"CreateTime"`
+	UpdateTime        string      `json:"UpdateTime"`
+	LastInferenceTime string      `json:"LastInferenceTime"`
+	Error             *AssetError `json:"Error"`
+}
+
+// AssetError is why Ark could not process an asset, such as FaceMismatch or
+// DownloadFailed.
+type AssetError struct {
+	Code    string `json:"Code"`
+	Message string `json:"Message"`
+}
