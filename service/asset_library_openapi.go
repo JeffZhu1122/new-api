@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"encoding/base64"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"net/http"
@@ -486,9 +487,16 @@ func (r *assetLibraryRequest) createAsset() AssetLibraryResponse {
 		URL       string `json:"URL"`
 		AssetType string `json:"AssetType"`
 		Name      string `json:"Name"`
+		// Passed to Ark as sent, e.g. {"Strategy": "Skip"} to skip the content
+		// pre-filter; Ark checks the values and whether the account allows it.
+		Moderation json.RawMessage `json:"Moderation"`
 	}
 	if response, ok := r.decode(&request); !ok {
 		return response
+	}
+	hasModeration := request.Moderation != nil && common.GetJsonType(request.Moderation) != "null"
+	if hasModeration && common.GetJsonType(request.Moderation) != "object" {
+		return r.fail(http.StatusBadRequest, assetLibraryCodeInvalidParam, "Moderation must be an object.")
 	}
 	if request.AssetType != "Image" && request.AssetType != "Video" && request.AssetType != "Audio" {
 		return r.fail(http.StatusBadRequest, assetLibraryCodeInvalidParam, "AssetType must be Image, Video or Audio.")
@@ -532,6 +540,9 @@ func (r *assetLibraryRequest) createAsset() AssetLibraryResponse {
 	payload := map[string]any{"GroupId": group.RemoteId, "URL": request.URL, "AssetType": request.AssetType}
 	if request.Name != "" {
 		payload["Name"] = request.Name
+	}
+	if hasModeration {
+		payload["Moderation"] = request.Moderation
 	}
 	arkResponse, response, ok := r.forward(account, payload)
 	if !ok {
