@@ -280,6 +280,15 @@ func SetApiRouter(router *gin.Engine) {
 			ratioSyncRoute.GET("/channels", controller.GetSyncableChannels)
 			ratioSyncRoute.POST("/fetch", controller.FetchUpstreamRatios)
 		}
+		assetLibraryAccountRoute := apiRouter.Group("/asset-library/accounts")
+		assetLibraryAccountRoute.Use(middleware.RootAuth())
+		{
+			assetLibraryAccountRoute.GET("", controller.ListAssetLibraryAccounts)
+			assetLibraryAccountRoute.POST("", controller.CreateAssetLibraryAccount)
+			assetLibraryAccountRoute.PUT("", controller.UpdateAssetLibraryAccount)
+			assetLibraryAccountRoute.DELETE("/:id", controller.DeleteAssetLibraryAccount)
+			assetLibraryAccountRoute.POST("/test", controller.TestAssetLibraryAccount)
+		}
 		taskPluginRoute := apiRouter.Group("/plugin/task")
 		taskPluginRoute.Use(middleware.RootAuth())
 		{

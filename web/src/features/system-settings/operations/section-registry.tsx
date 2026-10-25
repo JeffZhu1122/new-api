@@ -17,6 +17,7 @@ along with this program. If not, see <https://www.gnu.org/licenses/>.
 For commercial licensing, please contact support@quantumnous.com
 */
 import { SystemBehaviorSection } from '../general/system-behavior-section'
+import { AssetLibrarySettingsSection } from '../integrations/asset-library-settings-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
@@ -24,6 +25,8 @@ import { LogSettingsSection } from '../maintenance/log-settings-section'
 import { PerformanceSection } from '../maintenance/performance-section'
 import { UpdateCheckerSection } from '../maintenance/update-checker-section'
 import type { OperationsSettings } from '../types'
+import { safeJsonParseWithValidation } from '../utils/json-parser'
+import { isStringArray } from '../utils/json-validators'
 import { createSectionRegistry } from '../utils/section-registry'
 
 const OPERATIONS_SECTIONS = [
@@ -93,6 +96,37 @@ const OPERATIONS_SECTIONS = [
           WorkerValidKey: settings.WorkerValidKey,
           WorkerAllowHttpImageRequestEnabled:
             settings.WorkerAllowHttpImageRequestEnabled,
+        }}
+      />
+    ),
+  },
+  {
+    id: 'asset-library',
+    titleKey: 'Asset Library',
+    build: (settings: OperationsSettings) => (
+      <AssetLibrarySettingsSection
+        defaultValues={{
+          enabled: Boolean(settings['asset_library_setting.enabled']),
+          block_asset_refs_when_disabled:
+            settings['asset_library_setting.block_asset_refs_when_disabled'] ??
+            true,
+          max_groups_per_user: Number(
+            settings['asset_library_setting.max_groups_per_user'] ?? 20
+          ),
+          max_assets_per_user: Number(
+            settings['asset_library_setting.max_assets_per_user'] ?? 200
+          ),
+          verify_sessions_per_hour: Number(
+            settings['asset_library_setting.verify_sessions_per_hour'] ?? 5
+          ),
+          allowed_user_groups: safeJsonParseWithValidation<string[]>(
+            settings['asset_library_setting.allowed_user_groups'],
+            { fallback: [], validator: isStringArray, silent: true }
+          ),
+          callback_base_url:
+            settings['asset_library_setting.callback_base_url'] ?? '',
+          compliance_notice:
+            settings['asset_library_setting.compliance_notice'] ?? '',
         }}
       />
     ),

@@ -205,6 +205,12 @@ var accessTokenRouteRules = map[string]accessTokenRouteRule{
 	"DELETE /api/system-info/stale-instances":      accessTokenScopeRule("ops:write"),
 	"DELETE /api/system-info/instances/:node_name": accessTokenScopeRule("ops:write"),
 
+	// router/api-router.go: /api/asset-library/accounts (asset library settings)
+	"GET /api/asset-library/accounts":        accessTokenScopeRule("option:read"),
+	"POST /api/asset-library/accounts":       accessTokenScopeRule("option:write"),
+	"PUT /api/asset-library/accounts":        accessTokenScopeRule("option:write"),
+	"DELETE /api/asset-library/accounts/:id": accessTokenScopeRule("option:write"),
+	"POST /api/asset-library/accounts/test":  accessTokenScopeRule("option:write"),
 	// router/api-router.go: /api/plugin/task
 	"GET /api/plugin/task":                           accessTokenScopeRule("plugin:read"),
 	"POST /api/plugin/task":                          accessTokenScopeRule("plugin:write"),
