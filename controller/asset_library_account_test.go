@@ -15,6 +15,7 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	relaykitdto "github.com/QuantumNous/new-api/relaykit/dto"
 
 	"github.com/gin-gonic/gin"
 	"github.com/glebarez/sqlite"
@@ -184,7 +185,7 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 				t.Skip(dialect.env + " is not configured")
 			}
 			db := modelManagementDB(t, dialect.kind, os.Getenv(dialect.env))
-			tables := []any{&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.Task{}}
+			tables := []any{&model.AssetLibraryAccount{}, &model.AssetLibraryGroup{}, &model.AssetLibraryAsset{}, &model.Task{}, &model.ChannelExtend{}}
 			require.NoError(t, db.AutoMigrate(tables...))
 
 			capture := &sqlStatementCapture{Interface: gormlogger.Discard}
@@ -259,6 +260,16 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 			count, err := model.CountAssetLibraryAssets("user_id", 1)
 			require.NoError(t, err)
 			assert.Zero(t, count)
+
+			// A channel's binding to an account round-trips and clears with 0.
+			require.NoError(t, model.UpsertChannelExtend(model.DB, 77, relaykitdto.ChannelExtendSettings{AssetLibraryAccountId: low.Id}))
+			extend, err := model.GetChannelExtend(77)
+			require.NoError(t, err)
+			assert.Equal(t, low.Id, extend.AssetLibraryAccountId)
+			require.NoError(t, model.UpsertChannelExtend(model.DB, 77, relaykitdto.ChannelExtendSettings{RpmLimit: 5}))
+			extend, err = model.GetChannelExtend(77)
+			require.NoError(t, err)
+			assert.Zero(t, extend.AssetLibraryAccountId)
 		})
 	}
 }

@@ -130,6 +130,7 @@ export const channelSchema = z.object({
         .nullish(),
       force_retry: z.boolean().optional(),
       empty_output_error: z.boolean().optional(),
+      asset_library_account_id: z.number().optional(),
     })
     .nullish(), // stored in channel_extend table, not a channels column
 })
@@ -180,6 +181,8 @@ export interface ChannelExtendSettings {
   force_retry?: boolean
   // Turn a text generation response without any output into an error
   empty_output_error?: boolean
+  // Asset library account whose Volcengine project the key belongs to, 0 = none
+  asset_library_account_id?: number
 }
 
 // One weekly availability window: start inclusive, end exclusive (HH:MM in

@@ -97,3 +97,9 @@ channel.upstream_update_failed_channels: "Failed channel IDs (showing {{.Shown}}
 channel.upstream_update_more_omitted: " ({{.Count}} more omitted)"
 
 channel.notify_scheduled_subject: "Channel \"{{.Name}}\" (#{{.Id}}) plugin notification"
+asset_library.references_blocked: "asset:// references are not available on this service"
+asset_library.too_many_references: "A request may reference at most {{.Max}} assets"
+asset_library.reference_invalid: "The request contains an invalid asset:// reference"
+asset_library.asset_not_owned: "The asset {{.Id}} is not in your asset library"
+asset_library.asset_not_ready: "The asset {{.Id}} cannot be used yet (status: {{.Status}})"
+asset_library.mixed_accounts: "Assets from different asset libraries cannot be used in one request"

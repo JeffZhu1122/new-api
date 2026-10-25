@@ -317,6 +317,7 @@ func SetApiRouter(router *gin.Engine) {
 			requestPluginRoute.PUT("/instances", controller.UpdateRequestPluginInstances)
 			requestPluginRoute.POST("/dry_run", controller.DryRunRequestPlugins)
 		}
+		handlePermissionRoute(apiRouter.Group("", middleware.AdminAuth()), http.MethodGet, "/asset_library_options", authz.ChannelRead, controller.ListAssetLibraryAccountOptions)
 		registerChannelRoutes(apiRouter)
 		registerAuthzRoutes(apiRouter)
 		tokenRoute := apiRouter.Group("/token")

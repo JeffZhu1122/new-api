@@ -50,6 +50,25 @@ func Distribute() func(c *gin.Context) {
 			abortWithOpenAiMessage(c, invalidRequestStatus(err), i18n.T(c, i18n.MsgDistributorInvalidRequest, map[string]any{"Error": err.Error()}))
 			return
 		}
+		// asset:// references must be the caller's own Active assets of one
+		// asset library account, and route only to channels bound to it.
+		if c.Request.Method != http.MethodGet && c.Request.Method != http.MethodHead {
+			if storage, storageErr := common.GetBodyStorage(c); storageErr == nil {
+				if body, bodyErr := storage.Bytes(); bodyErr == nil {
+					check := service.CheckAssetLibraryReferences(c.GetInt("id"), body)
+					if check.StatusCode != 0 {
+						abortWithOpenAiMessage(c, check.StatusCode, i18n.T(c, check.MessageID, check.Params))
+						return
+					}
+					if check.AccountId != 0 {
+						constraints.AddFilter(taskdto.ChannelFilter{
+							Kind:                  taskdto.FilterAssetLibraryAccount,
+							AssetLibraryAccountId: check.AccountId,
+						})
+					}
+				}
+			}
+		}
 		// 渠道输入范围过滤：仅当有渠道配置了 min/max_input_tokens 时才估算，
 		// 估算值随 constraints 复用于本请求的所有重试
 		inputTokensEstimate := -1
@@ -139,6 +158,8 @@ func Distribute() func(c *gin.Context) {
 					logger.LogWarn(c, fmt.Sprintf("no available channel with input_tokens filter active: model=%s, group=%s, estimated_input_tokens=%d", modelRequest.Model, usingGroup, inputTokensEstimate))
 				} else if selectErr.NoAvailableChannel && service.ChannelScheduleFilterActive(c) {
 					logger.LogWarn(c, fmt.Sprintf("no available channel with channel_schedule filter active: model=%s, group=%s", modelRequest.Model, usingGroup))
+				} else if selectErr.FilterKind == taskdto.FilterAssetLibraryAccount {
+					logger.LogWarn(c, fmt.Sprintf("no channel bound to the asset library account of the request's assets: model=%s, group=%s", modelRequest.Model, usingGroup))
 				}
 				message := selectErr.Message
 				if selectErr.NoAvailableChannel {

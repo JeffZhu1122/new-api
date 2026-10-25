@@ -15,6 +15,7 @@ var filterEvalOrder = []dto.ChannelFilterKind{
 	dto.FilterInputTokens,
 	dto.FilterChannelSchedule,
 	dto.FilterResponsesWebSocket,
+	dto.FilterAssetLibraryAccount,
 }
 
 // FiltersReadExtendConfig reports whether any filter evaluates channel_extend
@@ -22,7 +23,7 @@ var filterEvalOrder = []dto.ChannelFilterKind{
 // must backfill onto channels before ChannelSatisfiesFilters runs.
 func FiltersReadExtendConfig(filters []dto.ChannelFilter) bool {
 	return slices.ContainsFunc(filters, func(filter dto.ChannelFilter) bool {
-		return filter.Kind == dto.FilterInputTokens || filter.Kind == dto.FilterChannelSchedule
+		return filter.Kind == dto.FilterInputTokens || filter.Kind == dto.FilterChannelSchedule || filter.Kind == dto.FilterAssetLibraryAccount
 	})
 }
 
@@ -199,6 +200,10 @@ func channelMatchesFilter(ch *Channel, modelName string, filter dto.ChannelFilte
 			return true
 		}
 		return ch.ExtendConfig.AvailableAt(filter.At)
+	case dto.FilterAssetLibraryAccount:
+		// Same rule: read the prefilled ExtendConfig only. A channel without
+		// one is bound to no account.
+		return ch.ExtendConfig != nil && ch.ExtendConfig.AssetLibraryAccountId == filter.AssetLibraryAccountId
 	default:
 		return true
 	}
