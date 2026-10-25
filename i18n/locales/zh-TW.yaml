@@ -98,3 +98,6 @@ asset_library.reference_invalid: "請求中含有無效的 asset:// 素材引用
 asset_library.asset_not_owned: "素材 {{.Id}} 不在你的素材庫中"
 asset_library.asset_not_ready: "素材 {{.Id}} 暫不可用（狀態：{{.Status}}）"
 asset_library.mixed_accounts: "不同素材庫的素材不能在同一個請求中使用"
+asset_library.auto_upload_too_many: "一個請求最多自動入庫 {{.Max}} 個參考素材"
+asset_library.auto_upload_failed: "第 {{.Index}} 個參考素材未能加入素材庫：{{.Reason}}"
+asset_library.auto_upload_pending: "第 {{.Index}} 個參考素材仍在素材庫中處理，請稍後重試"

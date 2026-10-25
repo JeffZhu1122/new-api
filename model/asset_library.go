@@ -93,6 +93,28 @@ func GetUserAssetLibraryGroup(userId int, remoteId string) (*AssetLibraryGroup, 
 	return &group, nil
 }
 
+// GetUserAssetLibraryGroupByName returns the user's group of the type with
+// exactly that name.
+func GetUserAssetLibraryGroupByName(userId int, groupType, name string) (*AssetLibraryGroup, error) {
+	var group AssetLibraryGroup
+	err := DB.Where("user_id = ? AND group_type = ? AND name = ?", userId, groupType, name).Order("id").First(&group).Error
+	if err != nil {
+		return nil, err
+	}
+	return &group, nil
+}
+
+// GetAssetLibraryAssetInGroupByName returns the newest asset of the group with
+// exactly that name that has not failed.
+func GetAssetLibraryAssetInGroupByName(groupId int, name string) (*AssetLibraryAsset, error) {
+	var asset AssetLibraryAsset
+	err := DB.Where("group_id = ? AND name = ? AND status <> ?", groupId, name, AssetLibraryAssetFailed).Order("id desc").First(&asset).Error
+	if err != nil {
+		return nil, err
+	}
+	return &asset, nil
+}
+
 // GetUserAssetLibraryAsset returns the user's asset with the Ark id; another
 // user's asset reads as not found.
 func GetUserAssetLibraryAsset(userId int, remoteId string) (*AssetLibraryAsset, error) {

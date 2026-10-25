@@ -54,6 +54,7 @@ const storedAccount = {
 const defaultValues: AssetLibrarySettingsValues = {
   enabled: false,
   block_asset_refs_when_disabled: true,
+  auto_upload_references: false,
   max_groups_per_user: 20,
   max_assets_per_user: 200,
   verify_sessions_per_hour: 5,
@@ -256,6 +257,28 @@ test('saving the switches stores only the changed options', async () => {
   await waitFor(() =>
     expect(api.put).toHaveBeenCalledWith('/api/option/', {
       key: 'asset_library_setting.enabled',
+      value: true,
+    })
+  )
+  expect(api.put).toHaveBeenCalledTimes(1)
+})
+
+test('turning on automatic reference uploads saves that option', async () => {
+  const user = userEvent.setup()
+  renderSettings()
+  await user.click(
+    await screen.findByRole('switch', {
+      name: 'Upload URL references automatically',
+    })
+  )
+
+  await user.click(
+    screen.getByRole('button', { name: 'Save asset library settings' })
+  )
+
+  await waitFor(() =>
+    expect(api.put).toHaveBeenCalledWith('/api/option/', {
+      key: 'asset_library_setting.auto_upload_references',
       value: true,
     })
   )
