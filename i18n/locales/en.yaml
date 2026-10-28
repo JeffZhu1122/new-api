@@ -97,6 +97,5 @@ asset_library.reference_invalid: "The request contains an invalid asset:// refer
 asset_library.asset_not_owned: "The asset {{.Id}} is not in your asset library"
 asset_library.asset_not_ready: "The asset {{.Id}} cannot be used yet (status: {{.Status}})"
 asset_library.mixed_accounts: "Assets from different asset libraries cannot be used in one request"
-asset_library.auto_upload_too_many: "At most {{.Max}} references can be added to the asset library automatically per request"
 asset_library.auto_upload_failed: "Reference {{.Index}} could not be added to the asset library: {{.Reason}}"
 asset_library.auto_upload_pending: "Reference {{.Index}} is still being processed by the asset library; retry in a moment"

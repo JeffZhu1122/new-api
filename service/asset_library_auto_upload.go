@@ -32,13 +32,20 @@ import (
 const (
 	// The group every user's automatic uploads go to.
 	AssetLibraryAutoUploadGroupName = "auto-upload"
-	assetLibraryAutoUploadMaxRefs   = 9
 	assetLibraryAutoUploadWait      = 120 * time.Second
 	assetLibraryAutoUploadPoll      = 2 * time.Second
 )
 
-// Content item types of Ark's video task API and the asset type each becomes.
-var assetLibraryAutoUploadTypes = map[string]string{"image_url": "Image", "video_url": "Video", "audio_url": "Audio"}
+var (
+	// Content item types of Ark's video task API and the asset type each becomes.
+	assetLibraryAutoUploadTypes = map[string]string{"image_url": "Image", "video_url": "Video", "audio_url": "Audio"}
+	// References per request that Ark's video task API takes, by asset type:
+	// the Seedance 2.0 models up to 9 images, 3 videos and 3 audio clips,
+	// Seedance 2.5 up to 30, 10 and 10. A request over them is left as it is,
+	// so Ark answers with its own error and nothing is uploaded for it.
+	seedance20ReferenceLimits = map[string]int{"Image": 9, "Video": 3, "Audio": 3}
+	seedanceReferenceLimits   = map[string]int{"Image": 30, "Video": 10, "Audio": 10}
+)
 
 // AssetLibraryAutoUpload is the outcome of preparing a request: the rewritten
 // body when references were uploaded, or the error to answer with.
@@ -60,7 +67,8 @@ type assetLibraryAutoUploadRef struct {
 // returns an empty result when there is nothing to do.
 func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCaller, modelName string, body []byte, requestId string) AssetLibraryAutoUpload {
 	setting := asset_library_setting.GetSetting()
-	if !setting.Enabled || !setting.AutoUploadReferences || !setting.UserGroupAllowed(caller.UserGroup) || !strings.Contains(strings.ToLower(modelName), "seedance-2") {
+	lowerModel := strings.ToLower(modelName)
+	if !setting.Enabled || !setting.AutoUploadReferences || !setting.UserGroupAllowed(caller.UserGroup) || !strings.Contains(lowerModel, "seedance-2") {
 		return AssetLibraryAutoUpload{}
 	}
 	content := gjson.GetBytes(body, "content")
@@ -68,12 +76,14 @@ func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCa
 		return AssetLibraryAutoUpload{}
 	}
 	var refs []assetLibraryAutoUploadRef
+	counts := map[string]int{}
 	content.ForEach(func(index, item gjson.Result) bool {
 		field := item.Get("type").String()
 		assetType, ok := assetLibraryAutoUploadTypes[field]
 		if !ok || !strings.HasPrefix(item.Get("role").String(), "reference_") {
 			return true
 		}
+		counts[assetType]++
 		url := strings.TrimSpace(item.Get(field + ".url").String())
 		lower := strings.ToLower(url)
 		if strings.HasPrefix(lower, "http://") || strings.HasPrefix(lower, "https://") {
@@ -84,8 +94,14 @@ func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCa
 	if len(refs) == 0 {
 		return AssetLibraryAutoUpload{}
 	}
-	if len(refs) > assetLibraryAutoUploadMaxRefs {
-		return AssetLibraryAutoUpload{StatusCode: http.StatusBadRequest, MessageID: i18n.MsgAssetLibraryAutoUploadTooMany, Params: map[string]any{"Max": assetLibraryAutoUploadMaxRefs}}
+	limits := seedanceReferenceLimits
+	if strings.Contains(lowerModel, "seedance-2-0") {
+		limits = seedance20ReferenceLimits
+	}
+	for assetType, count := range counts {
+		if count > limits[assetType] {
+			return AssetLibraryAutoUpload{}
+		}
 	}
 
 	group, reason := assetLibraryAutoUploadGroup(ctx, caller, requestId)

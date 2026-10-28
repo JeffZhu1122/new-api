@@ -854,15 +854,31 @@ func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
 	assert.Zero(t, other.StatusCode)
 	assert.Len(t, fixture.ark.recorded(), before)
 
-	// More references than allowed are refused before Ark.
+	// Ark's reference limits count per type and per model: Seedance 2.0 takes
+	// 9 images and 3 videos, so 9 images and a video are uploaded but 10
+	// images go on as they are for Ark to answer; Seedance 2.5 takes 30 images.
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"max_assets_per_user": "0"}))
 	refs := make([]string, 10)
 	for i := range refs {
 		refs[i] = fmt.Sprintf(`{"type":"image_url","image_url":{"url":"https://cdn.example/%d.png"},"role":"reference_image"}`, i)
 	}
-	many := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, []byte(`{"content":[`+strings.Join(refs, ",")+`]}`), "req")
-	assert.Equal(t, http.StatusBadRequest, many.StatusCode)
-	assert.Equal(t, i18n.MsgAssetLibraryAutoUploadTooMany, many.MessageID)
-	assert.Len(t, fixture.ark.recorded(), before)
+	video := `{"type":"video_url","video_url":{"url":"https://cdn.example/v.mp4"},"role":"reference_video"}`
+	mixed := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, []byte(`{"content":[`+strings.Join(refs[:9], ",")+`,`+video+`]}`), "req")
+	require.Zero(t, mixed.StatusCode, mixed)
+	assert.True(t, strings.HasPrefix(gjson.GetBytes(mixed.Body, "content.8.image_url.url").String(), "asset://asset-"))
+	assert.Equal(t, videoRef, gjson.GetBytes(mixed.Body, "content.9.video_url.url").String())
+	tenImages := []byte(`{"content":[` + strings.Join(refs, ",") + `]}`)
+	uploads := countArkCalls(fixture.ark.recorded(), "CreateAsset")
+	over := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, tenImages, "req")
+	assert.Zero(t, over.StatusCode)
+	assert.Nil(t, over.Body)
+	assert.Equal(t, uploads, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
+	within := service.AutoUploadAssetLibraryReferences(context.Background(), caller, "doubao-seedance-2-5-260628", tenImages, "req")
+	require.Zero(t, within.StatusCode, within)
+	for i := range refs {
+		assert.True(t, strings.HasPrefix(gjson.GetBytes(within.Body, fmt.Sprintf("content.%d.image_url.url", i)).String(), "asset://asset-"), i)
+	}
+	assert.Equal(t, uploads+1, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
 
 	// An upload Ark refuses fails the request with Ark's reason.
 	fixture.ark.assetStatus = "Failed"

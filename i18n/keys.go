@@ -124,7 +124,6 @@ const (
 	MsgAssetLibraryAssetNotOwned     = "asset_library.asset_not_owned"
 	MsgAssetLibraryAssetNotReady     = "asset_library.asset_not_ready"
 	MsgAssetLibraryMixedAccounts     = "asset_library.mixed_accounts"
-	MsgAssetLibraryAutoUploadTooMany = "asset_library.auto_upload_too_many"
 	MsgAssetLibraryAutoUploadFailed  = "asset_library.auto_upload_failed"
 	MsgAssetLibraryAutoUploadPending = "asset_library.auto_upload_pending"
 )
