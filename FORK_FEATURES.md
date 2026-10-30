@@ -4,12 +4,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 上游基线（merge-base） | `6cf0d90b5` — 2026-10-17 `feat(deepseek): support V4.1 Flash, the Search and Fetch APIs, and @ reasoning modifiers (#7867)`（上游版本 `v1.0.0-rc.45`） |
-| 最近一次同步 | 2026-10-18，rebase 到 `6cf0d90b5`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 63 个（含本文档相关提交） |
-| 变更规模 | 396 个文件，+40019 / −2248 行（不含本文档） |
+| 上游基线（merge-base） | `37d23dcc8` — 2026-10-30 `fix(profile): honor global sidebar visibility (#7429)`（上游 `v1.0.0-rc.47` 之后 26 个提交） |
+| 最近一次同步 | 2026-10-30，rebase 到 `37d23dcc8`，冲突与适配见 §19.4 |
+| fork 专有提交数 | 64 个（含本文档相关提交） |
+| 变更规模 | 396 个文件，+40013 / −2241 行（不含本文档） |
 
-同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 6cf0d90b5..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
+同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 37d23dcc8..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
 ---
 
@@ -846,6 +846,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 1. `git fetch https://github.com/QuantumNous/new-api.git main`
 2. `git rebase FETCH_HEAD`（fork 提交线性重放）
 3. 解决冲突后跑 Go 与前端测试，重点是下面列出的热点文件。
+   - 前端 7 个语言文件：上游从 `e2321a5a9` 起按 `localeCompare` 给 key 排序，fork 几乎每个前端提交都会在这里冲突。按 key 做三方合并：以当前（上游 + 已重放的提交）为准，套用被重放提交相对其父提交新增 / 修改 / 删除的 key；上游已有 key 的顺序不动，新 key 插在第一个排在它后面的 key 之前。2026-10-30 的同步用一个 git merge driver 自动完成了这一步。合并后检查每种语言：fork 的 key 都在、上游改动没丢、上游 key 的顺序没变。
 4. 如上游再次重构接缝，参照 `5f22a93b0` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
 
 ### 19.2 高频冲突文件
@@ -872,7 +873,11 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `relay/compatible_handler.go` / `relay/claude_handler.go` / `relay/gemini_handler.go` / `relay/responses_handler.go` | §31 在 `DoResponse` 前后接入 `service.GuardEmptyOutput` / `Finish` |
 | `controller/channel.go` | `extend_config` 读写、`CopyChannel` 状态、`buildFetchModelsHeaders` |
 | `relay/helper/price.go` | `HandleGroupRatio` 折扣乘法 |
-| `service/http.go` / `relay/channel/api_request.go` | `ShouldCopyUpstreamHeader` 响应头过滤；§34 `UpstreamRequestIdFromHeader`（`DoRequest` 用它取上游请求 ID，取代只认 `X-Oneapi-Request-Id`） |
+| `service/http.go` / `relay/channel/api_request.go` | `ShouldCopyUpstreamHeader` 响应头过滤；§34 `UpstreamRequestIdFromHeader`（`DoRequest` 用它取上游请求 ID，取代只认 `X-Oneapi-Request-Id`）；§5 渠道超时用到 `context`，上游自己的代码不再需要它时会删掉 import（2026-10-30 同步时发生过，文本能合并但编译失败） |
+| `dto/channel_constraints.go` | §10 的 `FilterInputTokens` 常量与 `ChannelFilter.InputTokens` 字段，紧挨上游的 `FilterTaskPluginEndpoint` / `TaskPluginRelayOnly` |
+| `web/src/hooks/use-sidebar-data.ts` / `__tests__/sidebar-config.test.tsx` | §38 素材库入口（按 `asset_library_enabled` 显示）与其测试；上游给 `useSidebarData` 加了 `badges` 参数和模型定价角标测试 |
+| `web/src/features/dashboard/components/models/log-stat-cards.tsx` | §22 品牌外框 `brand-surface rounded-2xl`；列数跟随上游（缓存用量卡片加入后为 `lg:grid-cols-7`） |
+| `web/src/features/usage-logs/components/dialogs/details-dialog.tsx` | §9 折扣明细两行放在缓存明细之前；缓存明细的显示条件跟随上游（`isClaude || hasCacheWrite12h`） |
 | `relay/request_billing.go` / `service/text_quota.go` / `service/quota.go` | 免费路径、TPM 记账、realtime 预扣读 PriceData |
 | `middleware/distributor.go` | 输入 token 估算、extend setting 注入、count_tokens 不记亲和 |
 | `middleware/auth.go` | 多分组 key 归一化 |
@@ -945,6 +950,40 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 访问令牌按接口授权（上游 2026-09 起）：新增管理接口时，经 `channelPermissionRoutes` 等 `handlePermissionRoute` 注册的会自动声明；其余（如 `adminRoute.GET(...)`）要在 `accessTokenRouteRules` 里补规则，`router/access_token_scope_test.go` 会检查。
 
 ### 19.4 同步记录
+
+- **2026-10-30，rebase 到 `37d23dcc8`（上游 `v1.0.0-rc.47` 之后 26 个提交）**（上游 75 个提交，含 rc.46、rc.47：
+  - 安全：Go 升到 1.26.10（CVE-2026-111943）；报错遮盖的 URL 处理避免被构造的报错耗尽 CPU；zstd 请求解压限制解码器内存，且不在鉴权前读取请求体；数据看板流向图提示框不再把 token 名当 HTML 渲染；访问日志隐藏 URL 里的凭据；任务轮询跟随跳转时只把凭据发给允许的主机。
+  - 任务插件：任务超时默认从 24 小时改为 72 小时（`TASK_TIMEOUT_MINUTES` 默认 4320）；重试换渠道时重新计价并先补预扣；网关不再从请求里读计费数量，交给插件自己校验；普通渠道可与插件渠道竞争 `/v1/images/*`、`/v1/videos`、`/v1/responses`；原生路由接受 multipart；插件能拿到客户端请求头；渠道的请求头覆盖对提交和轮询都生效；插件改动后列出它没法计费的模型并在模型定价里标「价格需处理」。内置插件只有可灵有改动。
+  - 计费：OpenAI 12 小时提示词缓存写入单独计价（表达式新增 `cc12h`）；Claude 缓存写入没有 5 分钟 / 1 小时拆分时也计费；`prompt_tokens_details` 里报告的缓存写入计费；同步上游价格时可按站点汇率换算；按次动态计费的分类修正。
+  - 转发：Claude 流式请求在准备和重试期间保活；慢速客户端下载大事件时不再被 30 秒写超时断开；Responses 流结束不再误报断开；精确匹配 `[DONE]` 结束流；非流式请求在上下文取消后仍计入统计；亲和失败回退从最高优先级开始；Azure 可开启 Responses WebSocket；GPT-6.1 sol / terra 套用 GPT-6 的参数规则；Bedrock Invoke 请求保留 `safeguards` 字段；Cloudflare 向量结果不再丢失；协议转换修了 Claude 工具调用合并、工具参数数字、Gemini 文本与工具调用并存、`imageConfig`、非字符串 `stop`；JSON Schema 保持字段顺序；参数覆盖的正则不再每次请求重新编译。
+  - 其他：Resend 邮件；看板显示缓存用量（`quota_data` 加两列）；`qwen3-vl-embedding`；可灵单 Key；使用日志详情可复制模型名；DeepSeek 美元余额为 0 时查人民币；任务即时成功计入模型性能指标；审计日志排序加组合索引；Redis 清空后限流脚本自动恢复；通知限流窗口不再每小时重置；编辑抽屉切换记录不再显示旧值；退出登录时卸载控制台布局；Turnstile 先保存密钥再启用；日志轮转后 gin 的访问日志写到新文件；个人设置遵守全局侧边栏可见性。
+  - 前端工具链：包管理器固定为 Bun 1.4.4（`packageManager`），类型检查改为 `bun check -b`（去掉 `tsgo`），vitest 4 → 5，依赖批量升级；语言文件 key 统一排序。
+  - 冲突（共 12 个文件，在各自的提交里解决）：
+    - 7 个语言文件：按 §19.1 的 key 级合并。合并后 7 种语言各 7772 个 key，fork 新增与修改的 key 都在，上游改动一个没丢，上游 key 的顺序没变，没有两边都改过的 key。
+    - `.github/workflows/` 3 个：保持删除。
+    - `controller/relay.go`：上游的 Claude 流保活与 fork 的 count_tokens 判断都保留，保活在前。
+    - `dto/channel_constraints.go`：两边新增的过滤类型与字段都保留。
+    - `web/src/features/usage-logs/components/dialogs/details-dialog.tsx`：fork 的折扣明细在前，缓存明细采用上游新条件。
+    - `web/src/features/dashboard/components/models/log-stat-cards.tsx`：保留 fork 的品牌外框，列数采用上游的 7 列。
+    - `web/src/hooks/use-sidebar-data.ts` 与 `__tests__/sidebar-config.test.tsx`：上游的 `badges` 参数与 fork 的素材库入口并存，两边的测试都保留。
+  - 没有文本冲突、但需要适配的地方（已并入对应的原提交）：上游从 `relay/channel/api_request.go` 删掉了 `context` import，§5 渠道超时仍要用，补回（并入 `add channel relay timeout`）。
+  - 保留检查：对比 rebase 前的备份分支，fork 改过的 397 个文件中：
+    - 上游没改过的 337 个与备份逐字节相同；
+    - 两边都改过的 60 个中，50 个保留了 fork 新增的每一行；另外 7 个语言文件只差在末尾逗号（按 key 检查全部在），3 个 workflow 保持删除；
+    - fork 删除的 6 个 workflow 仍为删除。
+  - 验证：
+    - Go：`go build ./...`、`go vet ./...`、`go test ./...` 全部通过（49 个有测试的包）；relaykit（9 个包）、tokenkit 独立构建、vet 与测试通过。
+    - 前端：用 Bun 1.4.4 按合并后的 `bun.lock` 冻结安装通过（锁文件与 `package.json` 一致）；`bun check -b` 1489 个文件无类型错误；Vitest 5 共 244 个文件 2758 个用例全部通过（以前因本机 katex 旧版失败的 `markdown.test.tsx` 也通过）；fork 改过的 212 个前端文件 lint 无错误；格式检查只有 2 个文件不过，不过的都是上游自己写的行，上游的文件同样不过，未改动。
+    - 数据库：SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24 各 4 种起点：全新库、官方 rc.47（源码编译）建的库、官方 rc.46 镜像建的库、上一版 fork 建且有数据的库（`user_extend` 一行三种覆盖、`quota_data` 一行用量）。同步后的版本各启动两次都正常。
+      - 第一次启动给 `quota_data` 加 `cache_read_tokens` / `cache_creation_tokens`，给 `audit_logs` 建 `idx_audit_time_event`；
+      - 第二次启动没有任何建表、改表、建索引语句；
+      - fork 的 6 张表齐全，旧数据原样保留，新列为 0。
+    - 本地端到端（实例 C，用同步前的数据库升级）：URL 自动入库 10 项（豆包插件、模拟方舟）全部通过；Seedance 2.5 带 10 张参考图全部入库并以 `asset://` 发到上游；按用户覆盖素材库上限的读写与生效；带 `cc12h` 的计费表达式能保存（同步前会被拒）。浏览器检查没有做：之前的浏览器脚本被系统的临时目录清理删掉了，页面行为由前端组件测试覆盖。
+  - 部署注意：
+    - 前端改用 Bun 1.4.4 构建（Docker 构建按 `bun.lock` 安装）；本地开发需要 Bun 1.4.4，类型检查命令是 `bun run typecheck`（`bun check -b`）。
+    - 任务超时默认变成 72 小时。之前设置过 `TASK_TIMEOUT_MINUTES` 的站点不受影响；没设过的，真正卡住的任务要 72 小时后才退款。
+    - 表结构变化：`quota_data` 加两列、`audit_logs` 加一个索引，都由自动迁移完成。
+    - 计费表达式可以使用 `cc12h`；不写时 12 小时缓存写入按 `cc` 的 2 倍计费。
 
 - **2026-10-18，rebase 到 `6cf0d90b5`（上游 `v1.0.0-rc.45`）**（上游 79 个提交，含 rc.43–rc.45：
   - 使用日志导出 CSV；日志维护页拆成 4 个模块，新增「允许用户导出」与「日志最长时间范围」（默认 365 天，普通用户的日志搜索也受此限制）；
