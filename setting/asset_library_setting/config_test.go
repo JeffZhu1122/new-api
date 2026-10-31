@@ -35,6 +35,12 @@ func TestValidateOptionAcceptsValidValuesAndRejectsInvalidOnes(t *testing.T) {
 	}
 }
 
+// A fresh install neither runs the library nor refuses asset:// references.
+func TestDefaultsLeaveAssetReferencesUnchecked(t *testing.T) {
+	assert.False(t, GetSetting().Enabled)
+	assert.False(t, GetSetting().BlockAssetRefsWhenDisabled)
+}
+
 func TestUserGroupAllowedTreatsAnEmptyListAsEveryGroup(t *testing.T) {
 	assert.True(t, AssetLibrarySetting{}.UserGroupAllowed("default"))
 	assert.True(t, AssetLibrarySetting{AllowedUserGroups: []string{"vip"}}.UserGroupAllowed("vip"))
