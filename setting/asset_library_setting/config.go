@@ -41,7 +41,7 @@ type AssetLibrarySetting struct {
 
 var assetLibrarySetting = AssetLibrarySetting{
 	Enabled:                    false,
-	BlockAssetRefsWhenDisabled: true,
+	BlockAssetRefsWhenDisabled: false,
 	MaxGroupsPerUser:           20,
 	MaxAssetsPerUser:           200,
 	AllowedUserGroups:          []string{},

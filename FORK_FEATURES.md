@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `37d23dcc8` — 2026-10-30 `fix(profile): honor global sidebar visibility (#7429)`（上游 `v1.0.0-rc.47` 之后 26 个提交） |
 | 最近一次同步 | 2026-10-30，rebase 到 `37d23dcc8`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 64 个（含本文档相关提交） |
-| 变更规模 | 396 个文件，+40013 / −2241 行（不含本文档） |
+| fork 专有提交数 | 65 个（含本文档相关提交） |
+| 变更规模 | 396 个文件，+40019 / −2241 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 37d23dcc8..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -92,7 +92,7 @@
 | 35 | 服务器日志的请求汇总行与报错行中的渠道 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件：每个结算的请求多一行 INFO，报错行带渠道名与分组 |
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
-| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 7 步） | 关闭（关闭时默认拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`user_extend.asset_library`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库；管理员可在「编辑用户」里按用户覆盖每用户素材组 / 素材上限 |
+| 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 7 步） | 关闭（关闭时默认不拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`user_extend.asset_library`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库；管理员可在「编辑用户」里按用户覆盖每用户素材组 / 素材上限 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -2075,7 +2075,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   | 键 | 默认 | 含义 |
   |---|---|---|
   | `enabled` | false | 素材库总开关；关闭时菜单、页面与接口都不存在（404） |
-  | `block_asset_refs_when_disabled` | true | 关闭时也拒绝带 `asset://` 的请求（见第 3 步） |
+  | `block_asset_refs_when_disabled` | false | 关闭时也拒绝带 `asset://` 的请求（见第 3 步） |
   | `max_groups_per_user` / `max_assets_per_user` | 20 / 200 | 每个用户的上限，0 表示不限制；管理员可按用户覆盖（第 7 步） |
   | `allowed_user_groups` | `[]` | 能使用素材库的用户分组，空表示所有分组 |
   | `compliance_notice` | 空 | 新建素材组或发起刷脸认证前必须同意的合规提示 |
@@ -2123,7 +2123,8 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 每个引用都必须是本人的素材（管理员可以用任何已登记的素材），且状态为 Active；否则 403「素材 … 不在你的素材库中」，或 400「素材 … 暂不可用（状态：…）」。不存在和不属于本人返回同一句话。
   - 一个请求最多引用 100 个素材，且必须来自同一个火山账号，否则 400。
   - 通过后，请求只会选「素材库账号」绑定为该账号的渠道，重试也只在这些渠道之间；没有绑定的渠道时返回通用的「无可用渠道」，服务端日志写明原因。
-- **素材库关闭时**：「关闭时也拦截所有 asset://」打开（默认）则一律 403「本服务不支持 asset:// 素材引用」；关掉则完全不检查，和没有这个功能时一样。
+- **素材库关闭时**：「关闭时也拦截所有 asset://」打开则一律 403「本服务不支持 asset:// 素材引用」；关掉（默认）则完全不检查，和没有这个功能时一样。
+  - 2026-11-01 起默认关闭（原来默认打开）。设置页只保存改动过的项，所以从没改过这一项的实例升级后变为不拦截；数据库里已保存为打开的保持打开。
 - 错误信息走后端 i18n（en / zh-CN / zh-TW），键为 `asset_library.*`。
 - **渠道绑定**：`channel_extend.asset_library_account_id`（0 为不绑定）。渠道编辑抽屉的其他设置里多一个「素材库账号」下拉框，素材库启用或该渠道已绑定时才显示。选项来自 `GET /api/asset_library_options`（需要渠道读权限，只返回 ID、名称、项目和启用状态）。
 - **顺带修复**：没有内存缓存时（例如没配 Redis），`SelectChannelForRequest` 最后的过滤复核读到的是从数据库重新加载、不带 channel_extend 的渠道。原有的输入 token 和时段过滤对没有扩展配置的渠道放行，所以以前没暴露；现在复核前先补上扩展配置，和指定渠道、亲和渠道两条路径一致。
@@ -2207,7 +2208,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 
 - `pkg/volcark/client_test.go`：签名与火山文档的两个官方示例一致；`Call` 发出带签名的 Action 请求并解析 `Result`；火山错误带错误码和请求 ID 返回；推理地址格式的错误带出错误码和说明；无法解析的错误带响应开头，空响应写 HTTP 状态。
 - 接口地址：后端拒绝火山和 BytePlus 的推理地址（`TestAssetLibraryAccountAPIRejectsInvalidAccounts`），前端表单对两者都显示原因且不提交（`asset-library-settings.test.tsx`，去掉这条校验后测试失败）。对真实地址核对过：火山 `ark.cn-beijing.volces.com` 和 BytePlus `ark.ap-southeast.bytepluses.com` 收到 AK/SK 签名请求时都返回 HTTP 403 和 `{"error":{"code":"UnsuportAuthentication",…}}`；`ark.cn-beijing.volcengineapi.com` 和 `ark.ap-southeast-1.byteplusapi.com` 对无效密钥都返回带错误码和请求 ID 的 `ResponseMetadata.Error`。
-- `setting/asset_library_setting/config_test.go`：每个设置项的取值校验。
+- `setting/asset_library_setting/config_test.go`：每个设置项的取值校验；全新安装时素材库关闭，也不拦截 `asset://`。
 - `controller/asset_library_account_test.go`：
   - 创建 / 列表 / 修改都不返回 SK，AK 脱敏；修改时留空的 AK / SK 保留原值；false 与 0 能保存；
   - 非法账号（缺密钥、名称、地域、接口地址、负数配额、空分组）被拒且不入库；

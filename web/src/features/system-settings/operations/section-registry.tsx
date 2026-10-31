@@ -107,9 +107,9 @@ const OPERATIONS_SECTIONS = [
       <AssetLibrarySettingsSection
         defaultValues={{
           enabled: Boolean(settings['asset_library_setting.enabled']),
-          block_asset_refs_when_disabled:
-            settings['asset_library_setting.block_asset_refs_when_disabled'] ??
-            true,
+          block_asset_refs_when_disabled: Boolean(
+            settings['asset_library_setting.block_asset_refs_when_disabled']
+          ),
           auto_upload_references: Boolean(
             settings['asset_library_setting.auto_upload_references']
           ),

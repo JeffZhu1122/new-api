@@ -544,7 +544,7 @@ func TestAssetLibraryReferenceCheck(t *testing.T) {
 		assert.Equal(t, blocking.status, check.StatusCode, "blocking %s", blocking.value)
 		assert.Zero(t, check.AccountId, "blocking %s", blocking.value)
 	}
-	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"block_asset_refs_when_disabled": "true"}))
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"block_asset_refs_when_disabled": "false"}))
 }
 
 // Only channels bound to the asset's account pass the routing filter.
