@@ -53,7 +53,7 @@ const storedAccount = {
 
 const defaultValues: AssetLibrarySettingsValues = {
   enabled: false,
-  block_asset_refs_when_disabled: true,
+  block_asset_refs_when_disabled: false,
   auto_upload_references: false,
   max_groups_per_user: 20,
   max_assets_per_user: 200,

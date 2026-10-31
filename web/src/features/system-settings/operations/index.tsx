@@ -53,7 +53,7 @@ const defaultOperationsSettings: OperationsSettings = {
   'log_setting.max_range_days': 365,
   'system_task_setting.retention_days': 30,
   'asset_library_setting.enabled': false,
-  'asset_library_setting.block_asset_refs_when_disabled': true,
+  'asset_library_setting.block_asset_refs_when_disabled': false,
   'asset_library_setting.auto_upload_references': false,
   'asset_library_setting.max_groups_per_user': 20,
   'asset_library_setting.max_assets_per_user': 200,
