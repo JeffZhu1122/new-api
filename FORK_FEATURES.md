@@ -4,12 +4,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 上游基线（merge-base） | `37d23dcc8` — 2026-10-30 `fix(profile): honor global sidebar visibility (#7429)`（上游 `v1.0.0-rc.47` 之后 26 个提交） |
-| 最近一次同步 | 2026-10-30，rebase 到 `37d23dcc8`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 65 个（含本文档相关提交） |
-| 变更规模 | 396 个文件，+40019 / −2241 行（不含本文档） |
+| 上游基线（merge-base） | `bd6bb5301` — 2026-11-09 `feat: support HOST env to set the listen address (#8269)` |
+| 最近一次同步 | 2026-11-10，rebase 到 `bd6bb5301`，冲突与适配见 §19.4 |
+| fork 专有提交数 | 66 个（含本文档相关提交） |
+| 变更规模 | 397 个文件，+40022 / −2239 行（不含本文档） |
 
-同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log 37d23dcc8..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
+同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log bd6bb5301..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
 ---
 
@@ -563,7 +563,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 - **新建**：后端 `AddChannel` 不强制状态，沿用请求体 `status`。默认来自前端 `channel-form.ts` `CHANNEL_FORM_DEFAULT_VALUES.status = CHANNEL_STATUS.MANUAL_DISABLED`（上游为 ENABLED）；管理员可在保存前把开关切回启用。直接调 API 的客户端仍可传 `status = 1`。
 - **复制**：后端 `CopyChannel`（`controller/channel.go`）无条件 `clone.Status = ChannelStatusManuallyDisabled`（上游沿用源渠道状态），无参数可关闭。
 - **ability 跟随**：`model/ability.go` `AddAbilities` 写入 `Enabled: channel.Status == ChannelStatusEnabled`，因此禁用渠道的 ability 行全部 `enabled = false`，选路不会命中。后续启用走 `UpdateChannelStatus` / `BatchUpdateChannelStatus`。
-- **新建后直接启用（修复）**：开了内存缓存时（例如配置了 Redis），`AddChannel` 只写库、不刷新渠道缓存，而 `model.UpdateChannelStatus` 原来发现渠道不在缓存里就直接返回「未改变」：接口回 `success: true, data: false`，前端提示已启用，渠道却还是禁用，要进渠道点一次保存（`UpdateChannel` 会刷新缓存）才能启用。现在渠道不在缓存里时跳过缓存那一步，照常改数据库和 ability，接口随后刷新缓存。多节点部署中，其他节点的缓存在下一次同步前同样没有这个渠道，也由此修复。
+- **新建后直接启用（修复）**：开了内存缓存时（例如配置了 Redis），`AddChannel` 只写库、不刷新渠道缓存，而 `model.UpdateChannelStatus` 原来发现渠道不在缓存里就直接返回「未改变」：接口回 `success: true, data: false`，前端提示已启用，渠道却还是禁用，要进渠道点一次保存（`UpdateChannel` 会刷新缓存）才能启用。现在渠道不在缓存里时跳过缓存那一步，照常改数据库和 ability，接口随后刷新缓存。多节点部署中，其他节点的缓存在下一次同步前同样没有这个渠道，也由此修复。上游从 2026-11 起不让请求失败把手动禁用改成自动禁用（`ada15c050`）：缓存命中时这个判断在缓存分支里做，缓存里没有这个渠道时由数据库那一步的同一判断兜底。
 
 ### 前端
 
@@ -571,7 +571,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 ### 测试
 
-`controller/channel_test_internal_test.go` `TestCopyChannelCreatesManuallyDisabledClone`（clone 状态 2、ability 全部禁用、源渠道不变）、`model/channel_status_test.go` `TestUpdateChannelStatusEnablesAChannelTheCacheDoesNotHoldYet`（开内存缓存、渠道在缓存同步后新增：启用成功，状态和 ability 都改为启用；修复前失败）、`web/.../__tests__/channel-form-defaults.test.ts`（默认值、create payload、显式 status=1 可覆盖）。
+`controller/channel_test_internal_test.go` `TestCopyChannelCreatesManuallyDisabledClone`（clone 状态 2、ability 全部禁用、源渠道不变）、`model/channel_status_test.go` `TestUpdateChannelStatusEnablesAChannelTheCacheDoesNotHoldYet`（开内存缓存、渠道在缓存同步后新增：收到自动禁用时保持手动禁用；启用成功，状态和 ability 都改为启用；修复前失败）、`web/.../__tests__/channel-form-defaults.test.ts`（默认值、create payload、显式 status=1 可覆盖）。
 
 ---
 
@@ -846,7 +846,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 1. `git fetch https://github.com/QuantumNous/new-api.git main`
 2. `git rebase FETCH_HEAD`（fork 提交线性重放）
 3. 解决冲突后跑 Go 与前端测试，重点是下面列出的热点文件。
-   - 前端 7 个语言文件：上游从 `e2321a5a9` 起按 `localeCompare` 给 key 排序，fork 几乎每个前端提交都会在这里冲突。按 key 做三方合并：以当前（上游 + 已重放的提交）为准，套用被重放提交相对其父提交新增 / 修改 / 删除的 key；上游已有 key 的顺序不动，新 key 插在第一个排在它后面的 key 之前。2026-10-30 的同步用一个 git merge driver 自动完成了这一步。合并后检查每种语言：fork 的 key 都在、上游改动没丢、上游 key 的顺序没变。
+   - 前端 7 个语言文件：上游从 `e2321a5a9` 起按 `localeCompare` 给 key 排序，fork 几乎每个前端提交都会在这里冲突。按 key 做三方合并：以当前（上游 + 已重放的提交）为准，套用被重放提交相对其父提交新增 / 修改 / 删除的 key；上游已有 key 的顺序不动，新 key 插在第一个排在它后面的 key 之前。2026-10-30 与 2026-11-10 的同步都用一个 git merge driver 自动完成了这一步（按行处理，保留 `a` 这类转义；脚本没有放进仓库）。合并后检查每种语言：fork 的 key 都在、上游改动没丢、上游 key 的顺序没变。
 4. 如上游再次重构接缝，参照 `5f22a93b0` 的做法把 fork 逻辑挪到新接缝，而不是在旧位置硬保留。
 
 ### 19.2 高频冲突文件
@@ -930,7 +930,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/authz/authz_test.go` | §38 `TestSetUserPermissionsStoresOnlyOverrides` 的管理员有效权限期望表（两处）加入 `asset_library` |
 | `web/src/hooks/use-sidebar-data.ts` / `web/src/lib/admin-permissions.ts` | §38 侧边栏「素材库管理」（`asset_library_enabled` 时显示，在任务日志之后）；权限资源常量 `ASSET_LIBRARY` |
 | `web/src/routeTree.gen.ts` | §38 新路由 `/_authenticated/asset-library/` 和匿名的 `/asset-library-verification`（构建时生成，冲突时重新生成即可） |
-| `model/channel.go` | §12 `UpdateChannelStatus`：开内存缓存时渠道不在缓存里不再直接返回 false，照常改数据库（新建的禁用渠道可以直接启用） |
+| `model/channel.go` | §12 `UpdateChannelStatus`：开内存缓存时渠道不在缓存里不再直接返回 false，照常改数据库（新建的禁用渠道可以直接启用）；上游的「请求失败不覆盖手动禁用」判断放在缓存命中的分支里，数据库侧的同一判断保留 |
+| `controller/channel_create_test.go` | 上游测试只迁移上游的表；fork 的 `BatchDeleteChannels` 会删 `channel_extend`，初始化里要有 `ChannelExtend`。上游新增的直接调 `AddChannel` / `BatchDeleteChannels` 的测试同理 |
 | `router/plugin-router.go` | §38 插件路由链在 `PrepareTaskPluginRoute` 之前插入 `middleware.AssetLibraryAutoUpload()`（必须在插件解析请求体之前） |
 | `router/access_token_scope_test.go` | §38 匿名的 `POST /api/asset-library/verification/callback` 加入 `accessTokenExemptRoutes` |
 | `web/src/i18n/static-keys.ts` | §38 素材库的任务名和网关写入的失败原因（运行时才传给 `t()`） |
@@ -950,6 +951,31 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 - 访问令牌按接口授权（上游 2026-09 起）：新增管理接口时，经 `channelPermissionRoutes` 等 `handlePermissionRoute` 注册的会自动声明；其余（如 `adminRoute.GET(...)`）要在 `accessTokenRouteRules` 里补规则，`router/access_token_scope_test.go` 会检查。
 
 ### 19.4 同步记录
+
+- **2026-11-10，rebase 到 `bd6bb5301`**（上游 33 个提交，2026-10-30 至 11-09：
+  - 任务插件（#8117 及后续）：插件按厂商官方路径提供服务，每条路由另有 `/{插件 key}` 副本；原生路径的请求体原样发给厂商，回复格式与状态码跟厂商一致；Ark、Kling、Vidu、MiniMax 拒绝 `callback_url`；即梦改用官方 Bearer API，删除 `/jimeng/` 与 MiniMax 的 `GET /v1/files/{id}` 占位；Seedream / Wan 原生流式，推流后不再退款；Kling 4.0；Vertex AI 上的 Gemini Omni 视频（按 token 计费，含 1.2 flash）；上传安装的插件恢复顶层 `/v1` 路径；插件冲突时 `force` 不再跳过检查；9 个内置插件升小版本（doubao 1.4.0、kling 1.2.0 等）。
+  - 性能（#8148）：请求 JSON 改用 moego/ojson 原地修改，保留客户端的字段顺序（`go.mod`、`relaykit/go.mod` 变化）。
+  - 计费：xAI 流式保留 cached_tokens；Gemini embedding 按 usageMetadata 计费；Kling 4.0 现金计费优先用 list_price。
+  - 鉴权：2FA 锁定期满后重新计数；Redis 鉴权缓存完整性校验与修复；Redis Cluster 跨槽修复（fence / version key 带上缓存 key 的 hash tag，缓存 key 名不变）；OAuth 新用户记录邀请人。
+  - 渠道：创建接口返回新渠道 ID 与对应的输入序号；Vertex 按渠道切 v1beta1，service-account token 缓存到过期前；请求失败不再把手动禁用改成自动禁用；多 key 全部失败后启用一个 key 即恢复渠道；可选 HTTP/2 健康探测（`RELAY_HTTP2_PING_IDLE_TIMEOUT` / `RELAY_HTTP2_PING_TIMEOUT`）；DeepSeek Responses 补全工具历史的 reasoning；高级自定义渠道的 DeepSeek 搜索 / 抓取路径；gpt-image-2.6 透传 complexity / markup；Gemini Argon 字段；删除 AWS 未用到的 api_key 分支。
+  - 其他：`SQLITE_PATH` 只写路径时保留 WAL、busy timeout 等默认参数；`HOST` 环境变量设置监听地址；模型定价保存前列出新旧价格并确认；会话缓存可按规则清除；登录页条款文案翻译）。
+  - 冲突（共 9 个文件，在各自的提交里解决）：
+    - 7 个语言文件：按 §19.1 的 key 级合并。合并后 7 种语言各 7808 个 key（上游 7403 个），fork 新增与修改的 key 都在，上游改动一个没丢，上游 key 的顺序没变；上游这次没有删除 key。
+    - `model/channel.go` 与 `model/channel_status_test.go`（在 `fix(channels): enable a channel the cache does not hold yet` 中解决）：保留 fork 的「缓存里没有的渠道照常改数据库」，上游「请求失败不覆盖手动禁用」的缓存侧判断放进缓存命中的分支，数据库侧判断原样保留；两边的测试都保留，fork 的测试多一步：缓存里没有的手动禁用渠道收到自动禁用时保持手动禁用。
+  - 没有文本冲突、但需要适配的地方（已并入对应的原提交）：上游新增的 `controller/channel_create_test.go` 只迁移上游的表，fork 的 `BatchDeleteChannels` 会删 `channel_extend` 而失败，初始化补上 `ChannelExtend`（并入 `add channel relay timeout`）。
+  - 保留检查：对比 rebase 前的备份分支 `backup/pre-sync-20261110`，fork 改过的 397 个文件中，上游没改过的 366 个与备份逐字节相同，两边都改过的 31 个保留了 fork 新增的每一行；只有上游改过的 169 个文件除上面那一行适配外与上游逐字节相同。
+  - 验证：
+    - Go：`go build ./...`、`go vet ./...`、`go test ./...` 全部通过（49 个有测试的包）；relaykit、tokenkit 用 `GOWORK=off` 独立构建、vet 与测试通过。
+    - 前端：上游这次没改 `package.json` / `bun.lock`，用已安装的依赖检查（本机没有 Bun）：`tsgo -b` 无类型错误；Vitest 5（Node 22）246 个文件 2794 个用例全部通过；fork 改过的 212 个前端文件 oxlint 无 error（5 个 warning）。
+    - 数据库：SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24：
+      - `TestAddChannelReturnsCreatedIDs`、多 key 渠道测试，以及合并后 `UpdateChannelStatus` 的 8 个场景（缓存开 / 关 × 缓存里有 / 没有 × 自动禁用 / 启用）在三种库上都通过；
+      - 全新库连续启动两次；同步前 fork 建的库（预置 `channel_extend`、`user_extend` 各一行）用新版本启动两次。升级与第二次启动都没有任何 DDL（MySQL 查 general log，PostgreSQL 开 `log_statement=ddl`，SQLite 比对 schema；同一方法在空库首次启动时分别抓到 44 条、210 条），表结构与同步前一致，全新库与升级库的定义相同，预置数据原样保留，各表行数不变。
+    - 本地端到端（临时 Go 测试，未提交）：豆包插件新的原生路由 `POST /api/v3/contents/generations/tasks` 上，开启自动入库后 URL 参考素材传入模拟方舟，请求以 `asset://` 发到上游，其余字段按客户端原样转发；优先级更高但没绑定素材库账号的渠道被跳过。
+  - 部署注意：
+    - 原生插件路径的请求体不再补默认值；Ark、Kling、Vidu、MiniMax 的 `callback_url` 会被拒绝；`/jimeng/` 路由已删除。
+    - 新的可选环境变量：`HOST`（监听地址，默认所有网卡）、`RELAY_HTTP2_PING_IDLE_TIMEOUT` / `RELAY_HTTP2_PING_TIMEOUT`（默认关闭）。
+    - Redis Cluster 部署：鉴权缓存的 fence / version key 改名，按上游 #8218 的说明滚动升级。
+    - 没有表结构变化。
 
 - **2026-10-30，rebase 到 `37d23dcc8`（上游 `v1.0.0-rc.47` 之后 26 个提交）**（上游 75 个提交，含 rc.46、rc.47：
   - 安全：Go 升到 1.26.10（CVE-2026-111943）；报错遮盖的 URL 处理避免被构造的报错耗尽 CPU；zstd 请求解压限制解码器内存，且不在鉴权前读取请求体；数据看板流向图提示框不再把 token 名当 HTML 渲染；访问日志隐藏 URL 里的凭据；任务轮询跟随跳转时只把凭据发给允许的主机。
