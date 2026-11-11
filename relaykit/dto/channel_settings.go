@@ -27,14 +27,25 @@ type ChannelSettings struct {
 	// and stays valid on a New API channel as well.
 	TaskExtendPluginKeys []string `json:"task_extend_plugin_keys,omitempty"`
 	// HTTPProtocol controls outbound HTTP version negotiation for this channel.
-	// Accepted values: "", "auto" (default), "http1".
+	// Accepted values: "", "auto" (default), "http1", "http3". "http3" forces
+	// HTTP/3 over QUIC and cannot be combined with a proxy or a fingerprint
+	// profile.
 	HTTPProtocol string `json:"http_protocol,omitempty"`
 	// HTTP2ConnectionShards spreads HTTP/2 traffic across N independent transports
-	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1".
+	// (1-8). Zero/unset means 1. Ignored when HTTPProtocol is "http1" or "http3".
 	HTTP2ConnectionShards int `json:"http2_connection_shards,omitempty"`
 	// TLSInsecureSkipVerify accepts upstream certificates that fail
 	// verification, such as self-signed ones, for this channel only.
 	TLSInsecureSkipVerify bool `json:"tls_insecure_skip_verify,omitempty"`
+	// FingerprintProfile names the outbound fingerprint profile this channel
+	// uses. Empty keeps the stock Go transport.
+	FingerprintProfile string `json:"fingerprint_profile,omitempty"`
+	// TestMessage replaces the "hi" prompt of this channel's chat test request.
+	// Empty keeps the built-in prompt.
+	TestMessage string `json:"test_message,omitempty"`
+	// TestMaxTokens replaces the output token limit of this channel's chat test
+	// request. Zero keeps the built-in limit of each request format.
+	TestMaxTokens uint `json:"test_max_tokens,omitempty"`
 }
 
 // BindsTaskPlugin reports whether the channel is bound to the task plugin,
@@ -65,8 +76,32 @@ func (s ChannelSettings) TaskPluginBindings() []string {
 const (
 	HTTPProtocolAuto         = "auto"
 	HTTPProtocolHTTP1        = "http1"
+	HTTPProtocolHTTP3        = "http3"
 	MaxHTTP2ConnectionShards = 8
+	// MaxFingerprintProfileNameLength bounds ChannelSettings.FingerprintProfile.
+	MaxFingerprintProfileNameLength = 64
+	// MaxChannelTestMessageLength bounds ChannelSettings.TestMessage in bytes.
+	MaxChannelTestMessageLength = 4096
+	// MaxChannelTestMaxTokens bounds ChannelSettings.TestMaxTokens.
+	MaxChannelTestMaxTokens = 65536
 )
+
+// ValidateTestRequest validates the save-time channel test request settings.
+func (s *ChannelSettings) ValidateTestRequest() error {
+	if s == nil {
+		return nil
+	}
+	if len(s.TestMessage) > MaxChannelTestMessageLength {
+		return fmt.Errorf("test_message must not exceed %d bytes", MaxChannelTestMessageLength)
+	}
+	if s.TestMessage != "" && strings.TrimSpace(s.TestMessage) == "" {
+		return fmt.Errorf("test_message must not be blank")
+	}
+	if s.TestMaxTokens > MaxChannelTestMaxTokens {
+		return fmt.Errorf("test_max_tokens must not exceed %d", MaxChannelTestMaxTokens)
+	}
+	return nil
+}
 
 // ValidateHTTPTransport validates save-time HTTP transport channel settings.
 func (s *ChannelSettings) ValidateHTTPTransport() error {
@@ -75,15 +110,35 @@ func (s *ChannelSettings) ValidateHTTPTransport() error {
 	}
 	protocol := strings.ToLower(strings.TrimSpace(s.HTTPProtocol))
 	switch protocol {
-	case "", HTTPProtocolAuto, HTTPProtocolHTTP1:
+	case "", HTTPProtocolAuto, HTTPProtocolHTTP1, HTTPProtocolHTTP3:
 	default:
 		return fmt.Errorf("invalid http_protocol: %s", s.HTTPProtocol)
 	}
 	if s.HTTP2ConnectionShards < 0 || s.HTTP2ConnectionShards > MaxHTTP2ConnectionShards {
 		return fmt.Errorf("invalid http2_connection_shards: %d", s.HTTP2ConnectionShards)
 	}
-	if protocol == HTTPProtocolHTTP1 && s.HTTP2ConnectionShards > 1 {
-		return fmt.Errorf("http2_connection_shards must be 1 when http_protocol is http1")
+	if (protocol == HTTPProtocolHTTP1 || protocol == HTTPProtocolHTTP3) && s.HTTP2ConnectionShards > 1 {
+		return fmt.Errorf("http2_connection_shards must be 1 when http_protocol is %s", protocol)
+	}
+	if protocol == HTTPProtocolHTTP3 {
+		// QUIC runs over UDP: it cannot go through an HTTP or SOCKS proxy, and
+		// the fingerprint profiles only describe TLS over TCP.
+		if strings.TrimSpace(s.Proxy) != "" {
+			return fmt.Errorf("proxy cannot be used when http_protocol is http3")
+		}
+		if s.FingerprintProfile != "" {
+			return fmt.Errorf("fingerprint_profile cannot be used when http_protocol is http3")
+		}
+	}
+	if len(s.FingerprintProfile) > MaxFingerprintProfileNameLength {
+		return fmt.Errorf("invalid fingerprint_profile: %s", s.FingerprintProfile)
+	}
+	for _, r := range s.FingerprintProfile {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9', r == '.', r == '_', r == '-':
+		default:
+			return fmt.Errorf("invalid fingerprint_profile: %s", s.FingerprintProfile)
+		}
 	}
 	return nil
 }

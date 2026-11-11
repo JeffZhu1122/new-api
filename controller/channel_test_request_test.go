@@ -117,6 +117,60 @@ func TestChannelTestOpenAIChatCompatibility(t *testing.T) {
 	}
 }
 
+func TestChannelTestRequestUsesChannelTestSettings(t *testing.T) {
+	const defaultInput = `[{"role":"user","content":"hi"}]`
+	configured := dto.ChannelSettings{TestMessage: `Say "ok" <now>`, TestMaxTokens: 256}
+	const configuredInput = `[{"role":"user","content":"Say \"ok\" <now>"}]`
+
+	for _, tt := range []struct {
+		name     string
+		model    string
+		endpoint string
+		settings dto.ChannelSettings
+		want     string
+	}{
+		{name: "default chat", model: "gpt-4.1", want: `{"model":"gpt-4.1","stream":false,"messages":[{"role":"user","content":"hi"}],"max_tokens":16}`},
+		{name: "configured chat", model: "gpt-4.1", settings: configured, want: `{"model":"gpt-4.1","stream":false,"messages":[{"role":"user","content":"Say \"ok\" <now>"}],"max_tokens":256}`},
+		{name: "only the message", model: "gpt-4.1", settings: dto.ChannelSettings{TestMessage: "ping"}, want: `{"model":"gpt-4.1","stream":false,"messages":[{"role":"user","content":"ping"}],"max_tokens":16}`},
+		{name: "only the limit", model: "gpt-4.1", settings: dto.ChannelSettings{TestMaxTokens: 1}, want: `{"model":"gpt-4.1","stream":false,"messages":[{"role":"user","content":"hi"}],"max_tokens":1}`},
+		{name: "configured chat endpoint", model: "gpt-4.1", endpoint: string(constant.EndpointTypeOpenAI), settings: configured, want: `{"model":"gpt-4.1","stream":false,"messages":[{"role":"user","content":"Say \"ok\" <now>"}],"max_tokens":256}`},
+		{name: "configured o series", model: "o3-mini", settings: configured, want: `{"model":"o3-mini","stream":false,"messages":[{"role":"user","content":"Say \"ok\" <now>"}],"max_completion_tokens":256}`},
+		{name: "default thinking", model: "qwen-thinking", want: `{"model":"qwen-thinking","stream":false,"messages":[{"role":"user","content":"hi"}],"max_tokens":50}`},
+		{name: "configured thinking", model: "qwen-thinking", settings: configured, want: `{"model":"qwen-thinking","stream":false,"messages":[{"role":"user","content":"Say \"ok\" <now>"}],"max_tokens":256}`},
+		{name: "default claude thinking has no limit", model: "claude-thinking", want: `{"model":"claude-thinking","stream":false,"messages":[{"role":"user","content":"hi"}]}`},
+		{name: "configured claude thinking", model: "claude-thinking", settings: configured, want: `{"model":"claude-thinking","stream":false,"messages":[{"role":"user","content":"Say \"ok\" <now>"}],"max_tokens":256}`},
+		{name: "default gemini chat", model: "gemini-pro", want: `{"model":"gemini-pro","stream":false,"messages":[{"role":"user","content":"hi"}],"max_tokens":3000}`},
+		{name: "configured gemini chat", model: "gemini-pro", settings: configured, want: `{"model":"gemini-pro","stream":false,"messages":[{"role":"user","content":"Say \"ok\" <now>"}],"max_tokens":256}`},
+		{name: "default anthropic endpoint", model: "claude-x", endpoint: string(constant.EndpointTypeAnthropic), want: `{"model":"claude-x","stream":false,"max_tokens":16,"messages":[{"role":"user","content":"hi"}]}`},
+		{name: "configured anthropic endpoint", model: "claude-x", endpoint: string(constant.EndpointTypeAnthropic), settings: configured, want: `{"model":"claude-x","stream":false,"max_tokens":256,"messages":[{"role":"user","content":"Say \"ok\" <now>"}]}`},
+		{name: "default gemini endpoint", model: "gemini-pro", endpoint: string(constant.EndpointTypeGemini), want: `{"contents":[{"role":"user","parts":[{"text":"hi"}]}],"generationConfig":{"maxOutputTokens":3000}}`},
+		{name: "configured gemini endpoint", model: "gemini-pro", endpoint: string(constant.EndpointTypeGemini), settings: configured, want: `{"contents":[{"role":"user","parts":[{"text":"Say \"ok\" <now>"}]}],"generationConfig":{"maxOutputTokens":256}}`},
+		{name: "default responses endpoint", model: "gpt-4.1", endpoint: string(constant.EndpointTypeOpenAIResponse), want: `{"model":"gpt-4.1","stream":false,"input":` + defaultInput + `}`},
+		{name: "configured responses endpoint", model: "gpt-4.1", endpoint: string(constant.EndpointTypeOpenAIResponse), settings: configured, want: `{"model":"gpt-4.1","stream":false,"max_output_tokens":256,"input":` + configuredInput + `}`},
+		{name: "default codex model", model: "gpt-codex", want: `{"model":"gpt-codex","stream":false,"input":` + defaultInput + `}`},
+		{name: "configured codex model", model: "gpt-codex", settings: configured, want: `{"model":"gpt-codex","stream":false,"max_output_tokens":256,"input":` + configuredInput + `}`},
+		{name: "configured compaction has no limit", model: "gpt-4.1", endpoint: string(constant.EndpointTypeOpenAIResponseCompact), settings: configured, want: `{"model":"gpt-4.1","input":` + configuredInput + `}`},
+		{name: "embedding ignores the settings", model: "text-embedding-3-small", settings: configured, want: `{"model":"text-embedding-3-small","input":["hello world"]}`},
+		{name: "rerank ignores the settings", model: "bge-rerank", settings: configured, want: `{"model":"bge-rerank","query":"What is Deep Learning?","documents":["Deep Learning is a subset of machine learning.","Machine learning is a field of artificial intelligence."],"top_n":2}`},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			channel := &model.Channel{}
+			if tt.settings.TestMessage != "" || tt.settings.TestMaxTokens != 0 {
+				channel.SetSetting(tt.settings)
+			}
+			encoded, err := common.Marshal(buildTestRequest(tt.model, tt.endpoint, channel, false))
+			require.NoError(t, err)
+			assert.JSONEq(t, tt.want, string(encoded))
+		})
+	}
+
+	// A channel without the settings sends the exact built-in Responses input.
+	request, ok := buildTestRequest("gpt-4.1", string(constant.EndpointTypeOpenAIResponse), nil, false).(*dto.OpenAIResponsesRequest)
+	require.True(t, ok)
+	assert.Equal(t, defaultInput, string(request.Input))
+	assert.Nil(t, request.MaxOutputTokens)
+}
+
 func TestChannelTestForcesTheChosenMaxTokensParam(t *testing.T) {
 	chat := string(constant.EndpointTypeOpenAI)
 	for _, tt := range []struct {

@@ -210,6 +210,12 @@ func GetChannelDefaultBaseURLs(c *gin.Context) {
 	common.ApiSuccess(c, baseURLs)
 }
 
+// GetChannelFingerprintProfiles lists the fingerprint profile names a channel
+// can select, for administrators who edit channels but cannot read options.
+func GetChannelFingerprintProfiles(c *gin.Context) {
+	common.ApiSuccess(c, service.GetFingerprintProfileOptions())
+}
+
 func GetAllChannels(c *gin.Context) {
 	pageInfo := common.GetPageQuery(c)
 	channelData := make([]*model.Channel, 0)

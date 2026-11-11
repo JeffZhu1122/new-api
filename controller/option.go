@@ -219,6 +219,12 @@ func UpdateOption(c *gin.Context) {
 			return
 		}
 	}
+	if strings.HasPrefix(option.Key, "fingerprint_setting.") {
+		if err := service.ValidateFingerprintOption(option.Key, option.Value.(string)); err != nil {
+			common.ApiErrorMsg(c, err.Error())
+			return
+		}
+	}
 	if strings.HasPrefix(option.Key, "log_file_cleanup_setting.") {
 		if err := log_file_cleanup_setting.ValidateOption(option.Key, option.Value.(string)); err != nil {
 			common.ApiErrorMsg(c, err.Error())

@@ -181,6 +181,7 @@ import {
   channelsQueryKeys,
   getAdvancedCustomStats,
   transformChannelToFormDefaults,
+  normalizeHttpProtocol,
   type ChannelFormValues,
   deduplicateKeys,
   getKeyPromptForType,
@@ -218,8 +219,10 @@ import {
   nextTaskPluginBaseUrl,
 } from '../../lib/task-plugin-base-url'
 import type { Channel, ClaudeAuthMode } from '../../types'
+import { ChannelFingerprintProfileSetting } from '../channel-fingerprint-profile-setting'
 import { ChannelPluginExtensions } from '../channel-plugin-extensions'
 import { ChannelQuickOptions } from '../channel-quick-options'
+import { ChannelTestRequestSettings } from '../channel-test-request-settings'
 import { ChannelTypeLogo } from '../channel-type-badge'
 import { useChannels } from '../channels-provider'
 import { AdvancedCustomEditorDialog } from '../dialogs/advanced-custom-editor-dialog'
@@ -335,6 +338,9 @@ const SENSITIVE_FORM_FIELDS = [
   'http_protocol',
   'http2_connection_shards',
   'tls_insecure_skip_verify',
+  'fingerprint_profile',
+  'test_message',
+  'test_max_tokens',
   'relay_timeout',
   'streaming_timeout',
   'min_input_tokens',
@@ -2175,13 +2181,23 @@ export function ChannelMutateDrawer({
                 value: 'http1',
                 label: t('HTTP/1.1'),
               },
+              {
+                value: 'http3',
+                label: t('HTTP/3 (QUIC)'),
+              },
             ]}
             value={field.value || 'auto'}
             onValueChange={(value) => {
-              const nextProtocol = value === 'http1' ? 'http1' : 'auto'
+              const nextProtocol = normalizeHttpProtocol(value)
               field.onChange(nextProtocol)
-              if (nextProtocol === 'http1') {
+              if (nextProtocol !== 'auto') {
                 form.setValue('http2_connection_shards', 1, {
+                  shouldDirty: true,
+                  shouldValidate: true,
+                })
+              }
+              if (nextProtocol === 'http3') {
+                form.setValue('fingerprint_profile', '', {
                   shouldDirty: true,
                   shouldValidate: true,
                 })
@@ -2189,7 +2205,7 @@ export function ChannelMutateDrawer({
             }}
           >
             <FormControl>
-              <SelectTrigger>
+              <SelectTrigger aria-label={t('HTTP Protocol')}>
                 <SelectValue />
               </SelectTrigger>
             </FormControl>
@@ -2197,12 +2213,16 @@ export function ChannelMutateDrawer({
               <SelectGroup>
                 <SelectItem value='auto'>{t('Auto')}</SelectItem>
                 <SelectItem value='http1'>{t('HTTP/1.1')}</SelectItem>
+                <SelectItem value='http3'>{t('HTTP/3 (QUIC)')}</SelectItem>
               </SelectGroup>
             </SelectContent>
           </Select>
           <FormDescription>
             {t(
               'Auto negotiates HTTP/2 when available. HTTP/1.1 forces multiple keep-alive connections under concurrency.'
+            )}{' '}
+            {t(
+              'HTTP/3 forces QUIC with no fallback: use it only for an upstream that serves HTTP/3. It cannot be combined with a proxy or a fingerprint profile.'
             )}
           </FormDescription>
           <FormMessage />
@@ -2217,6 +2237,15 @@ export function ChannelMutateDrawer({
       name='http2_connection_shards'
       render={({ field }) => {
         const http1Selected = currentHttpProtocol === 'http1'
+        const http3Selected = currentHttpProtocol === 'http3'
+        const shardsLocked = http1Selected || http3Selected
+        const shardsLockedDescription = http3Selected
+          ? t(
+              'HTTP/2 connection shards are unavailable when HTTP/3 is selected.'
+            )
+          : t(
+              'HTTP/2 connection shards are unavailable when HTTP/1.1 is selected.'
+            )
         const shardItems = Array.from({ length: 8 }, (_, index) => {
           const value = String(index + 1)
           return { value, label: value }
@@ -2227,13 +2256,13 @@ export function ChannelMutateDrawer({
             <Select
               items={shardItems}
               value={String(field.value || 1)}
-              disabled={sensitiveLocked || http1Selected}
+              disabled={sensitiveLocked || shardsLocked}
               onValueChange={(value) => {
                 field.onChange(Number(value))
               }}
             >
               <FormControl>
-                <SelectTrigger disabled={sensitiveLocked || http1Selected}>
+                <SelectTrigger disabled={sensitiveLocked || shardsLocked}>
                   <SelectValue />
                 </SelectTrigger>
               </FormControl>
@@ -2248,10 +2277,8 @@ export function ChannelMutateDrawer({
               </SelectContent>
             </Select>
             <FormDescription>
-              {http1Selected
-                ? t(
-                    'HTTP/2 connection shards are unavailable when HTTP/1.1 is selected.'
-                  )
+              {shardsLocked
+                ? shardsLockedDescription
                 : t(
                     'Spread HTTP/2 traffic across multiple reusable connections to the same upstream origin (1-8).'
                   )}
@@ -5550,7 +5577,9 @@ export function ChannelMutateDrawer({
                 {proxyFields}
                 {httpProtocolFields}
                 {httpShardsFields}
+                <ChannelFingerprintProfileSetting disabled={sensitiveLocked} />
                 {tlsInsecureSkipVerifyFields}
+                <ChannelTestRequestSettings disabled={sensitiveLocked} />
                 {channelLimitFields}
               </fieldset>
             </div>

@@ -56,6 +56,7 @@ const originalAuth = useAuthStore.getState().auth
 let client: QueryClient
 let editingChannel: Channel
 let pluginOptions: TaskPluginOption[]
+let fingerprintProfilesEnabled: boolean
 const plugins: TaskPluginOption[] = [
   {
     key: 'video-a',
@@ -146,6 +147,7 @@ beforeEach(() => {
     group: 'default',
     base_url: 'https://saved.example',
   })
+  fingerprintProfilesEnabled = true
   client = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
   })
@@ -186,6 +188,18 @@ beforeEach(() => {
     }
     if (url === '/api/prefill_group') {
       return { data: { success: true, data: [] } }
+    }
+    if (url === '/api/channel/fingerprint_profiles') {
+      return {
+        data: {
+          success: true,
+          data: {
+            enabled: fingerprintProfilesEnabled,
+            profiles: ['chrome', 'firefox'],
+            tls_presets: [],
+          },
+        },
+      }
     }
     throw new Error(`Unexpected GET ${url}`)
   })
@@ -1755,6 +1769,182 @@ test('turning on the upstream TLS verification skip saves it in the channel sett
   expect(JSON.parse(payload.setting)).toMatchObject({
     tls_insecure_skip_verify: true,
   })
+})
+
+async function openOtherSettings(user: ReturnType<typeof userEvent.setup>) {
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const otherTab = screen.getByRole('tab', { name: /Other Settings/ })
+  await user.click(otherTab)
+  return otherTab
+}
+
+async function savedSetting(
+  user: ReturnType<typeof userEvent.setup>,
+  put: ReturnType<typeof vi.spyOn>
+) {
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  const payload = put.mock.calls[0]?.[1] as { setting: string }
+  return JSON.parse(payload.setting)
+}
+
+test('choosing a fingerprint profile marks Other Settings and saves it in the channel setting', async () => {
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  const otherTab = await openOtherSettings(user)
+  expect(otherTab).not.toHaveAccessibleName(/Configured/)
+
+  const profile = screen.getByRole('combobox', { name: 'Fingerprint Profile' })
+  expect(profile).toHaveTextContent('Off')
+  await user.click(profile)
+  await user.click(await screen.findByRole('option', { name: 'firefox' }))
+
+  expect(otherTab).toHaveAccessibleName(/Configured/)
+  expect(await savedSetting(user, put)).toMatchObject({
+    fingerprint_profile: 'firefox',
+  })
+})
+
+test('a stored fingerprint profile that was removed stays selected until it is turned off', async () => {
+  editingChannel = {
+    ...editingChannel,
+    setting: '{"fingerprint_profile":"retired"}',
+  }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  await openOtherSettings(user)
+
+  const profile = screen.getByRole('combobox', { name: 'Fingerprint Profile' })
+  expect(profile).toHaveTextContent('retired')
+  await user.click(profile)
+  await user.click(await screen.findByRole('option', { name: 'Off' }))
+
+  expect(await savedSetting(user, put)).not.toHaveProperty(
+    'fingerprint_profile'
+  )
+})
+
+test('a selected fingerprint profile warns while profiles are turned off in the system settings', async () => {
+  fingerprintProfilesEnabled = false
+  editingChannel = {
+    ...editingChannel,
+    setting: '{"fingerprint_profile":"chrome"}',
+  }
+  const user = userEvent.setup()
+  await openOtherSettings(user)
+
+  expect(
+    await screen.findByText(
+      'Fingerprint profiles are turned off in the system settings, so this channel uses the default Go transport for now.'
+    )
+  ).toBeVisible()
+})
+
+test('choosing HTTP/3 turns the fingerprint profile and connection shards off and saves the protocol', async () => {
+  editingChannel = {
+    ...editingChannel,
+    setting: '{"fingerprint_profile":"chrome","http2_connection_shards":4}',
+  }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  await openOtherSettings(user)
+  const profile = screen.getByRole('combobox', { name: 'Fingerprint Profile' })
+  expect(profile).toHaveTextContent('chrome')
+
+  await user.click(screen.getByRole('combobox', { name: 'HTTP Protocol' }))
+  await user.click(await screen.findByRole('option', { name: 'HTTP/3 (QUIC)' }))
+
+  expect(profile).toHaveTextContent('Off')
+  expect(profile).toBeDisabled()
+  expect(
+    screen.getByText(
+      'Fingerprint profiles are unavailable when HTTP/3 is selected.'
+    )
+  ).toBeVisible()
+  expect(
+    screen.getByText(
+      'HTTP/2 connection shards are unavailable when HTTP/3 is selected.'
+    )
+  ).toBeVisible()
+  const setting = await savedSetting(user, put)
+  expect(setting.http_protocol).toBe('http3')
+  expect(setting).not.toHaveProperty('fingerprint_profile')
+  expect(setting).not.toHaveProperty('http2_connection_shards')
+})
+
+test('HTTP/3 with a proxy address is refused on the protocol field before anything is saved', async () => {
+  editingChannel = {
+    ...editingChannel,
+    setting: '{"proxy":"http://127.0.0.1:8080"}',
+  }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  await openOtherSettings(user)
+
+  await user.click(screen.getByRole('combobox', { name: 'HTTP Protocol' }))
+  await user.click(await screen.findByRole('option', { name: 'HTTP/3 (QUIC)' }))
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+
+  expect(
+    await screen.findByText('HTTP/3 cannot be used together with a proxy')
+  ).toBeVisible()
+  expect(put).not.toHaveBeenCalled()
+})
+
+test('a stored channel test request is shown and an edited one is saved in the channel setting', async () => {
+  editingChannel = {
+    ...editingChannel,
+    setting: '{"test_message":"ping","test_max_tokens":32}',
+  }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  const otherTab = await openOtherSettings(user)
+  expect(otherTab).toHaveAccessibleName(/Configured/)
+
+  const message = screen.getByLabelText('Test Message')
+  expect(message).toHaveValue('ping')
+  const maxTokens = screen.getByLabelText('Test Max Tokens')
+  expect(maxTokens).toHaveValue(32)
+  await user.clear(message)
+  await user.type(message, 'Reply with pong.')
+  await user.clear(maxTokens)
+  await user.type(maxTokens, '128')
+
+  expect(await savedSetting(user, put)).toMatchObject({
+    test_message: 'Reply with pong.',
+    test_max_tokens: 128,
+  })
+})
+
+test('clearing the channel test request saves the setting without it', async () => {
+  editingChannel = {
+    ...editingChannel,
+    setting: '{"test_message":"ping","test_max_tokens":32}',
+  }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  const otherTab = await openOtherSettings(user)
+
+  await user.clear(screen.getByLabelText('Test Message'))
+  await user.clear(screen.getByLabelText('Test Max Tokens'))
+
+  expect(otherTab).not.toHaveAccessibleName(/Configured/)
+  const setting = await savedSetting(user, put)
+  expect(setting).not.toHaveProperty('test_message')
+  expect(setting).not.toHaveProperty('test_max_tokens')
 })
 
 test('an invalid edit switches categories and replaces configured styling with the field error', async () => {

@@ -89,6 +89,10 @@ function isOptionalProxyURL(value: string | undefined): boolean {
 
 export const HTTP_PROTOCOL_AUTO = 'auto'
 export const HTTP_PROTOCOL_HTTP1 = 'http1'
+export const HTTP_PROTOCOL_HTTP3 = 'http3'
+export type ChannelHttpProtocol = 'auto' | 'http1' | 'http3'
+export const MAX_CHANNEL_TEST_MESSAGE_BYTES = 4096
+export const MAX_CHANNEL_TEST_MAX_TOKENS = 65536
 export const MAX_HTTP2_CONNECTION_SHARDS = 8
 export const MAX_CHANNEL_TIMEOUT_SECONDS = 86400
 export const MAX_CHANNEL_INPUT_TOKENS_BOUND = 10000000
@@ -135,12 +139,15 @@ function parseResponseHeaderMode(
 
 export function normalizeHttpProtocol(
   value: string | undefined | null
-): 'auto' | 'http1' {
+): ChannelHttpProtocol {
   const normalized = String(value || '')
     .trim()
     .toLowerCase()
   if (normalized === HTTP_PROTOCOL_HTTP1) {
     return HTTP_PROTOCOL_HTTP1
+  }
+  if (normalized === HTTP_PROTOCOL_HTTP3) {
+    return HTTP_PROTOCOL_HTTP3
   }
   return HTTP_PROTOCOL_AUTO
 }
@@ -317,9 +324,14 @@ export const channelFormSchema = z
       .string()
       .optional()
       .refine(isOptionalProxyURL, ERROR_MESSAGES.INVALID_PROXY),
-    http_protocol: z.enum(['auto', 'http1']).optional(),
+    http_protocol: z.enum(['auto', 'http1', 'http3']).optional(),
     http2_connection_shards: z.number().int().optional(),
     tls_insecure_skip_verify: z.boolean().optional(),
+    // Outbound fingerprint profile name; empty keeps the default transport
+    fingerprint_profile: z.string().optional(),
+    // Channel test request overrides; empty and 0 keep the built-in request
+    test_message: z.string().optional(),
+    test_max_tokens: z.number().int().optional(),
     // Per-channel timeouts (stored in channel_extend table, 0 = global)
     relay_timeout: z.number().int().optional(),
     streaming_timeout: z.number().int().optional(),
@@ -506,6 +518,47 @@ export const channelFormSchema = z
         ctx,
         'http2_connection_shards',
         ERROR_MESSAGES.INVALID_HTTP1_WITH_SHARDS
+      )
+    }
+    if (protocol === HTTP_PROTOCOL_HTTP3) {
+      if (shards > 1) {
+        addRequiredIssue(
+          ctx,
+          'http2_connection_shards',
+          ERROR_MESSAGES.INVALID_HTTP3_WITH_SHARDS
+        )
+      }
+      if (data.proxy?.trim()) {
+        addRequiredIssue(
+          ctx,
+          'http_protocol',
+          ERROR_MESSAGES.INVALID_HTTP3_WITH_PROXY
+        )
+      }
+      if (data.fingerprint_profile?.trim()) {
+        addRequiredIssue(
+          ctx,
+          'fingerprint_profile',
+          ERROR_MESSAGES.INVALID_HTTP3_WITH_FINGERPRINT
+        )
+      }
+    }
+    if (
+      new TextEncoder().encode(data.test_message ?? '').length >
+      MAX_CHANNEL_TEST_MESSAGE_BYTES
+    ) {
+      addRequiredIssue(
+        ctx,
+        'test_message',
+        ERROR_MESSAGES.INVALID_TEST_MESSAGE_LENGTH
+      )
+    }
+    const testMaxTokens = data.test_max_tokens ?? 0
+    if (testMaxTokens < 0 || testMaxTokens > MAX_CHANNEL_TEST_MAX_TOKENS) {
+      addRequiredIssue(
+        ctx,
+        'test_max_tokens',
+        ERROR_MESSAGES.INVALID_TEST_MAX_TOKENS
       )
     }
 
@@ -717,6 +770,9 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
   tls_insecure_skip_verify: false,
+  fingerprint_profile: '',
+  test_message: '',
+  test_max_tokens: 0,
   relay_timeout: 0,
   streaming_timeout: 0,
   min_input_tokens: 0,
@@ -780,9 +836,12 @@ export function transformChannelToFormDefaults(
     force_format: false,
     thinking_to_content: false,
     proxy: '',
-    http_protocol: HTTP_PROTOCOL_AUTO as 'auto' | 'http1',
+    http_protocol: HTTP_PROTOCOL_AUTO as ChannelHttpProtocol,
     http2_connection_shards: 1,
     tls_insecure_skip_verify: false,
+    fingerprint_profile: '',
+    test_message: '',
+    test_max_tokens: 0,
     pass_through_body_enabled: false,
     responses_websocket_enabled: false,
     system_prompt: '',
@@ -803,8 +862,17 @@ export function transformChannelToFormDefaults(
         thinking_to_content: parsed.thinking_to_content || false,
         proxy: parsed.proxy || '',
         http_protocol: protocol,
-        http2_connection_shards: protocol === HTTP_PROTOCOL_HTTP1 ? 1 : shards,
+        http2_connection_shards: protocol === HTTP_PROTOCOL_AUTO ? shards : 1,
         tls_insecure_skip_verify: parsed.tls_insecure_skip_verify === true,
+        fingerprint_profile:
+          typeof parsed.fingerprint_profile === 'string'
+            ? parsed.fingerprint_profile
+            : '',
+        test_message:
+          typeof parsed.test_message === 'string' ? parsed.test_message : '',
+        test_max_tokens: Number.isInteger(parsed.test_max_tokens)
+          ? parsed.test_max_tokens
+          : 0,
         pass_through_body_enabled: parsed.pass_through_body_enabled || false,
         responses_websocket_enabled:
           parsed.responses_websocket_enabled === true,
@@ -994,18 +1062,29 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
 
   const protocol = normalizeHttpProtocol(formData.http_protocol)
   const shards =
-    protocol === HTTP_PROTOCOL_HTTP1
-      ? 1
-      : normalizeHttp2ConnectionShards(formData.http2_connection_shards)
+    protocol === HTTP_PROTOCOL_AUTO
+      ? normalizeHttp2ConnectionShards(formData.http2_connection_shards)
+      : 1
 
   // Omit defaults so unchanged channels keep equivalent JSON.
-  if (protocol === HTTP_PROTOCOL_HTTP1) {
-    settingObj.http_protocol = HTTP_PROTOCOL_HTTP1
+  if (protocol !== HTTP_PROTOCOL_AUTO) {
+    settingObj.http_protocol = protocol
   } else if (shards > 1) {
     settingObj.http2_connection_shards = shards
   }
   if (formData.tls_insecure_skip_verify === true) {
     settingObj.tls_insecure_skip_verify = true
+  }
+  const fingerprintProfile = formData.fingerprint_profile?.trim()
+  if (fingerprintProfile) {
+    settingObj.fingerprint_profile = fingerprintProfile
+  }
+  // A message of only whitespace is no message: the test sends the built-in one.
+  if (formData.test_message?.trim()) {
+    settingObj.test_message = formData.test_message
+  }
+  if ((formData.test_max_tokens ?? 0) > 0) {
+    settingObj.test_max_tokens = formData.test_max_tokens
   }
 
   return JSON.stringify(settingObj)

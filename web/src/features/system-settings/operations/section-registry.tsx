@@ -19,6 +19,8 @@ For commercial licensing, please contact support@quantumnous.com
 import { SystemBehaviorSection } from '../general/system-behavior-section'
 import { AssetLibrarySettingsSection } from '../integrations/asset-library-settings-section'
 import { EmailSettingsSection } from '../integrations/email-settings-section'
+import { isFingerprintProfileList } from '../integrations/fingerprint-profile-schema'
+import { FingerprintSettingsSection } from '../integrations/fingerprint-settings-section'
 import { MonitoringSettingsSection } from '../integrations/monitoring-settings-section'
 import { WorkerSettingsSection } from '../integrations/worker-settings-section'
 import { LogSettingsSection } from '../maintenance/log-settings-section'
@@ -129,6 +131,19 @@ const OPERATIONS_SECTIONS = [
           compliance_notice:
             settings['asset_library_setting.compliance_notice'] ?? '',
         }}
+      />
+    ),
+  },
+  {
+    id: 'fingerprint',
+    titleKey: 'Outbound Fingerprint',
+    build: (settings: OperationsSettings) => (
+      <FingerprintSettingsSection
+        enabled={Boolean(settings['fingerprint_setting.enabled'])}
+        profiles={safeJsonParseWithValidation(
+          settings['fingerprint_setting.profiles'],
+          { fallback: [], validator: isFingerprintProfileList, silent: true }
+        )}
       />
     ),
   },

@@ -2,6 +2,7 @@ package controller
 
 import (
 	"bytes"
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -729,7 +730,25 @@ func detectErrorMessageFromJSONBytes(jsonBytes []byte) string {
 }
 
 func buildTestRequest(model string, endpointType string, channel *model.Channel, isStream bool) dto.Request {
+	settings := dto.ChannelSettings{}
+	if channel != nil {
+		settings = channel.GetSetting()
+	}
+	// The channel may replace the prompt and the output limit of its chat test;
+	// without those settings the request is the built-in one.
+	message := cmp.Or(settings.TestMessage, "hi")
+	maxTokens := settings.TestMaxTokens
 	testResponsesInput := json.RawMessage(`[{"role":"user","content":"hi"}]`)
+	var responsesMaxOutputTokens *uint
+	if settings.TestMessage != "" {
+		encoded, err := common.Marshal([]dto.Message{{Role: "user", Content: message}})
+		if err == nil {
+			testResponsesInput = encoded
+		}
+	}
+	if maxTokens > 0 {
+		responsesMaxOutputTokens = lo.ToPtr(maxTokens)
+	}
 
 	// 根据端点类型构建不同的测试请求
 	if endpointType != "" {
@@ -759,9 +778,10 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 		case constant.EndpointTypeOpenAIResponse:
 			// 返回 OpenAIResponsesRequest
 			return &dto.OpenAIResponsesRequest{
-				Model:  model,
-				Input:  json.RawMessage(`[{"role":"user","content":"hi"}]`),
-				Stream: lo.ToPtr(isStream),
+				Model:           model,
+				Input:           testResponsesInput,
+				Stream:          lo.ToPtr(isStream),
+				MaxOutputTokens: responsesMaxOutputTokens,
 			}
 		case constant.EndpointTypeOpenAIResponseCompact:
 			// 返回 OpenAIResponsesCompactionRequest
@@ -773,11 +793,11 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 			return &dto.ClaudeRequest{
 				Model:     model,
 				Stream:    lo.ToPtr(isStream),
-				MaxTokens: lo.ToPtr(uint(16)),
+				MaxTokens: lo.ToPtr(cmp.Or(maxTokens, 16)),
 				Messages: []dto.ClaudeMessage{
 					{
 						Role:    "user",
-						Content: "hi",
+						Content: message,
 					},
 				},
 			}
@@ -786,11 +806,11 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				Contents: []dto.GeminiChatContent{
 					{
 						Role:  "user",
-						Parts: []dto.GeminiPart{{Text: "hi"}},
+						Parts: []dto.GeminiPart{{Text: message}},
 					},
 				},
 				GenerationConfig: dto.GeminiChatGenerationConfig{
-					MaxOutputTokens: lo.ToPtr(uint(3000)),
+					MaxOutputTokens: lo.ToPtr(cmp.Or(maxTokens, 3000)),
 				},
 			}
 		case constant.EndpointTypeOpenAI:
@@ -800,10 +820,10 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 				Messages: []dto.Message{
 					{
 						Role:    "user",
-						Content: "hi",
+						Content: message,
 					},
 				},
-				MaxTokens: lo.ToPtr(uint(16)),
+				MaxTokens: lo.ToPtr(cmp.Or(maxTokens, 16)),
 			}
 			if isStream {
 				req.StreamOptions = &dto.StreamOptions{IncludeUsage: true}
@@ -836,9 +856,10 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	// Responses-only models (e.g. codex series)
 	if strings.Contains(strings.ToLower(model), "codex") {
 		return &dto.OpenAIResponsesRequest{
-			Model:  model,
-			Input:  json.RawMessage(`[{"role":"user","content":"hi"}]`),
-			Stream: lo.ToPtr(isStream),
+			Model:           model,
+			Input:           testResponsesInput,
+			Stream:          lo.ToPtr(isStream),
+			MaxOutputTokens: responsesMaxOutputTokens,
 		}
 	}
 
@@ -849,7 +870,7 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 		Messages: []dto.Message{
 			{
 				Role:    "user",
-				Content: "hi",
+				Content: message,
 			},
 		},
 	}
@@ -858,15 +879,17 @@ func buildTestRequest(model string, endpointType string, channel *model.Channel,
 	}
 
 	if dto.IsOpenAIReasoningOModel(model) {
-		testRequest.MaxCompletionTokens = lo.ToPtr(uint(16))
+		testRequest.MaxCompletionTokens = lo.ToPtr(cmp.Or(maxTokens, 16))
 	} else if strings.Contains(model, "thinking") {
 		if !strings.Contains(model, "claude") {
-			testRequest.MaxTokens = lo.ToPtr(uint(50))
+			testRequest.MaxTokens = lo.ToPtr(cmp.Or(maxTokens, 50))
+		} else if maxTokens > 0 {
+			testRequest.MaxTokens = lo.ToPtr(maxTokens)
 		}
 	} else if strings.Contains(model, "gemini") {
-		testRequest.MaxTokens = lo.ToPtr(uint(3000))
+		testRequest.MaxTokens = lo.ToPtr(cmp.Or(maxTokens, 3000))
 	} else {
-		testRequest.MaxTokens = lo.ToPtr(uint(16))
+		testRequest.MaxTokens = lo.ToPtr(cmp.Or(maxTokens, 16))
 	}
 
 	return testRequest

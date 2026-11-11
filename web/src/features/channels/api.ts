@@ -126,6 +126,22 @@ export async function getAssetLibraryAccountOptions(): Promise<
   return requireServerSuccess(response.data).data
 }
 
+// The fingerprint profiles a channel can select and the built-in TLS presets a
+// profile can use. Names only: the content of a profile stays a root setting.
+export type FingerprintProfileOptions = {
+  enabled: boolean
+  profiles: string[]
+  tls_presets: string[]
+}
+
+export async function getFingerprintProfileOptions(): Promise<FingerprintProfileOptions> {
+  const response = await api.get<{
+    success: boolean
+    data: FingerprintProfileOptions
+  }>('/api/channel/fingerprint_profiles')
+  return requireServerSuccess(response.data).data
+}
+
 export type CodexUsageResponse = {
   success: boolean
   message?: string

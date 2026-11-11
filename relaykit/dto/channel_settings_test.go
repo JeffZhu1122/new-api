@@ -3,6 +3,7 @@ package dto
 import (
 	"encoding/json"
 	"regexp"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/relaykit/types"
@@ -723,6 +724,50 @@ func TestChannelSettingsValidateHTTPTransport(t *testing.T) {
 	err = (&ChannelSettings{HTTPProtocol: "http1", HTTP2ConnectionShards: 2}).ValidateHTTPTransport()
 	require.Error(t, err)
 	assert.Contains(t, err.Error(), "http2_connection_shards")
+
+	require.NoError(t, (&ChannelSettings{FingerprintProfile: "chrome-133_v1.2"}).ValidateHTTPTransport())
+
+	require.NoError(t, (&ChannelSettings{HTTPProtocol: "HTTP3", HTTP2ConnectionShards: 1, TLSInsecureSkipVerify: true}).ValidateHTTPTransport())
+	for _, tt := range []struct {
+		settings ChannelSettings
+		wantErr  string
+	}{
+		{settings: ChannelSettings{HTTPProtocol: "http3", HTTP2ConnectionShards: 2}, wantErr: "http2_connection_shards must be 1 when http_protocol is http3"},
+		{settings: ChannelSettings{HTTPProtocol: "http3", Proxy: "socks5://127.0.0.1:1080"}, wantErr: "proxy cannot be used"},
+		{settings: ChannelSettings{HTTPProtocol: "http3", FingerprintProfile: "chrome"}, wantErr: "fingerprint_profile cannot be used"},
+	} {
+		require.ErrorContains(t, tt.settings.ValidateHTTPTransport(), tt.wantErr)
+	}
+	for _, name := range []string{"a|b", "a b", strings.Repeat("a", MaxFingerprintProfileNameLength+1)} {
+		require.ErrorContains(t, (&ChannelSettings{FingerprintProfile: name}).ValidateHTTPTransport(), "fingerprint_profile")
+	}
+}
+
+func TestChannelSettingsValidateTestRequest(t *testing.T) {
+	require.NoError(t, (*ChannelSettings)(nil).ValidateTestRequest())
+	require.NoError(t, (&ChannelSettings{}).ValidateTestRequest())
+	require.NoError(t, (&ChannelSettings{
+		TestMessage:   strings.Repeat("a", MaxChannelTestMessageLength),
+		TestMaxTokens: MaxChannelTestMaxTokens,
+	}).ValidateTestRequest())
+
+	for _, tt := range []struct {
+		settings ChannelSettings
+		wantErr  string
+	}{
+		{settings: ChannelSettings{TestMessage: strings.Repeat("a", MaxChannelTestMessageLength+1)}, wantErr: "test_message"},
+		{settings: ChannelSettings{TestMessage: " \n\t"}, wantErr: "test_message"},
+		{settings: ChannelSettings{TestMaxTokens: MaxChannelTestMaxTokens + 1}, wantErr: "test_max_tokens"},
+	} {
+		require.ErrorContains(t, tt.settings.ValidateTestRequest(), tt.wantErr)
+	}
+
+	encoded, err := json.Marshal(ChannelSettings{})
+	require.NoError(t, err)
+	assert.NotContains(t, string(encoded), "test_")
+	var decoded ChannelSettings
+	require.NoError(t, json.Unmarshal([]byte(`{"test_message":"ping","test_max_tokens":32}`), &decoded))
+	assert.Equal(t, ChannelSettings{TestMessage: "ping", TestMaxTokens: 32}, decoded)
 }
 
 func TestChannelOtherSettingsValidateToolLossPolicy(t *testing.T) {

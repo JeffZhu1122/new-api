@@ -411,6 +411,8 @@ export type OperationsSettings = {
   'asset_library_setting.verify_sessions_per_hour': number
   'asset_library_setting.allowed_user_groups': string
   'asset_library_setting.compliance_notice': string
+  'fingerprint_setting.enabled': boolean
+  'fingerprint_setting.profiles': string
   'log_file_cleanup_setting.enabled': boolean
   'log_file_cleanup_setting.frequency': 'daily' | 'weekly' | 'monthly'
   'log_file_cleanup_setting.weekday': number

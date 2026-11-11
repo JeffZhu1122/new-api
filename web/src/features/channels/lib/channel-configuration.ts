@@ -86,6 +86,9 @@ const CONFIGURATION_BLOCKS = {
       'http_protocol',
       'http2_connection_shards',
       'tls_insecure_skip_verify',
+      'fingerprint_profile',
+      'test_message',
+      'test_max_tokens',
       'disable_task_polling_sleep',
       'relay_timeout',
       'streaming_timeout',
@@ -195,6 +198,9 @@ export function getChannelConfigurationState(
       (values.http_protocol && values.http_protocol !== 'auto') ||
       (values.http2_connection_shards ?? 1) > 1 ||
       values.tls_insecure_skip_verify ||
+      values.fingerprint_profile?.trim() ||
+      values.test_message?.trim() ||
+      (values.test_max_tokens ?? 0) > 0 ||
       values.disable_task_polling_sleep ||
       (values.relay_timeout ?? 0) > 0 ||
       (values.streaming_timeout ?? 0) > 0 ||

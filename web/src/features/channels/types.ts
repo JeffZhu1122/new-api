@@ -121,9 +121,12 @@ export interface ChannelSettings {
   responses_websocket_enabled?: boolean
   system_prompt?: string
   system_prompt_override?: boolean
-  http_protocol?: 'auto' | 'http1' | string
+  http_protocol?: 'auto' | 'http1' | 'http3' | string
   http2_connection_shards?: number
   tls_insecure_skip_verify?: boolean
+  fingerprint_profile?: string
+  test_message?: string
+  test_max_tokens?: number
 }
 
 // Per-channel overrides stored in the channel_extend table; 0 = inherit global

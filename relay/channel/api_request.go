@@ -418,6 +418,9 @@ func DoWssRequest(a Adaptor, c *gin.Context, info *common.RelayInfo, requestBody
 	if info.ChannelSetting.TLSInsecureSkipVerify {
 		dialer.TLSClientConfig = common2.InsecureTLSConfig
 	}
+	if err := service.ConfigureFingerprintWebSocketDialer(&dialer, targetHeader, info.ChannelSetting); err != nil {
+		return nil, err
+	}
 	targetConn, resp, err := dialer.DialContext(c.Request.Context(), fullRequestURL, targetHeader)
 	if err != nil {
 		statusCode := http.StatusInternalServerError

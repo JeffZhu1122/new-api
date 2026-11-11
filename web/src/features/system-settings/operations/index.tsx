@@ -59,6 +59,8 @@ const defaultOperationsSettings: OperationsSettings = {
   'asset_library_setting.verify_sessions_per_hour': 5,
   'asset_library_setting.allowed_user_groups': '[]',
   'asset_library_setting.compliance_notice': '',
+  'fingerprint_setting.enabled': true,
+  'fingerprint_setting.profiles': '[]',
   'log_file_cleanup_setting.enabled': false,
   'log_file_cleanup_setting.frequency': 'daily',
   'log_file_cleanup_setting.weekday': 1,
