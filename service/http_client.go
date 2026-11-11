@@ -3,6 +3,7 @@ package service
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"math"
 	"net"
@@ -344,6 +345,20 @@ func newHTTPClientFromPolicy(policy HTTPTransportPolicy, proxyURL *url.URL, tlsC
 	if policy.TLSInsecureSkipVerify {
 		tlsConfig = common.InsecureTLSConfig
 	}
+	if policy.Protocol == dto.HTTPProtocolHTTP3 {
+		// Neither combination has an HTTP/3 equivalent, and a silent fallback
+		// would send the request another way than the channel asked for.
+		if policy.Fingerprint != "" {
+			return nil, errors.New("http3 cannot be combined with a fingerprint profile")
+		}
+		if proxyURL != nil {
+			return nil, errors.New("http3 cannot be used through a proxy")
+		}
+		return newHTTP3Client(tlsConfig), nil
+	}
+	if policy.Fingerprint != "" {
+		return newFingerprintHTTPClient(policy, proxyURL, tlsConfig)
+	}
 	factory, err := newTransportFactory(proxyURL, tlsConfig)
 	if err != nil {
 		return nil, err
@@ -436,6 +451,12 @@ func getOrCreateDirectClient(policy HTTPTransportPolicy) (*http.Client, error) {
 		return client, nil
 	}
 	return proxyClients.getOrCreate("", nil, policy, func() (*http.Client, error) {
+		if policy.Fingerprint != "" || policy.Protocol == dto.HTTPProtocolHTTP3 {
+			// A fingerprint or HTTP/3 client that cannot be built must fail the
+			// request; falling back to the stock transport would expose the Go
+			// fingerprint or leave over a protocol the channel did not choose.
+			return newHTTPClientFromPolicy(policy, nil, nil)
+		}
 		return newDirectHTTPClient(policy, nil), nil
 	})
 }

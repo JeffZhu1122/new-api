@@ -10,6 +10,8 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	filterdto "github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/fingerprint_setting"
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -19,6 +21,13 @@ import (
 )
 
 func TestChannelValidateSettingsRejectsInvalidHTTPTransport(t *testing.T) {
+	useFingerprintProfiles := func(profiles string) {
+		require.NoError(t, config.GlobalConfig.LoadFromDB(map[string]string{"fingerprint_setting.profiles": profiles}))
+		fingerprint_setting.Refresh()
+	}
+	useFingerprintProfiles(`[{"name":"known","tls_preset":"chrome_133"}]`)
+	t.Cleanup(func() { useFingerprintProfiles("[]") })
+
 	tests := []struct {
 		name    string
 		setting dto.ChannelSettings
@@ -32,6 +41,38 @@ func TestChannelValidateSettingsRejectsInvalidHTTPTransport(t *testing.T) {
 			name:    "http1 with shards greater than one rejected",
 			setting: dto.ChannelSettings{HTTPProtocol: "http1", HTTP2ConnectionShards: 2},
 			wantErr: "http2_connection_shards",
+		},
+		{
+			name:    "existing fingerprint profile is valid",
+			setting: dto.ChannelSettings{FingerprintProfile: "known"},
+		},
+		{
+			name:    "http3 is valid",
+			setting: dto.ChannelSettings{HTTPProtocol: "http3"},
+		},
+		{
+			name:    "http3 with a proxy rejected",
+			setting: dto.ChannelSettings{HTTPProtocol: "http3", Proxy: "http://127.0.0.1:8080"},
+			wantErr: "proxy cannot be used",
+		},
+		{
+			name:    "http3 with a fingerprint profile rejected",
+			setting: dto.ChannelSettings{HTTPProtocol: "http3", FingerprintProfile: "known"},
+			wantErr: "fingerprint_profile cannot be used",
+		},
+		{
+			name:    "test request settings are valid",
+			setting: dto.ChannelSettings{TestMessage: "ping", TestMaxTokens: 32},
+		},
+		{
+			name:    "oversized test max tokens rejected",
+			setting: dto.ChannelSettings{TestMaxTokens: dto.MaxChannelTestMaxTokens + 1},
+			wantErr: "test_max_tokens",
+		},
+		{
+			name:    "missing fingerprint profile rejected",
+			setting: dto.ChannelSettings{FingerprintProfile: "unknown"},
+			wantErr: `fingerprint profile "unknown" does not exist`,
 		},
 	}
 

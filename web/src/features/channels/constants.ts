@@ -369,6 +369,13 @@ export const ERROR_MESSAGES = {
     'HTTP/2 connection shards must be between 1 and 8',
   INVALID_HTTP1_WITH_SHARDS:
     'HTTP/2 connection shards must be 1 when HTTP/1.1 is selected',
+  INVALID_HTTP3_WITH_SHARDS:
+    'HTTP/2 connection shards must be 1 when HTTP/3 is selected',
+  INVALID_HTTP3_WITH_PROXY: 'HTTP/3 cannot be used together with a proxy',
+  INVALID_HTTP3_WITH_FINGERPRINT:
+    'HTTP/3 cannot be used together with a fingerprint profile',
+  INVALID_TEST_MESSAGE_LENGTH: 'Test message must not exceed 4096 bytes',
+  INVALID_TEST_MAX_TOKENS: 'Test max tokens must be between 0 and 65536',
   INVALID_CHANNEL_TIMEOUT:
     'Channel timeout must be between 0 and 86400 seconds',
   INVALID_CHANNEL_MIN_INPUT_TOKENS:

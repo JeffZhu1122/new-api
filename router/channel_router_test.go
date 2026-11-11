@@ -15,6 +15,7 @@ import (
 
 func TestChannelDefaultBaseURLsRequireReadPermission(t *testing.T) {
 	assertChannelRoutePermission(t, http.MethodGet, "/default_base_urls", authz.ChannelRead, controller.GetChannelDefaultBaseURLs)
+	assertChannelRoutePermission(t, http.MethodGet, "/fingerprint_profiles", authz.ChannelRead, controller.GetChannelFingerprintProfiles)
 
 	gin.SetMode(gin.TestMode)
 	engine := gin.New()

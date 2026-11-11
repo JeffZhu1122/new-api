@@ -53,6 +53,7 @@
 36. [渠道测试：选择 max_tokens 或 max_completion_tokens](#36-渠道测试选择-max_tokens-或-max_completion_tokens)
 37. [渠道报错行带模型名](#37-渠道报错行带模型名)
 38. [素材库管理（火山方舟私域素材库）](#38-素材库管理火山方舟私域素材库)
+39. [渠道级出站指纹与 HTTP/3](#39-渠道级出站指纹与-http3)
 
 ---
 
@@ -93,6 +94,7 @@
 | 36 | 渠道测试：选择 max_tokens 或 max_completion_tokens | 与本文档同一提交 | 「自动」，即原来按模型名选择 | 无 | 渠道测试接口的 `max_tokens_param` 参数、测试弹窗的选择框 |
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
 | 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 7 步） | 关闭（关闭时默认不拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`user_extend.asset_library`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库；管理员可在「编辑用户」里按用户覆盖每用户素材组 / 素材上限 |
+| 39 | 渠道级出站指纹与 HTTP/3 | 与本文档同一提交 | 关闭（渠道不选指纹配置、协议不选 HTTP/3、不填测试消息时与原来相同；全局总开关默认开，但没有渠道选用配置时不改变任何请求） | `fingerprint_setting.enabled` / `fingerprint_setting.profiles`；渠道 `setting` 的 `fingerprint_profile` / `http_protocol = "http3"` / `test_message` / `test_max_tokens` | 系统设置「出站指纹」一节；渠道编辑的「指纹配置」、`HTTP/3 (QUIC)`、「测试消息」「测试最大 Tokens」；`GET /api/channel/fingerprint_profiles`；选了配置的渠道的 HTTP 与 Realtime WebSocket 出站连接（TLS ClientHello、HTTP/2 参数、请求头顺序、默认 User-Agent）；新依赖 utls / req / quic-go |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -941,6 +943,16 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `controller/channel-test.go` | §36 `testChannel` 末尾加 `maxTokensParam` 参数（`TestChannel` 解析 `max_tokens_param`，定时测试传空串）；`applyTestMaxTokensParam` 在 `ConvertOpenAIRequest` 之后、序列化之前调用 |
 | `web/src/features/channels/components/dialogs/channel-test-dialog.tsx` / `lib/channel-actions.ts` / `api.ts` | §36 端点为 Chat Completions 时多一个「最大 Token 参数」选择框；`handleTestChannel` 与 `testChannel` 多一个参数 |
 | `web/src/features/errors/{not-found-error,unauthorized-error,forbidden,maintenance-error,general-error}.tsx` | 错误页背景层；状态码改为渐变字，外包 `relative isolate` 的 div 并加 `BrandGlow` |
+| `service/http_client.go` / `service/http_transport_policy.go` | §39 `newHTTPClientFromPolicy` 开头的 HTTP/3 与指纹分流，`getOrCreateDirectClient` 里指纹或 HTTP/3 客户端建不出来时不退回原生传输；`HTTPTransportPolicy` 的 `Fingerprint` / `FingerprintRevision`、`cacheKeyPart` 追加的指纹段、`NormalizeHTTPTransportPolicy` 接受 `http3` |
+| `relay/channel/api_request.go` | §39 `DoWssRequest` 在拨号前调用 `service.ConfigureFingerprintWebSocketDialer` |
+| `relaykit/dto/channel_settings.go` / `model/channel.go` | §39 `ChannelSettings` 的 `fingerprint_profile` / `test_message` / `test_max_tokens`，`ValidateHTTPTransport` 的 `http3` 分支，`ValidateTestRequest`；`ValidateSettings` 调用它并检查所选指纹配置存在 |
+| `controller/channel-test.go` | §39 `buildTestRequest` 开头取渠道的测试消息与上限，各格式的 `hi` 与固定上限换成 `message` / `cmp.Or(maxTokens, …)`，Responses 格式多 `MaxOutputTokens`（与 §36 的改动在同一个文件） |
+| `controller/option.go` / `model/option.go` | §39 `UpdateOption` 里 `fingerprint_setting.*` 的校验块；`handleConfigUpdate` 的 `fingerprint_setting` 分支调用 `fingerprint_setting.Refresh()` |
+| `controller/channel.go` / `router/channel-router.go` / `router/channel_router_test.go` | §39 `GetChannelFingerprintProfiles` 与 `channelPermissionRoutes` 里的 `/fingerprint_profiles`（`authz.ChannelRead`）及其权限断言 |
+| `go.mod` / `go.sum` / `THIRD-PARTY-LICENSES.md` | §39 新依赖 `refraction-networking/utls`、`imroc/req/v3`、`quic-go/quic-go`，连带升级 `golang.org/x/{crypto,net,sync,sys,text}`、`andybalholm/brotli`、`klauspost/compress`；上游升级这些依赖时取较新的版本，再跑 `go mod tidy` |
+| `web/src/features/channels/{api.ts,types.ts,constants.ts,lib/channel-form*.ts,lib/channel-configuration.ts,lib/channel-actions.ts,components/drawers/channel-mutate-drawer.tsx}` | §39 渠道的「指纹配置」选择、HTTP 协议的 `HTTP/3 (QUIC)` 选项与它的组合校验、「测试消息」「测试最大 Tokens」（`setting` JSON 的读写、表单、抽屉字段、查询键） |
+| `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` | §39 「出站指纹」一节（`fingerprint`）的默认值、传参与类型 |
+| `web/src/i18n/locales/*.json` | §39 出站指纹、HTTP/3、测试请求的文案（7 个语言文件，按行插入） |
 
 ### 19.3 上游签名变化的传染点
 
@@ -2013,7 +2025,7 @@ bad response status code 400, message: Unsupported parameter: 'max_tokens' is no
   - 把长度值挪到选定的字段，并清空另一个字段；
   - 参数覆盖（param override）仍在它之后执行。
 - 前端：`channel-test-dialog.tsx` 用 `Select` 渲染选择框；`handleTestChannel` / `testChannel` 透传 `max_tokens_param`。
-- 计费：测试请求的长度值仍是固定的 16，只换字段名，不引入新的用户输入数值。
+- 计费：测试请求的长度值仍是固定的 16，只换字段名，不引入新的用户输入数值。渠道设置了「测试最大 Tokens」（§39）时，用的是那个值。
 
 ### 测试
 
@@ -2312,3 +2324,176 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - 前端 `users/components/__tests__/asset-library-limits.test.tsx`：打开抽屉显示已保存的值、空的显示「继承」，填 0 后提交 `{max_groups_per_user: 5, max_assets_per_user: 0}`；两项清空提交 `{}`；负数显示校验错误且不提交。
   - 升级：三种数据库各三种起点（全新库、官方 `v1.0.0-rc.46` 建的库、上一版 fork 建的库且 `user_extend` 里有一行限流和折扣），新版本各启动两次都正常；第一次启动执行 `ALTER TABLE user_extend ADD asset_library text`，第二次不再改这张表；旧行的两列原样保留，新列为 NULL。
   - 本地端到端（实例 C，中文界面）11 项：抽屉里有新分区、初始为空、负数被拦下；保存后接口返回覆盖值，重新打开显示保存的值；该用户的配置返回自己的上限，通过 `/volc` 建组能超过全局上限并在自己的上限处被拒；另一个用户仍是全局值；该用户的素材库页面显示「素材组：28 / 28」「素材：21 / ∞」；清空两项后覆盖删除、回到全局值；页面无报错。
+
+---
+
+## 39. 渠道级出站指纹与 HTTP/3
+
+### 动机
+
+网关发给上游的请求带着 Go 的特征，其中大部分改请求头覆盖不了：
+
+- TLS ClientHello 是 Go `crypto/tls` 的，JA3 / JA4 固定；
+- HTTP/2 的 SETTINGS、WINDOW_UPDATE 与伪头顺序是 `net/http` 的；
+- 请求头顺序每次不同，请求自己没带 User-Agent 时发 `Go-http-client/2.0`；
+- 转发时多出一个值为空的 `Accept:` 请求头；
+- 渠道测试固定发 `hi` 和 `max_tokens: 16`。
+
+这一节让管理员按渠道选择这些特征。每一项都是渠道级开关，默认关闭：渠道不选指纹配置、协议不选 HTTP/3、不填测试消息时，仍走原来的 Go 传输和原来的测试请求。
+
+### 行为
+
+开关层级：
+
+| 层级 | 位置 | 存储 | 默认 | 作用 |
+|---|---|---|---|---|
+| 全局总开关 | 系统设置 →「出站指纹」→「允许使用指纹配置」 | `fingerprint_setting.enabled` | 开 | 关闭后所有渠道立即回到原生 Go 传输，不用重启；渠道上的选择保留，重新打开后恢复 |
+| 指纹配置 | 同一节的配置列表 | `fingerprint_setting.profiles`（JSON 数组，最多 32 个） | 空 | 只是定义，没有渠道选用就不影响任何请求 |
+| 渠道选择 | 渠道编辑 →「渠道额外设置」→「指纹配置」 | 渠道 `setting.fingerprint_profile` | 关闭 | 只有选了配置的渠道按该配置出站 |
+| HTTP/3 | 渠道「HTTP 协议」的 `HTTP/3 (QUIC)` 选项 | 渠道 `setting.http_protocol = "http3"` | 自动 | 该渠道强制走 QUIC |
+| 测试请求 | 渠道「测试消息」「测试最大 Tokens」 | 渠道 `setting.test_message` / `setting.test_max_tokens` | 空 / 0 | 替换该渠道测试请求的提示词与输出上限 |
+
+指纹配置的字段（除 `name` 外都可以留空，留空的部分沿用 Go 的默认行为）：
+
+- `name`：1–64 个字母、数字、`.`、`_`、`-`，不能重名。渠道按名称选用，所以界面上保存后不能改名。
+- `tls_preset`：内置的 ClientHello，取值 `chrome_120`、`chrome_120_pq`、`chrome_131`、`chrome_133`、`edge_106`、`firefox_120`、`ios_14`、`safari_16_0`。
+- `tls_client_hello`：自己抓到的 ClientHello 的十六进制，可以是整条 TLS 记录（`16…`）或握手消息（`01…`），空格、换行、冒号会被忽略，最长 32 KiB。与 `tls_preset` 只能填一个。恢复旧会话的抓包（带 PSK 扩展）会被拒绝，要抓客户端的第一条连接；保存时会用它实际构造一次握手，构造不出来的也被拒绝。
+- `http2_fingerprint`：`SETTINGS|WINDOW_UPDATE|PRIORITY|伪头顺序`，写法与常见 HTTP/2 指纹报告一致，例如 `1:65536;2:0;4:4194304;6:262144|15663105|0|m,a,s,p`。
+  - SETTINGS 最多 16 项：`1` 不超过 65536，`2` 必须是 0，`4` 在 65535–4194304 之间，`5` 只能是 16384，`6` 不小于 16384；
+  - WINDOW_UPDATE 必填；
+  - PRIORITY 是 `0` 或若干个 `stream:exclusive:dependency:weight`；
+  - 伪头顺序是 `m`、`a`、`s`、`p` 各出现一次。
+- `http2_header_priority`：每个 HEADERS 帧携带的优先级，`exclusive:dependency:weight`，例如 `1:0:256`。
+- `header_order`：请求头名称列表（最多 64 个，不重复），按列出的顺序发送；没列出的请求头排在后面。
+- `user_agent`：请求自己没有 User-Agent 时发送，最长 512 字节。
+
+选了配置的渠道：
+
+- HTTP 转发和渠道测试都按配置出站；可以与代理、`http1`、HTTP/2 连接分片、`tls_insecure_skip_verify` 组合。上游证书照常校验。
+- Realtime WebSocket（`/v1/realtime`）的握手用同一个 ClientHello（ALPN 只留 `http/1.1`），握手请求头按 `header_order` 排，`user_agent` 同样生效。
+- 值为空的 `Accept` 与 `Content-Type` 不再发出。没选配置的渠道不变。
+- 请求自己没有 User-Agent 且配置没填 `user_agent` 时，发 Go 原来会发的值：连接只能是 HTTP/1.1 时（渠道选了 `http1`、抓包的 ALPN 不含 `h2`、上游是明文 `http`）发 `Go-http-client/1.1`，否则发 `Go-http-client/2.0`。
+- 配置不存在或无法使用时，请求直接失败，不会退回 Go 的指纹。
+- 编辑或删除配置、关闭总开关后，用旧配置建立的连接被丢弃，下一个请求用新连接。
+
+HTTP/3：
+
+- 强制 QUIC，不回退到 TCP；上游不支持 HTTP/3 时请求失败。
+- 不能与代理、指纹配置、多个连接分片同时使用，保存时拒绝。环境变量指定了代理时请求也被拒绝，不会绕过代理直连。
+- 没有指纹配置可用：QUIC 的 ClientHello 是 quic-go 的，请求没带 User-Agent 时发 `quic-go HTTP/3`。
+- Realtime WebSocket 仍走 TCP。
+
+测试请求：
+
+- `test_message`：替换对话类测试请求里的 `hi`，最长 4096 字节，不能只有空白；留空用内置的 `hi`。
+- `test_max_tokens`：替换测试请求的输出上限，0–65536；0 用各请求格式内置的上限（16 / 50 / 3000 等）。Responses 格式原来不带上限，填了之后带 `max_output_tokens`。
+- 手动测试和定时测试都使用。Embedding、Rerank 等非对话测试不受影响；Responses compaction 只用测试消息，不带上限。
+- 与 §36 的「最大 Token 参数」可以同时使用：§36 决定字段名，这里决定数值。
+
+接口与权限：
+
+- `GET /api/channel/fingerprint_profiles`（权限 `authz.ChannelRead`）：返回总开关、配置名称列表与可选的 TLS 预设名称，不含配置内容。只有渠道权限、读不到系统设置的管理员靠它选择配置。
+- 保存 `fingerprint_setting.*` 时校验，失败则不保存，例如：
+  - `fingerprint profile "chrome" is still selected by channel #8 (chrome-shards); clear it on the channel first`（删除仍被渠道选用的配置）；
+  - `http2_fingerprint: setting 4 (INITIAL_WINDOW_SIZE) must be between 65535 and 4194304`；
+  - `unknown tls_preset "chrome_999" (available: …)`。
+- 保存渠道时校验，例如：
+  - `fingerprint profile "nope" does not exist`；
+  - `fingerprint_profile cannot be used when http_protocol is http3`；
+  - `proxy cannot be used when http_protocol is http3`；
+  - `http2_connection_shards must be 1 when http_protocol is http3`；
+  - `test_message must not be blank`。
+
+### 实现
+
+- `setting/fingerprint_setting/config.go`：
+  - 配置结构、解析与校验（`ParseProfiles`、`ParseHTTP2Fingerprint`、`ParseHTTP2HeaderPriority`）；
+  - 只读快照：`IsEnabled`、`Names`、`Lookup`、`Revision`（配置内容的标识）；
+  - `model/option.go` 的 `handleConfigUpdate` 在 `fingerprint_setting.*` 变化后调用 `Refresh()`，`Refresh` 再通知 `OnChange` 注册的监听者。
+- `service/http_transport_policy.go`：
+  - `HTTPTransportPolicy` 多 `Fingerprint` / `FingerprintRevision`，只有渠道选了配置且总开关打开时才填；
+  - 客户端缓存键追加 `|fp|名称|修订`，所以不同配置、同一配置的不同版本不会共用连接；
+  - `http3` 与 `http1` 一样作为协议取值。
+- `service/http_client.go`：
+  - `newHTTPClientFromPolicy` 开头先分流：`http3` → `newHTTP3Client`，有指纹 → `newFingerprintHTTPClient`，其余走原来的代码；
+  - 指纹或 HTTP/3 客户端建不出来时返回错误，不退回原生传输。
+- `service/http_fingerprint.go`：
+  - TLS：`github.com/refraction-networking/utls`。预设用 utls 的 `ClientHelloID`；自定义抓包用 `utls.Fingerprinter` 解析成 `ClientHelloSpec`。渠道选了 `http1` 时把 ALPN 改成只有 `http/1.1`。证书校验沿用渠道原来的 `tls.Config`。
+  - HTTP：`github.com/imroc/req/v3` 的 Transport，连接池大小、各种超时、代理、拨号函数、缓冲区、HTTP/2 健康检查都从 `newRelayHTTPTransport()` 复制，所以只有指纹不同。关闭了 req 的自动转码，响应体与 `net/http` 一致。
+  - `fingerprintRoundTripper`：去掉值为空的 `Accept` / `Content-Type`，补默认 User-Agent，按 `header_order` 与伪头顺序发送。
+  - 连接分片复用原来的 `shardedRoundTripper`。
+  - `init` 里注册 `OnChange`：`removeStaleFingerprintClients` 把配置已改、已删或总开关已关的客户端从缓存里删除并关闭空闲连接。
+  - `ValidateFingerprintOption`：保存前的校验，包括「仍被渠道选用的配置不能删除」。
+- `service/http_fingerprint_websocket.go`：`ConfigureFingerprintWebSocketDialer` 在 `relay/channel/api_request.go` 的 `DoWssRequest` 里调用。没选配置时不动 dialer；选了配置时自己拨号（含 HTTP / SOCKS5 代理）并用配置的 ClientHello 握手，`orderedHandshakeConn` 重排握手请求头。
+- `service/http3_client.go`：`github.com/quic-go/quic-go` 的 `http3.Transport`，全进程共用两个（校验证书与不校验证书各一个）。`http3RoundTripper` 补上 `ResponseHeaderTimeout`（quic-go 没有对应设置）。
+- `relaykit/dto/channel_settings.go`：`ChannelSettings` 多 `fingerprint_profile`、`test_message`、`test_max_tokens`；`ValidateHTTPTransport` 接受 `http3` 并拒绝不能组合的设置；新增 `ValidateTestRequest`。`model/channel.go` 的 `ValidateSettings` 调用它，并检查所选配置存在。
+- `controller/channel-test.go`：`buildTestRequest` 从渠道设置取测试消息与上限，没有设置时生成的请求与原来相同。
+- `controller/channel.go` `GetChannelFingerprintProfiles` + `router/channel-router.go` 的路由；`controller/option.go` `UpdateOption` 的校验块。
+- 前端：
+  - 系统设置：`system-settings/integrations/fingerprint-settings-section.tsx`（总开关与列表）、`fingerprint-profile-list.tsx`、`fingerprint-profile-dialog.tsx`、`fingerprint-profile-schema.ts`（与后端相同的限制）；
+  - 渠道：`channels/components/channel-fingerprint-profile-setting.tsx`、`channel-test-request-settings.tsx`，`channel-mutate-drawer.tsx` 的协议选择多一项 HTTP/3；`lib/channel-form.ts` 负责 `setting` JSON 的读写与组合校验。
+  - 已被删除的配置在渠道里仍显示为当前选择，直到手动关闭，打开渠道不会悄悄清掉它；总开关关闭时在该字段下提示。
+- 依赖：`utls` v1.8.2、`req/v3` v3.61.0、`quic-go` v0.61.0（见 `THIRD-PARTY-LICENSES.md`）；它们连带把 `golang.org/x/{crypto,net,sync,sys,text}`、`brotli`、`klauspost/compress` 升了小版本。
+- 计费：没有改动计费代码。`test_max_tokens` 由管理员在渠道上设置，上限 65536。
+
+### 已知限制
+
+- HTTP/2：
+  - `INITIAL_WINDOW_SIZE` 最大 4194304，Chrome 的 `4:6291456` 填不了；`MAX_FRAME_SIZE` 只能是 16384。
+  - 配置没填 `http2_fingerprint` 时，SETTINGS 是 Go 原来的值少一个 `5:1048576`（`2:0;4:4194304;6:10485760|1073741824|0|a,m,p,s`），与没选配置的渠道不完全相同。
+- TLS：
+  - Chrome 系预设每条连接都会打乱扩展顺序（与真实 Chrome 一样），所以原始 JA3 每次不同，排序后的 JA3（JA3n）与 JA4 稳定。
+  - 预设只与 utls 自己的参考握手比对过，没有与真实浏览器的抓包比对。
+- 默认 User-Agent：HTTPS 上游在 ALPN 里收到了 `h2` 却协商成 HTTP/1.1 时，仍发 `Go-http-client/2.0`（发请求前还不知道协商结果）。配置里填了 `user_agent` 就没有这个问题。
+- HTTP/3：
+  - 不回退、不能走代理、没有指纹配置；值为空的 `Accept:` 仍会发出。
+  - QUIC 连接全进程共用，空闲连接不受 `RELAY_IDLE_CONN_TIMEOUT` 控制；响应头超时把建连和上传请求体的时间也算在内。
+- WebSocket：火山、讯飞适配器自己的 WebSocket 拨号不走这里，仍是原生 Go。经 SOCKS5 代理的 WebSocket 路径没有测试。
+- 前端：后端的拒绝信息（例如「仍被渠道选用」）原样显示英文；`HTTP/3 (QUIC)`、`TLS ClientHello` 两个标签没有译文；没有运行 `i18n:sync`。
+- 只在本地抓包上游上验证过，没有对真实供应商的接口验证「换了指纹之后对方是否接受」。
+
+### 测试
+
+- `service/http_fingerprint_test.go`（测试用的服务端记录收到的 ClientHello、HTTP/2 帧与请求头）：
+  - `TestFingerprintClientHello`：没有 TLS 部分的配置保持 Go 的 ClientHello；预设与 utls 的参考握手一致；自定义抓包重放后密码套件与 ALPN 一致，走自动协议时发 `Go-http-client/2.0`；只提供 `http/1.1` 的抓包留在 HTTP/1.1 并发 `Go-http-client/1.1`。
+  - `TestFingerprintRequestHeaders`：HTTP/1.1 与 HTTP/2 下的请求头顺序、默认与配置的 User-Agent、空 `Accept` 被去掉、SETTINGS / WINDOW_UPDATE / PRIORITY / 伪头顺序 / HEADERS 优先级；自动协议的配置遇到明文 HTTP 上游发 `Go-http-client/1.1`。
+  - `TestFingerprintWebSocketDial`：没选配置时 dialer 不变；选了配置时握手的 ClientHello 与请求头顺序来自配置；配置不存在时拨号失败。
+  - `TestFingerprintResponseBodyParity`：有无配置结果相同，gzip 响应照常解压，GBK 响应体不被转码。
+  - `TestFingerprintChannelSwitch`：没选配置的渠道拿到原来的客户端；上游证书仍被校验；编辑配置后换新客户端；配置缺失时请求失败而不是用原生客户端；总开关关闭后所有渠道回到原生客户端。
+  - `TestValidateFingerprintOption`、`TestFingerprintProfileOptions`：保存前的各项拒绝；选项接口只返回名称。
+- `service/http_client_transport_test.go` `TestHTTP3ChannelTransport`：渠道选 `http3` 后请求以 HTTP/3 到达；与代理、指纹配置组合被拒绝；响应头超时生效。
+- `controller/channel_test_request_test.go` `TestChannelTestRequestUsesChannelTestSettings`：23 种情况。没有设置时各格式的请求体与原来相同；设置后对话、o 系列、thinking、Claude、Gemini、Responses、Codex 的提示词与上限被替换；Embedding、Rerank 忽略设置。
+- `relaykit/dto/channel_settings_test.go` `TestChannelSettingsValidateTestRequest`、`TestChannelSettingsValidateHTTPTransport`，`model/channel_settings_test.go` `TestChannelValidateSettingsRejectsInvalidHTTPTransport`，`router/channel_router_test.go`（新路由的权限）。
+- 前端：
+  - `channels/lib/__tests__/channel-transport-settings.test.ts` 7 项：不设置时 `setting` 里没有这些键；已存的配置、HTTP/3、测试请求读出后原样存回；HTTP/3 与代理、指纹配置、多分片的组合被拒绝；指纹配置可以与代理、HTTP/1.1 组合；测试请求的上下限与后端一致。
+  - `channels/components/__tests__/channel-configuration.test.tsx` 新增 7 项：选择配置并保存；已删除的配置保持选中；总开关关闭时的提示；选 HTTP/3 时指纹配置与分片被关掉；HTTP/3 加代理在保存前被拦下；测试请求的显示、修改与清空。
+  - `system-settings/integrations/__tests__/fingerprint-settings.test.tsx` 8 项：列表显示；添加时保存整个列表并省略留空的部分；重名与非十六进制抓包在保存前被拒绝；编辑时名称不可改；删除；后端拒绝删除时确认框保持打开；保存总开关。
+- 已运行：`go test ./service/ -count=1` 通过；前端全量 248 个文件 2816 项通过，`tsgo -b`、`oxlint`、`oxfmt --check` 无输出。
+- 本地端到端（SQLite，由工作区构建的网关；本地抓包上游同时监听 TCP 的 h2 / http1.1 和 UDP 的 HTTP/3，记录每条连接的 ClientHello（JA3、JA3n、JA4、ALPN）和每个请求的协议、HTTP/2 帧、请求头顺序与请求体）。参考值由同一台机器上的客户端直连抓包上游得到。
+  - 没选配置的渠道：JA3 `03117a8ed39ef02427ebbc39f121275c`、JA4 `t13d1312h2_f57a46bbacb6_f50d94e863eb`，与 Go 直连相同；HTTP/2 为 `2:0;4:4194304;5:1048576;6:10485760|1073741824|0|a,m,p,s`；User-Agent `Go-http-client/2.0`；有空的 `Accept:`；两次请求的请求头顺序不同。
+  - 选了 `chrome_133` 配置的渠道（`http2_fingerprint` 为上面的例子，`http2_header_priority` 为 `1:0:256`，配置了 `header_order` 与 `user_agent`）：
+    - JA3n `8e19337e7524d2573be54efb2b0784c9`、JA4 `t13d1516h2_8daaf6152771_d8a2da3f94cd`，与 utls `chrome_133` 的参考相同；四条连接的原始 JA3 各不相同；
+    - HTTP/2 为 `1:65536;2:0;4:4194304;6:262144|15663105|0|m,a,s,p`，HEADERS 优先级 `1:0:256`；
+    - 请求头顺序 `content-type, user-agent, authorization, accept-encoding, content-length`，User-Agent 是配置的值，空的 `Accept:` 没有了；流式请求的 `Accept: text/event-stream` 保留并排在配置的位置；
+    - 多个请求复用同一条连接；配了 2 个分片的渠道开出两条连接，指纹相同。
+  - 同一配置加 `http1`：HTTP/1.1，ALPN 只有 `http/1.1`，JA3n 不变，JA4 变为 `t13d1516h1_8daaf6152771_d8a2da3f94cd`。
+  - 自定义抓包（把三个客户端的 ClientHello 存成配置，再比较网关发出的握手）：
+
+    | 抓包来源 | 网关发出的 JA3 / JA4 | 协议 | 默认 User-Agent |
+    |---|---|---|---|
+    | curl 8.7.1 | `375c6162a492dfbf2795909110ce8424` / `t13d4907h2_0d8feac7bc37_7395dae3b2f3`，与 curl 相同 | HTTP/2 | `Go-http-client/2.0` |
+    | Node 20 fetch（ALPN 只有 `http/1.1`） | `1a28e69016765d92e3b381168d68922c` / `t13d5911h1_a33745022dd6_1f22a2ca17c4`，与 Node 相同 | HTTP/1.1 | `Go-http-client/1.1` |
+    | Python urllib（TLS 1.2，无 ALPN） | `047bfa6321a7921f57d5b91d04dcedaf` / `t12d380500_10ed599f3404_67a080e8974e`，与 Python 相同 | HTTP/1.1 | `Go-http-client/1.1` |
+
+    Node 那一行第一次抓到的是 `Go-http-client/2.0`（走 HTTP/1.1 却报 2.0）。默认 User-Agent 因此改成按连接能用的协议决定，并补了上面两条单元测试断言；去掉这个判断后两条断言失败。
+  - 只配 `user_agent` 与 `header_order` 的配置：ClientHello 与 Go 相同，User-Agent 与顺序来自配置，SETTINGS 少 `5:1048576`（见已知限制）。
+  - `http3` 渠道：请求以 `HTTP/3.0` 到达，User-Agent `quic-go HTTP/3`。
+  - 总开关：关闭后 `chrome_133` 渠道与 Node 抓包渠道的下一个请求就是 Go 的 ClientHello、Go 的 HTTP/2 参数、`Go-http-client/2.0` 和空的 `Accept:`，网关没有重启；`/api/channel/fingerprint_profiles` 返回 `enabled: false`；重新打开后下一个请求在新连接上恢复 `chrome_133`。
+  - 运行中把配置改成 `firefox_120` 并换 User-Agent：该渠道与分片渠道的下一个请求在新连接上是 JA3 `b5001237acdf006056b409cc433726b0`、JA4 `t13d1715h2_5b57614c22b0_5c2c66f702b0`（与 utls `firefox_120` 的参考相同）和新的 User-Agent；改回后恢复。
+  - 渠道测试：没有设置的渠道发 `{"model":"m-stock","messages":[{"role":"user","content":"hi"}],"stream":false,"max_tokens":16}`；设置了测试消息和 64 的渠道发 `{"model":"m-chrome","messages":[{"role":"user","content":"Reply with the single word pong."}],"stream":false,"max_tokens":64}`，并带着该渠道的指纹；两次测试都成功。
+  - Realtime WebSocket（客户端收到了上游的 `session.created`）：
+    - 没选配置的渠道：握手 JA4 `t13d131100_f57a46bbacb6_f50d94e863eb`，User-Agent `Go-http-client/1.1`；
+    - 选了配置的渠道：JA3n `8e19337e7524d2573be54efb2b0784c9`、JA4 `t13d1516h1_8daaf6152771_d8a2da3f94cd`，User-Agent 是配置的值，请求头以 `User-Agent, Authorization, Host` 开头，空的 `Content-Type` 没有了。
+  - 拒绝 13 项，都返回 `success: false` 且没有保存：删除仍被选用的配置、`http3` 加指纹配置 / 代理 / 2 个分片、渠道选不存在的配置、空白测试消息、`4:6291456`、`5:1048576`、无法解析的抓包、同时填预设与抓包、未知预设、非布尔的总开关、重名。
+  - 网关日志里没有 panic。
+  - 没有覆盖：代理路径、明文 HTTP 上游（只有单元测试）、真实供应商的接口。

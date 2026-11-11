@@ -9,14 +9,21 @@ import (
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/logger"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/fingerprint_setting"
 )
 
 // HTTPTransportPolicy is the runtime-normalized outbound HTTP transport policy
 // for a channel. Unknown or out-of-range stored values are clamped safely.
 type HTTPTransportPolicy struct {
-	Protocol              string // dto.HTTPProtocolAuto or dto.HTTPProtocolHTTP1
+	Protocol              string // dto.HTTPProtocolAuto, dto.HTTPProtocolHTTP1 or dto.HTTPProtocolHTTP3
 	Shards                int    // 1..dto.MaxHTTP2ConnectionShards
 	TLSInsecureSkipVerify bool
+	// Fingerprint names the fingerprint profile the channel selected. Empty
+	// means the stock Go transport.
+	Fingerprint string
+	// FingerprintRevision identifies the profile content, so a client built
+	// from an edited profile is never reused.
+	FingerprintRevision string
 }
 
 var httpTransportPolicyWarnings sync.Map
@@ -38,8 +45,8 @@ func NormalizeHTTPTransportPolicy(settings dto.ChannelSettings) HTTPTransportPol
 	switch protocol {
 	case "", dto.HTTPProtocolAuto:
 		policy.Protocol = dto.HTTPProtocolAuto
-	case dto.HTTPProtocolHTTP1:
-		policy.Protocol = dto.HTTPProtocolHTTP1
+	case dto.HTTPProtocolHTTP1, dto.HTTPProtocolHTTP3:
+		policy.Protocol = protocol
 	default:
 		warnHTTPTransportPolicyOnce("http_protocol", settings.HTTPProtocol)
 		policy.Protocol = dto.HTTPProtocolAuto
@@ -59,17 +66,21 @@ func NormalizeHTTPTransportPolicy(settings dto.ChannelSettings) HTTPTransportPol
 		policy.Shards = shards
 	}
 
-	if policy.Protocol == dto.HTTPProtocolHTTP1 {
+	if policy.Protocol != dto.HTTPProtocolAuto {
 		if settings.HTTP2ConnectionShards > 1 {
 			warnHTTPTransportPolicyOnce(
 				"http_protocol+http2_connection_shards",
-				fmt.Sprintf("%s+%d", dto.HTTPProtocolHTTP1, settings.HTTP2ConnectionShards),
+				fmt.Sprintf("%s+%d", policy.Protocol, settings.HTTP2ConnectionShards),
 			)
 		}
 		policy.Shards = 1
 	}
 	if policy.Shards < 1 {
 		policy.Shards = 1
+	}
+	if settings.FingerprintProfile != "" && fingerprint_setting.IsEnabled() {
+		policy.Fingerprint = settings.FingerprintProfile
+		policy.FingerprintRevision = fingerprint_setting.Revision(settings.FingerprintProfile)
 	}
 	return policy
 }
@@ -86,7 +97,11 @@ func warnHTTPTransportPolicyOnce(field, value string) {
 }
 
 func (p HTTPTransportPolicy) cacheKeyPart() string {
-	return fmt.Sprintf("%s|%d|%t", p.Protocol, p.Shards, p.TLSInsecureSkipVerify)
+	key := fmt.Sprintf("%s|%d|%t", p.Protocol, p.Shards, p.TLSInsecureSkipVerify)
+	if p.Fingerprint == "" {
+		return key
+	}
+	return key + fingerprintCacheKeyMark + p.Fingerprint + "|" + p.FingerprintRevision
 }
 
 func (p HTTPTransportPolicy) String() string {

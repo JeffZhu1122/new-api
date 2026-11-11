@@ -11,6 +11,8 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -18,6 +20,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/relaykit/dto"
+	"github.com/QuantumNous/new-api/setting/fingerprint_setting"
+	"github.com/quic-go/quic-go/http3"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"golang.org/x/net/http2"
@@ -573,9 +577,143 @@ func TestNormalizeHTTPTransportPolicyClampsWithoutPanic(t *testing.T) {
 	assert.Equal(t, defaultHTTPTransportPolicy(), NormalizeHTTPTransportPolicy(dto.ChannelSettings{}))
 	assert.Equal(t, HTTPTransportPolicy{Protocol: dto.HTTPProtocolAuto, Shards: 1}, NormalizeHTTPTransportPolicy(dto.ChannelSettings{HTTPProtocol: "AUTO"}))
 	assert.Equal(t, HTTPTransportPolicy{Protocol: dto.HTTPProtocolHTTP1, Shards: 1}, NormalizeHTTPTransportPolicy(dto.ChannelSettings{HTTPProtocol: "HTTP1", HTTP2ConnectionShards: 8}))
-	assert.Equal(t, HTTPTransportPolicy{Protocol: dto.HTTPProtocolAuto, Shards: 1}, NormalizeHTTPTransportPolicy(dto.ChannelSettings{HTTPProtocol: "http3"}))
+	assert.Equal(t, HTTPTransportPolicy{Protocol: dto.HTTPProtocolHTTP3, Shards: 1}, NormalizeHTTPTransportPolicy(dto.ChannelSettings{HTTPProtocol: "HTTP3", HTTP2ConnectionShards: 8}))
+	assert.Equal(t, HTTPTransportPolicy{Protocol: dto.HTTPProtocolAuto, Shards: 1}, NormalizeHTTPTransportPolicy(dto.ChannelSettings{HTTPProtocol: "http9"}))
 	assert.Equal(t, HTTPTransportPolicy{Protocol: dto.HTTPProtocolAuto, Shards: 1}, NormalizeHTTPTransportPolicy(dto.ChannelSettings{HTTP2ConnectionShards: -3}))
 	assert.Equal(t, HTTPTransportPolicy{Protocol: dto.HTTPProtocolAuto, Shards: 8}, NormalizeHTTPTransportPolicy(dto.ChannelSettings{HTTP2ConnectionShards: 99}))
+}
+
+func TestHTTP3ChannelTransport(t *testing.T) {
+	initDefaultHTTPClientFixture(t)
+
+	// The httptest server only lends its certificate and the trust for it; the
+	// upstream under test listens on UDP alone.
+	certSource := httptest.NewTLSServer(http.NotFoundHandler())
+	t.Cleanup(certSource.Close)
+	trust := testTLSClientConfig(t, certSource)
+	packetConn, err := net.ListenUDP("udp", &net.UDPAddr{IP: net.IPv4(127, 0, 0, 1)})
+	require.NoError(t, err)
+	release := make(chan struct{})
+	var requests atomic.Int32
+	server := &http3.Server{
+		TLSConfig: &tls.Config{Certificates: certSource.TLS.Certificates},
+		Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			requests.Add(1)
+			switch r.URL.Path {
+			case "/stall":
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+			case "/stream":
+				_, _ = io.WriteString(w, "first ")
+				w.(http.Flusher).Flush()
+				select {
+				case <-release:
+				case <-r.Context().Done():
+				}
+				_, _ = io.WriteString(w, "second")
+			default:
+				body, _ := io.ReadAll(r.Body)
+				w.Header().Set("X-Upstream-Proto", r.Proto)
+				w.Header().Set("X-Upstream-Authorization", r.Header.Get("Authorization"))
+				_, _ = w.Write(body)
+			}
+		}),
+	}
+	go func() { _ = server.Serve(packetConn) }()
+	t.Cleanup(func() {
+		_ = server.Close()
+		_ = packetConn.Close()
+	})
+	upstream := "https://" + packetConn.LocalAddr().String()
+
+	t.Run("channel switch sends the request over HTTP/3", func(t *testing.T) {
+		settings := dto.ChannelSettings{HTTPProtocol: dto.HTTPProtocolHTTP3, TLSInsecureSkipVerify: true}
+		client, err := GetHttpClientWithProxySettings("", settings)
+		require.NoError(t, err)
+		req, err := http.NewRequest(http.MethodPost, upstream+"/echo", strings.NewReader(`{"model":"m"}`))
+		require.NoError(t, err)
+		req.Header.Set("Authorization", "Bearer test")
+		resp, err := client.Do(req)
+		require.NoError(t, err)
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, 3, resp.ProtoMajor)
+		assert.Equal(t, "HTTP/3.0", resp.Header.Get("X-Upstream-Proto"))
+		assert.Equal(t, "Bearer test", resp.Header.Get("X-Upstream-Authorization"))
+		assert.JSONEq(t, `{"model":"m"}`, string(body))
+
+		// A channel without the switch never speaks QUIC: the UDP-only upstream
+		// is unreachable for it.
+		stock, err := GetHttpClientWithProxySettings("", dto.ChannelSettings{TLSInsecureSkipVerify: true})
+		require.NoError(t, err)
+		assert.IsType(t, &http.Transport{}, stock.Transport)
+
+		again, err := GetHttpClientWithProxySettings("", settings)
+		require.NoError(t, err)
+		assert.Same(t, client, again)
+		// Dropping the cached client must not strand a UDP socket: every HTTP/3
+		// client shares the process-wide transport.
+		ResetProxyClientCache()
+		rebuilt, err := GetHttpClientWithProxySettings("", settings)
+		require.NoError(t, err)
+		assert.NotSame(t, client, rebuilt)
+		assert.Same(t, sharedInsecureHTTP3Transport, rebuilt.Transport.(*http3RoundTripper).transport)
+		verifying, err := GetHttpClientWithProxySettings("", dto.ChannelSettings{HTTPProtocol: dto.HTTPProtocolHTTP3})
+		require.NoError(t, err)
+		assert.Same(t, sharedHTTP3Transport, verifying.Transport.(*http3RoundTripper).transport)
+		_, err = verifying.Get(upstream + "/echo")
+		require.ErrorContains(t, err, "certificate")
+	})
+
+	t.Run("proxy and fingerprint profile are refused", func(t *testing.T) {
+		_, err := GetHttpClientWithProxySettings("http://127.0.0.1:1", dto.ChannelSettings{HTTPProtocol: dto.HTTPProtocolHTTP3})
+		require.ErrorContains(t, err, "http3 cannot be used through a proxy")
+
+		useFingerprintProfiles(t, true, fingerprint_setting.Profile{Name: "chrome", TLSPreset: "chrome_133"})
+		_, err = GetHttpClientWithProxySettings("", dto.ChannelSettings{HTTPProtocol: dto.HTTPProtocolHTTP3, FingerprintProfile: "chrome"})
+		require.ErrorContains(t, err, "http3 cannot be combined with a fingerprint profile")
+
+		before := requests.Load()
+		viaEnvironmentProxy := &http.Client{Transport: &http3RoundTripper{
+			transport: &http3.Transport{TLSClientConfig: trust},
+			proxy:     http.ProxyURL(&url.URL{Scheme: "http", Host: "127.0.0.1:1"}),
+		}}
+		_, err = viaEnvironmentProxy.Post(upstream+"/echo", "application/json", strings.NewReader("{}"))
+		require.ErrorContains(t, err, "http3 cannot be used through the proxy configured in the environment")
+		_, err = newHTTPClientWithPolicyAndTLS(HTTPTransportPolicy{Protocol: dto.HTTPProtocolHTTP3, Shards: 1}, trust).Get("http://" + packetConn.LocalAddr().String())
+		require.ErrorContains(t, err, "unsupported protocol scheme")
+		assert.Equal(t, before, requests.Load())
+	})
+
+	t.Run("response header timeout", func(t *testing.T) {
+		transport := &http3.Transport{TLSClientConfig: trust}
+		t.Cleanup(func() { _ = transport.Close() })
+		client := &http.Client{Transport: &http3RoundTripper{
+			transport:             transport,
+			proxy:                 http.ProxyFromEnvironment,
+			responseHeaderTimeout: 200 * time.Millisecond,
+		}}
+
+		// Once the headers arrived the limit no longer applies to the body.
+		resp, err := client.Get(upstream + "/stream")
+		require.NoError(t, err)
+		time.Sleep(300 * time.Millisecond)
+		release <- struct{}{}
+		body, err := io.ReadAll(resp.Body)
+		require.NoError(t, err)
+		require.NoError(t, resp.Body.Close())
+		assert.Equal(t, "first second", string(body))
+
+		_, err = client.Get(upstream + "/stall")
+		var timeout http3ResponseHeaderTimeoutError
+		require.ErrorAs(t, err, &timeout)
+		var urlErr *url.Error
+		require.ErrorAs(t, err, &urlErr)
+		assert.True(t, urlErr.Timeout())
+	})
 }
 
 // serveHTTP2ProbePeer can withhold PING acknowledgements without sending FIN or
