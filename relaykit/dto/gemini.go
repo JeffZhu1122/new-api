@@ -384,7 +384,7 @@ func (p *GeminiPart) UnmarshalJSON(data []byte) error {
 
 type GeminiChatContent struct {
 	Role  string       `json:"role,omitempty"`
-	Parts []GeminiPart `json:"parts"`
+	Parts []GeminiPart `json:"parts,omitempty"`
 }
 
 type GeminiChatSafetySettings struct {
@@ -523,10 +523,10 @@ type MediaResolution string
 
 type GeminiChatCandidate struct {
 	Content           GeminiChatContent        `json:"content"`
-	FinishReason      *string                  `json:"finishReason"`
+	FinishReason      *string                  `json:"finishReason,omitempty"`
 	ContinuationToken json.RawMessage          `json:"continuationToken,omitempty"`
 	Index             int64                    `json:"index"`
-	SafetyRatings     []GeminiChatSafetyRating `json:"safetyRatings"`
+	SafetyRatings     []GeminiChatSafetyRating `json:"safetyRatings,omitempty"`
 	GroundingMetadata *GeminiGroundingMetadata `json:"groundingMetadata,omitempty"`
 }
 
@@ -548,12 +548,12 @@ type GeminiChatSafetyRating struct {
 }
 
 type GeminiChatPromptFeedback struct {
-	SafetyRatings []GeminiChatSafetyRating `json:"safetyRatings"`
+	SafetyRatings []GeminiChatSafetyRating `json:"safetyRatings,omitempty"`
 	BlockReason   *string                  `json:"blockReason,omitempty"`
 }
 
 type GeminiChatResponse struct {
-	Candidates       []GeminiChatCandidate     `json:"candidates"`
+	Candidates       []GeminiChatCandidate     `json:"candidates,omitempty"`
 	PromptFeedback   *GeminiChatPromptFeedback `json:"promptFeedback,omitempty"`
 	UsageMetadata    GeminiUsageMetadata       `json:"usageMetadata"`
 	HasUsageMetadata bool                      `json:"-"`
@@ -602,9 +602,9 @@ type GeminiUsageMetadata struct {
 	TotalTokenCount            int                         `json:"totalTokenCount"`
 	ThoughtsTokenCount         int                         `json:"thoughtsTokenCount"`
 	CachedContentTokenCount    int                         `json:"cachedContentTokenCount"`
-	PromptTokensDetails        []GeminiPromptTokensDetails `json:"promptTokensDetails"`
-	ToolUsePromptTokensDetails []GeminiPromptTokensDetails `json:"toolUsePromptTokensDetails"`
-	CandidatesTokensDetails    []GeminiPromptTokensDetails `json:"candidatesTokensDetails"`
+	PromptTokensDetails        []GeminiPromptTokensDetails `json:"promptTokensDetails,omitempty"`
+	ToolUsePromptTokensDetails []GeminiPromptTokensDetails `json:"toolUsePromptTokensDetails,omitempty"`
+	CandidatesTokensDetails    []GeminiPromptTokensDetails `json:"candidatesTokensDetails,omitempty"`
 	BillingUsage               *BillingUsage               `json:"billing_usage,omitempty"`
 }
 

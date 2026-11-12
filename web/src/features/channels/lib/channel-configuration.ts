@@ -23,6 +23,7 @@ import {
   CHANNEL_TYPE_OLLAMA,
   CHANNEL_TYPE_TASK_PLUGIN,
   CLAUDE_FIELD_PASSTHROUGH_TYPES,
+  GEMINI_NULL_FIELD_CHANNEL_TYPES,
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
@@ -66,6 +67,7 @@ const CONFIGURATION_BLOCKS = {
     fields: [
       'force_format',
       'thinking_to_content',
+      'gemini_omit_null_fields',
       'pass_through_body_enabled',
       'responses_websocket_enabled',
       'ollama_openai_chat',
@@ -192,6 +194,8 @@ export function getChannelConfigurationState(
     requestProcessing: Boolean(
       (values.type === 1 && values.force_format) ||
       values.thinking_to_content ||
+      (GEMINI_NULL_FIELD_CHANNEL_TYPES.has(values.type) &&
+        values.gemini_omit_null_fields) ||
       (values.type !== CHANNEL_TYPE_ADVANCED_CUSTOM &&
         values.pass_through_body_enabled) ||
       ((supportsResponsesWebSocket(values.type) ||

@@ -30,6 +30,7 @@ import {
   CHANNEL_STATUS,
   ERROR_MESSAGES,
   FIELD_PASSTHROUGH_TYPES,
+  GEMINI_NULL_FIELD_CHANNEL_TYPES,
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../constants'
@@ -321,6 +322,7 @@ export const channelFormSchema = z
     // Channel extra settings (stored in setting JSON, not sent directly)
     force_format: z.boolean().optional(),
     thinking_to_content: z.boolean().optional(),
+    gemini_omit_null_fields: z.boolean().optional(),
     proxy: z
       .string()
       .optional()
@@ -775,6 +777,7 @@ export const CHANNEL_FORM_DEFAULT_VALUES: ChannelFormValues = {
   // Channel extra settings
   force_format: false,
   thinking_to_content: false,
+  gemini_omit_null_fields: false,
   proxy: '',
   http_protocol: HTTP_PROTOCOL_AUTO,
   http2_connection_shards: 1,
@@ -847,6 +850,7 @@ export function transformChannelToFormDefaults(
     request_plugins: [] as string[],
     force_format: false,
     thinking_to_content: false,
+    gemini_omit_null_fields: false,
     proxy: '',
     http_protocol: HTTP_PROTOCOL_AUTO as ChannelHttpProtocol,
     http2_connection_shards: 1,
@@ -877,6 +881,7 @@ export function transformChannelToFormDefaults(
           : [],
         force_format: parsed.force_format || false,
         thinking_to_content: parsed.thinking_to_content || false,
+        gemini_omit_null_fields: parsed.gemini_omit_null_fields === true,
         proxy: parsed.proxy || '',
         http_protocol: protocol,
         http2_connection_shards: protocol === HTTP_PROTOCOL_AUTO ? shards : 1,
@@ -1102,6 +1107,12 @@ export function buildSettingJSON(formData: ChannelFormValues): string {
   }
   if (formData.tls_insecure_skip_verify === true) {
     settingObj.tls_insecure_skip_verify = true
+  }
+  if (
+    formData.gemini_omit_null_fields === true &&
+    GEMINI_NULL_FIELD_CHANNEL_TYPES.has(formData.type)
+  ) {
+    settingObj.gemini_omit_null_fields = true
   }
   const fingerprintProfile = formData.fingerprint_profile?.trim()
   if (fingerprintProfile) {

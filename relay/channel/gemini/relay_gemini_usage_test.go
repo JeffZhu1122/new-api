@@ -754,3 +754,62 @@ func TestGeminiHandlersCountGroundingQueries(t *testing.T) {
 		})
 	}
 }
+
+// A gateway in front of Gemini that rebuilds responses from typed structs can
+// send explicit nulls, which google-genai for Java cannot read. The channel
+// switch drops them from native responses; without it the upstream bytes pass
+// through untouched.
+func TestGeminiTextGenerationHandlersOmitNullFieldsWhenTheChannelAsks(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	oldStreamingTimeout := constant.StreamingTimeout
+	constant.StreamingTimeout = 300
+	t.Cleanup(func() {
+		constant.StreamingTimeout = oldStreamingTimeout
+	})
+	const withNulls = `{"candidates": [{"content": {"role": "model", "parts": [{"thought": true, "thoughtSignature": "c2ln"}, {"text": "2 + 3 = null?"}, {"functionCall": {"name": "lookup", "args": {"q": null}}}]}, "finishReason": "STOP", "index": 0, "safetyRatings": null, "groundingMetadata": {"webSearchQueries": ["q", null]}}], "usageMetadata": {"promptTokenCount": 37, "toolUsePromptTokensDetails": null, "candidatesTokensDetails": [{"modality": "TEXT", "tokenCount": 11}]}, "modelVersion": "gemini-test", "responseId": "r1"}`
+	const withoutNulls = `{"candidates":[{"content":{"role":"model","parts":[{"thought":true,"thoughtSignature":"c2ln"},{"text":"2 + 3 = null?"},{"functionCall":{"name":"lookup","args":{"q": null}}}]},"finishReason":"STOP","index":0,"groundingMetadata":{"webSearchQueries":["q",null]}}],"usageMetadata":{"promptTokenCount":37,"candidatesTokensDetails":[{"modality":"TEXT","tokenCount":11}]},"modelVersion":"gemini-test","responseId":"r1"}`
+	const nullFree = `{"candidates": [{"content": {"role": "model", "parts": [{"text": "ok"}]}, "finishReason": "STOP"}], "modelVersion": "gemini-test"}`
+
+	tests := []struct {
+		name   string
+		omit   bool
+		stream bool
+		body   string
+		want   string
+	}{
+		{name: "switch off keeps the upstream bytes", body: withNulls, want: withNulls},
+		{name: "switch on drops null members", omit: true, body: withNulls, want: withoutNulls},
+		{name: "switch on keeps a null-free body as sent", omit: true, body: nullFree, want: nullFree},
+		{name: "stream switch off keeps the upstream bytes", stream: true, body: withNulls, want: withNulls},
+		{name: "stream switch on drops null members", omit: true, stream: true, body: withNulls, want: withoutNulls},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1beta/models/gemini-test:generateContent", nil)
+			info := &relaycommon.RelayInfo{
+				OriginModelName: "gemini-test",
+				ChannelMeta: &relaycommon.ChannelMeta{
+					UpstreamModelName: "gemini-test",
+					ChannelSetting:    dto.ChannelSettings{GeminiOmitNullFields: tt.omit},
+				},
+			}
+
+			var apiErr *types.NewAPIError
+			if tt.stream {
+				body := "data: " + tt.body + "\n\n"
+				_, apiErr = GeminiTextGenerationStreamHandler(c, info, &http.Response{Body: io.NopCloser(strings.NewReader(body))})
+			} else {
+				_, apiErr = GeminiTextGenerationHandler(c, info, &http.Response{StatusCode: http.StatusOK, Header: http.Header{}, Body: io.NopCloser(strings.NewReader(tt.body))})
+			}
+			require.Nil(t, apiErr)
+
+			got := recorder.Body.String()
+			if tt.stream {
+				got = strings.TrimSpace(strings.TrimPrefix(got, "data: "))
+			}
+			assert.Equal(t, tt.want, got)
+		})
+	}
+}

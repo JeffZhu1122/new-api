@@ -64,10 +64,7 @@
             "candidatesTokenCount": 2,
             "totalTokenCount": 6,
             "thoughtsTokenCount": 0,
-            "cachedContentTokenCount": 0,
-            "promptTokensDetails": [],
-            "toolUsePromptTokensDetails": [],
-            "candidatesTokensDetails": []
+            "cachedContentTokenCount": 0
           }
         }
       },

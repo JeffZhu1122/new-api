@@ -148,6 +148,7 @@ export interface ChannelSettings {
   request_plugins?: string[]
   force_format?: boolean
   thinking_to_content?: boolean
+  gemini_omit_null_fields?: boolean
   proxy?: string
   pass_through_body_enabled?: boolean
   responses_websocket_enabled?: boolean
