@@ -2,6 +2,7 @@ package controller
 
 import (
 	"encoding/json"
+	"errors"
 	"time"
 
 	"github.com/QuantumNous/new-api/common"
@@ -31,8 +32,15 @@ func VerifyLogin(c *gin.Context) {
 		writeSecurityOperationError(c, service.ErrProofMethod)
 		return
 	}
-	bundle, migration, err := service.VerifyLoginCode(request.FlowToken, request.Code, c.ClientIP(), c.Request.UserAgent())
+	bundle, migration, userID, err := service.VerifyLoginCode(request.FlowToken, request.Code, c.ClientIP(), c.Request.UserAgent())
 	if err != nil {
+		// Only wrong codes are written: they lead to the lock, and attempts
+		// while it holds would add nothing but rows.
+		if errors.Is(err, service.ErrVerificationFailed) {
+			if user, lookupErr := model.GetUserById(userID, false); lookupErr == nil {
+				recordLoginFailureAudit(c, []model.User{*user}, "2fa", "second_factor_failed")
+			}
+		}
 		writeSecurityOperationError(c, err)
 		return
 	}

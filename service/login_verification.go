@@ -127,19 +127,24 @@ func requireLoginVerificationMethod(state *model.UserVerificationState, method s
 	return ErrProofMethod
 }
 
-func VerifyLoginCode(token, code, ip, userAgent string) (*AuthBundle, *LegacyGitHubMigration, error) {
+// VerifyLoginCode completes a sign-in with its second-factor code. The id
+// returned is that of the account the sign-in is for, once the flow is known
+// to be live, also when the code is refused.
+func VerifyLoginCode(token, code, ip, userAgent string) (*AuthBundle, *LegacyGitHubMigration, int, error) {
 	verification, err := RequireLoginVerification(token, VerificationMethodTwoFA)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, 0, err
 	}
-	twoFA, err := model.GetTwoFAByUserId(verification.State.UserID)
+	userID := verification.State.UserID
+	twoFA, err := model.GetTwoFAByUserId(userID)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, userID, err
 	}
 	if err := VerifyTwoFactorCode(twoFA, code); err != nil {
-		return nil, nil, err
+		return nil, nil, userID, err
 	}
-	return CompleteLoginVerification(token, verification, VerificationMethodTwoFA, ip, userAgent)
+	bundle, migration, err := CompleteLoginVerification(token, verification, VerificationMethodTwoFA, ip, userAgent)
+	return bundle, migration, userID, err
 }
 
 // CompleteLoginVerification must only run after a concrete factor ceremony.

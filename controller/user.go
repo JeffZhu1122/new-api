@@ -84,12 +84,7 @@ func Login(c *gin.Context) {
 		writeLoginCredentialError(c, username, err)
 		return
 	}
-	allowed, retryAfter, err := service.TakeLoginAttempt(c.Request.Context(), username, candidates)
-	if err != nil {
-		common.SysError(common.LogText("login attempt limit check failed: %v", err))
-		c.AbortWithStatus(http.StatusInternalServerError)
-		return
-	}
+	allowed, retryAfter := service.TakeLoginAttempt(c.Request.Context(), username, candidates)
 	if !allowed {
 		common.SysLog(common.LogText("login attempts are over the limit for one account (matched accounts: %d, ip: %s)", len(candidates), c.ClientIP()))
 		if retryAfter > 0 {
@@ -100,6 +95,9 @@ func Login(c *gin.Context) {
 	}
 	user := model.User{Password: password}
 	if err := user.FillFromLoginCandidates(candidates); err != nil {
+		if errors.Is(err, model.ErrInvalidCredentials) {
+			recordLoginFailureAudit(c, candidates, "password", "invalid_credentials")
+		}
 		writeLoginCredentialError(c, username, err)
 		return
 	}
@@ -162,7 +160,21 @@ func recordLoginAudit(user *model.User, c *gin.Context) {
 	if verifiedMethod := c.GetString("login_verification_method"); verifiedMethod != "" {
 		params["verification_method"] = verifiedMethod
 	}
-	model.RecordLoginLog(user.Id, user.Role, user.Username, content, ip, "login", params, extra, c)
+	model.RecordLoginLog(user.Id, user.Role, user.Username, content, ip, "login", true, params, extra, c)
+}
+
+// recordLoginFailureAudit writes a refused sign-in to the audit log of each
+// account it was aimed at, so that the owner and administrators can see it.
+// It holds how the attempt came and why it was refused, never the password or
+// code that was tried. Attempts turned away by a limit before any check are
+// not written, which keeps the entries for one account within that limit.
+func recordLoginFailureAudit(c *gin.Context, accounts []model.User, method string, reason string) {
+	params := map[string]any{"method": method, "failure_reason": reason}
+	extra := model.AuditOther{LoginMethod: method, UserAgent: c.Request.UserAgent()}
+	content := fmt.Sprintf("Sign-in failed via %s", method)
+	for i := range accounts {
+		model.RecordLoginLog(accounts[i].Id, common.RoleGuestUser, accounts[i].Username, content, c.ClientIP(), "login_failed", false, params, extra, c)
+	}
 }
 
 // setupLogin evaluates the shared login policy after primary authentication.

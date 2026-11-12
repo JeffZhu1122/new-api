@@ -489,7 +489,14 @@ it.each([
     { method: 'password' },
     'Logged in successfully via Password',
   ],
+  [
+    'login',
+    'login_failed',
+    { method: 'password', failure_reason: 'invalid_credentials' },
+    'Sign-in failed via Password',
+  ],
   ['security', 'user.2fa_enable', {}, 'Enabled two-factor authentication'],
+  ['security', 'user.password_reset', {}, 'Account password reset'],
   ['access_token', 'access_token.request', {}, 'Access Token'],
 ])(
   'shows summary and result for %s records',
@@ -511,6 +518,26 @@ it.each([
     expect(within(dialog).getByText('user')).toBeVisible()
   }
 )
+
+it.each([
+  ['invalid_credentials', 'Wrong password, or the account is disabled'],
+  ['second_factor_failed', 'Wrong two-factor code'],
+])('names why a sign-in was refused (%s)', async (reason, label) => {
+  const { dialog } = await openDetails({
+    ...entry,
+    category: 'login',
+    action: 'login_failed',
+    success: false,
+    other: {
+      op: {
+        action: 'login_failed',
+        params: { method: 'password', failure_reason: reason },
+      },
+    },
+  })
+  expect(within(dialog).getByText(label)).toBeVisible()
+  expect(dialog).not.toHaveTextContent(reason)
+})
 
 it('shows the quota target and committed balances before operator information', async () => {
   const user = userEvent.setup()

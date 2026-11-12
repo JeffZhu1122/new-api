@@ -56,6 +56,10 @@ func HashAccountPassword(password string) (string, error) {
 	default:
 		return "", errors.New("Unsupported account password hashing configuration.")
 	}
+	return hashArgon2AccountPassword(password)
+}
+
+func hashArgon2AccountPassword(password string) (string, error) {
 	salt := make([]byte, accountPasswordSaltBytes)
 	if _, err := rand.Read(salt); err != nil {
 		return "", fmt.Errorf("generate account password salt: %w", err)
@@ -86,20 +90,54 @@ func validateArgon2AccountPassword(password, encoded string) bool {
 	return subtle.ConstantTimeCompare(actual, expected) == 1
 }
 
-// decoyAccountPasswordHash is the stored form of a random password that is
-// thrown away, written with the algorithm new account passwords use.
-var decoyAccountPasswordHash = sync.OnceValue(func() string {
-	hash, err := HashAccountPassword(GetRandomString(MaxAccountPasswordLength / 2))
-	if err != nil {
-		SysError(LogText("failed to prepare the decoy account password: %v", err))
-	}
-	return hash
-})
+// The decoy hashes are stored forms of a random password that is thrown
+// away, one for each algorithm account passwords may be stored with: Argon2id
+// for passwords set by this version, bcrypt for older ones and for the
+// temporary bcrypt write mode.
+var (
+	decoyArgon2AccountPasswordHash = sync.OnceValue(func() string {
+		hash, err := hashArgon2AccountPassword(GetRandomString(MaxAccountPasswordLength / 2))
+		if err != nil {
+			SysError(LogText("failed to prepare the decoy account password: %v", err))
+		}
+		return hash
+	})
+	decoyBcryptAccountPasswordHash = sync.OnceValue(func() string {
+		hash, err := Password2Hash(GetRandomString(32))
+		if err != nil {
+			SysError(LogText("failed to prepare the decoy account password: %v", err))
+		}
+		return hash
+	})
+)
 
-// SpendAccountPasswordCheck does the work of one password verification when
-// there is no account to verify against. A login for an identifier nobody owns
-// then costs what a login for a real account costs, so the response time does
-// not tell the two apart.
-func SpendAccountPasswordCheck(password string) {
-	ValidatePasswordAndHash(password, decoyAccountPasswordHash())
+// AccountPasswordChecks verifies a sign-in password against the stored
+// passwords of the accounts its identifier names. Argon2id and bcrypt take
+// very different times, so Finish tops the work up to one verification of
+// each: a sign-in then takes as long whether the identifier names an account,
+// and whichever algorithm stored that account's password.
+type AccountPasswordChecks struct {
+	argon2 bool
+	bcrypt bool
+}
+
+// Validate reports whether password matches the stored hash.
+func (checks *AccountPasswordChecks) Validate(password string, hash string) bool {
+	if strings.HasPrefix(hash, "$argon2id$") {
+		checks.argon2 = true
+	} else {
+		checks.bcrypt = true
+	}
+	return ValidatePasswordAndHash(password, hash)
+}
+
+// Finish verifies password against the decoy of each algorithm that no
+// Validate call has used.
+func (checks *AccountPasswordChecks) Finish(password string) {
+	if !checks.argon2 {
+		checks.Validate(password, decoyArgon2AccountPasswordHash())
+	}
+	if !checks.bcrypt {
+		checks.Validate(password, decoyBcryptAccountPasswordHash())
+	}
 }

@@ -23,7 +23,7 @@ import { afterEach, describe, expect, test, vi } from 'vitest'
 import { api, type RefreshOutcome } from '@/lib/api'
 import type { AuthBundle } from '@/stores/auth-store'
 
-import { executeLogout } from './api'
+import { executeLogout, wechatLoginByCode } from './api'
 import { useOAuthLogin } from './hooks/use-oauth-login'
 import { consumeOAuthLoginRedirect } from './lib/oauth-callback-mode'
 
@@ -85,6 +85,42 @@ test.each([true, false])(
     }
   }
 )
+
+describe('WeChat sign-in', () => {
+  test('submits the code with the state of a sign-in flow started first', async () => {
+    const post = vi.spyOn(api, 'post').mockResolvedValue({
+      data: { success: true, data: { flow_token: 'wechat-state' } },
+    })
+    const get = vi
+      .spyOn(api, 'get')
+      .mockResolvedValue({ data: { success: true, data: bundle } })
+
+    const result = await wechatLoginByCode('123456')
+
+    expect(post).toHaveBeenCalledWith(
+      '/api/oauth/state',
+      expect.objectContaining({ provider: 'wechat', intent: 'login' }),
+      expect.anything()
+    )
+    expect(get).toHaveBeenCalledWith('/api/oauth/wechat', {
+      params: { code: '123456', state: 'wechat-state' },
+    })
+    expect(post.mock.invocationCallOrder[0]).toBeLessThan(
+      get.mock.invocationCallOrder[0]
+    )
+    expect(result).toEqual({ success: true, data: bundle })
+  })
+
+  test('does not submit the code when no sign-in flow can be started', async () => {
+    vi.spyOn(api, 'post').mockResolvedValue({
+      data: { success: false, message: 'Invalid parameters' },
+    })
+    const get = vi.spyOn(api, 'get')
+
+    await expect(wechatLoginByCode('123456')).rejects.toThrow()
+    expect(get).not.toHaveBeenCalled()
+  })
+})
 
 const bundle: AuthBundle = {
   access_token: 'access-token',

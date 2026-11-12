@@ -32,6 +32,23 @@ const oauthAuthFlowTTL = 10 * time.Minute
 // sign that browser in to the first one's account.
 const oauthLoginCookieName = "new_api_oauth_login"
 
+// oauthLoginHostCookieName is the same cookie under the __Host- prefix, which
+// is what a deployment with secure cookies uses. Browsers take a __Host-
+// cookie only from this exact host over HTTPS, with Path=/ and no Domain, so a
+// sibling subdomain cannot plant its own sign-in cookie in a victim's browser
+// to have that browser finish the planter's sign-in. Without Secure browsers
+// refuse the prefix, and plain HTTP gives no such guarantee to begin with.
+const oauthLoginHostCookieName = "__Host-" + oauthLoginCookieName
+
+// oauthLoginCookie returns the name and path of the sign-in cookie for the
+// current cookie mode.
+func oauthLoginCookie() (string, string) {
+	if common.SessionCookieSecure {
+		return oauthLoginHostCookieName, "/"
+	}
+	return oauthLoginCookieName, "/api/oauth"
+}
+
 type oauthStateRequest struct {
 	Provider string          `json:"provider"`
 	Intent   string          `json:"intent"`
@@ -54,7 +71,8 @@ type oauthFlowPayload struct {
 // oauthLoginBrowser returns the digest a sign-in flow stores for the browser
 // behind c, or "" when that browser holds no usable sign-in cookie.
 func oauthLoginBrowser(c *gin.Context) string {
-	value, err := c.Cookie(oauthLoginCookieName)
+	name, _ := oauthLoginCookie()
+	value, err := c.Cookie(name)
 	if err != nil {
 		return ""
 	}
@@ -70,8 +88,9 @@ func oauthLoginBrowser(c *gin.Context) string {
 // cookie the browser already holds is kept, so that sign-ins started in
 // several tabs can all be completed.
 func bindOAuthLoginToBrowser(c *gin.Context) (string, error) {
+	name, path := oauthLoginCookie()
 	browser := oauthLoginBrowser(c)
-	value, _ := c.Cookie(oauthLoginCookieName)
+	value, _ := c.Cookie(name)
 	if browser == "" {
 		nonce := make([]byte, model.AuthFlowTokenBytes)
 		if _, err := rand.Read(nonce); err != nil {
@@ -81,15 +100,30 @@ func bindOAuthLoginToBrowser(c *gin.Context) (string, error) {
 		browser = hex.EncodeToString(common.Sha256Raw(nonce))
 	}
 	http.SetCookie(c.Writer, &http.Cookie{
-		Name:     oauthLoginCookieName,
+		Name:     name,
 		Value:    value,
-		Path:     "/api/oauth",
+		Path:     path,
 		MaxAge:   int(oauthAuthFlowTTL.Seconds()),
 		HttpOnly: true,
 		Secure:   common.SessionCookieSecure,
 		SameSite: http.SameSiteStrictMode,
 	})
 	return browser, nil
+}
+
+// oauthLoginStartedInThisBrowser reports whether the browser behind c is the
+// one that started the sign-in flow. A refused callback leaves the flow
+// unconsumed, so a callback opened elsewhere cannot spend the sign-in that
+// browser is still waiting on.
+func oauthLoginStartedInThisBrowser(c *gin.Context, flow *model.AuthFlow) bool {
+	var payload oauthFlowPayload
+	browser := oauthLoginBrowser(c)
+	if err := common.UnmarshalJsonStr(flow.Payload, &payload); err != nil || browser == "" ||
+		subtle.ConstantTimeCompare([]byte(browser), []byte(payload.LoginBrowser)) != 1 {
+		common.SysLog(common.LogText("OAuth sign-in callback refused: this browser did not start the sign-in (provider: %s, ip: %s)", flow.Provider, c.ClientIP()))
+		return false
+	}
+	return true
 }
 
 // providerParams returns the params of messages that name the OAuth provider.
@@ -107,7 +141,10 @@ func GenerateOAuthCode(c *gin.Context) {
 	request.Provider = strings.TrimSpace(request.Provider)
 	request.Intent = strings.TrimSpace(request.Intent)
 	request.Aff = strings.TrimSpace(request.Aff)
-	if oauth.GetProvider(request.Provider) == nil ||
+	// WeChat is not an OAuth provider, but its sign-in takes a flow too: see
+	// WeChatAuth.
+	wechatLogin := request.Provider == wechatAuthFlowProvider && request.Intent == model.AuthFlowIntentLogin
+	if (oauth.GetProvider(request.Provider) == nil && !wechatLogin) ||
 		(request.Intent != model.AuthFlowIntentLogin && request.Intent != model.AuthFlowIntentBind && request.Intent != model.AuthFlowIntentVerify) ||
 		len(request.Aff) > 32 ||
 		(request.Intent != model.AuthFlowIntentLogin && request.Aff != "") ||
@@ -262,14 +299,7 @@ func HandleOAuth(c *gin.Context) {
 			}
 		}
 	} else if pendingFlow.Intent == model.AuthFlowIntentLogin {
-		// A sign-in is completed only in the browser that started it. The flow
-		// is left unconsumed, so a callback opened elsewhere cannot spend the
-		// sign-in that browser is still waiting on.
-		var payload oauthFlowPayload
-		browser := oauthLoginBrowser(c)
-		if err := common.UnmarshalJsonStr(pendingFlow.Payload, &payload); err != nil || browser == "" ||
-			subtle.ConstantTimeCompare([]byte(browser), []byte(payload.LoginBrowser)) != 1 {
-			common.SysLog(common.LogText("OAuth sign-in callback refused: this browser did not start the sign-in (provider: %s, ip: %s)", providerName, c.ClientIP()))
+		if !oauthLoginStartedInThisBrowser(c, pendingFlow) {
 			writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
 			return
 		}

@@ -467,12 +467,14 @@ const AUDIT_TEMPLATES: Record<string, string> = {
   'user.2fa_backup_codes': 'Regenerated two-factor backup codes',
   'user.security_verify': 'Completed security verification',
   'user.password_change': 'Account password change',
+  'user.password_reset': 'Account password reset',
   'user.binding_start': 'Account binding request',
   'user.binding_bind': 'Account binding',
   'user.binding_unbind': 'Account unlinking',
   'user.email_binding_resend': 'Email confirmation code resend',
 
   login: 'Logged in successfully via {{method}}',
+  login_failed: 'Sign-in failed via {{method}}',
   // User management
   'user.create': 'Created user {{username}} (role {{role}})',
   'user.update': 'Updated user {{username}} (ID: {{id}})',

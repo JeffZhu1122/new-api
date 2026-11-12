@@ -223,9 +223,12 @@ export async function createOAuthFlow(
     .state
 }
 
-// WeChat login by authorization code
+// WeChat login by the code the official account sends. The code names a
+// WeChat account but not a browser, so it travels with the state of a sign-in
+// flow started here; the server refuses a code that arrives without one.
 export async function wechatLoginByCode(code: string): Promise<ApiResponse> {
-  const res = await api.get('/api/oauth/wechat', { params: { code } })
+  const state = await createOAuthFlow('wechat', 'login')
+  const res = await api.get('/api/oauth/wechat', { params: { code, state } })
   return res.data
 }
 
