@@ -46,6 +46,11 @@ type ChannelSettings struct {
 	// TestMaxTokens replaces the output token limit of this channel's chat test
 	// request. Zero keeps the built-in limit of each request format.
 	TestMaxTokens uint `json:"test_max_tokens,omitempty"`
+	// GeminiOmitNullFields drops the members whose value is null from the
+	// native Gemini responses of this channel. Gemini never sends them, but a
+	// gateway in front of it that rebuilds responses can, and clients such as
+	// google-genai for Java fail on them. Off keeps the upstream bytes.
+	GeminiOmitNullFields bool `json:"gemini_omit_null_fields,omitempty"`
 }
 
 // BindsTaskPlugin reports whether the channel is bound to the task plugin,

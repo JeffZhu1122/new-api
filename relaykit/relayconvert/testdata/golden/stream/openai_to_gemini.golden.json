@@ -11,9 +11,7 @@
               }
             ]
           },
-          "finishReason": null,
-          "index": 0,
-          "safetyRatings": []
+          "index": 0
         }
       ],
       "usageMetadata": {
@@ -22,10 +20,7 @@
         "candidatesTokenCount": 0,
         "totalTokenCount": 0,
         "thoughtsTokenCount": 0,
-        "cachedContentTokenCount": 0,
-        "promptTokensDetails": null,
-        "toolUsePromptTokensDetails": null,
-        "candidatesTokensDetails": null
+        "cachedContentTokenCount": 0
       }
     },
     {
@@ -39,9 +34,7 @@
               }
             ]
           },
-          "finishReason": null,
-          "index": 0,
-          "safetyRatings": []
+          "index": 0
         }
       ],
       "usageMetadata": {
@@ -50,22 +43,17 @@
         "candidatesTokenCount": 0,
         "totalTokenCount": 0,
         "thoughtsTokenCount": 0,
-        "cachedContentTokenCount": 0,
-        "promptTokensDetails": null,
-        "toolUsePromptTokensDetails": null,
-        "candidatesTokensDetails": null
+        "cachedContentTokenCount": 0
       }
     },
     {
       "candidates": [
         {
           "content": {
-            "role": "model",
-            "parts": []
+            "role": "model"
           },
           "finishReason": "STOP",
-          "index": 0,
-          "safetyRatings": []
+          "index": 0
         }
       ],
       "usageMetadata": {
@@ -75,9 +63,6 @@
         "totalTokenCount": 6,
         "thoughtsTokenCount": 0,
         "cachedContentTokenCount": 0,
-        "promptTokensDetails": null,
-        "toolUsePromptTokensDetails": null,
-        "candidatesTokensDetails": null,
         "billing_usage": {
           "source": "oai_chat",
           "semantic": "openai",

@@ -161,6 +161,7 @@ import {
   FIELD_PASSTHROUGH_TYPES,
   FIELD_DESCRIPTIONS,
   FIELD_PLACEHOLDERS,
+  GEMINI_NULL_FIELD_CHANNEL_TYPES,
   MODEL_FETCHABLE_TYPES,
   OPENAI_FIELD_PASSTHROUGH_TYPES,
 } from '../../constants'
@@ -334,6 +335,7 @@ const SENSITIVE_FORM_FIELDS = [
   'azure_responses_version',
   'force_format',
   'thinking_to_content',
+  'gemini_omit_null_fields',
   'proxy',
   'http_protocol',
   'http2_connection_shards',
@@ -2018,6 +2020,34 @@ export function ChannelMutateDrawer({
             <FormLabel>{t('Thinking to Content')}</FormLabel>
             <FormDescription>
               {t('Convert reasoning_content to <think> tag in content')}
+            </FormDescription>
+          </div>
+          <FormControl>
+            <Switch
+              disabled={sensitiveLocked}
+              checked={field.value}
+              onCheckedChange={field.onChange}
+            />
+          </FormControl>
+        </FormItem>
+      )}
+    />
+  )
+
+  const geminiNullFieldsFields = GEMINI_NULL_FIELD_CHANNEL_TYPES.has(
+    currentType
+  ) && (
+    <FormField
+      control={form.control}
+      name='gemini_omit_null_fields'
+      render={({ field }) => (
+        <FormItem className='flex items-center justify-between px-4 py-3'>
+          <div className='space-y-0.5'>
+            <FormLabel>{t('Omit Null Fields in Gemini Responses')}</FormLabel>
+            <FormDescription>
+              {t(
+                'Remove fields whose value is null from native Gemini responses. Turn on when an upstream gateway sends them and Gemini SDKs fail to read the response.'
+              )}
             </FormDescription>
           </div>
           <FormControl>
@@ -5546,6 +5576,7 @@ export function ChannelMutateDrawer({
                 {formatFields}
                 {ollamaOpenAIChatFields}
                 {thinkingFields}
+                {geminiNullFieldsFields}
                 {passthroughFields}
                 {systemPromptFields}
                 {systemPromptOverrideFields}

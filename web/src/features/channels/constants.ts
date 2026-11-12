@@ -28,6 +28,8 @@ export const CHANNEL_PRIORITY_GUIDE_KEYS = {
 
 export const CHANNEL_TYPE_OLLAMA = 4
 
+export const CHANNEL_TYPE_GEMINI = 24
+
 export const CHANNEL_TYPE_VERTEX_AI = 41
 
 export const CHANNEL_TYPE_CODEX = 57
@@ -41,6 +43,12 @@ export const CHANNEL_TYPE_TASK_PLUGIN = 61
 export const CHANNEL_TYPE_VLLM = 62
 
 export const CHANNEL_TYPE_SGLANG = 63
+
+// Channel types whose native Gemini responses can have null fields removed.
+export const GEMINI_NULL_FIELD_CHANNEL_TYPES = new Set<number>([
+  CHANNEL_TYPE_GEMINI,
+  CHANNEL_TYPE_VERTEX_AI,
+])
 
 export const CHANNEL_TYPES = {
   0: 'Unknown',

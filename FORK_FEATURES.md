@@ -54,6 +54,7 @@
 37. [渠道报错行带模型名](#37-渠道报错行带模型名)
 38. [素材库管理（火山方舟私域素材库）](#38-素材库管理火山方舟私域素材库)
 39. [渠道级出站指纹与 HTTP/3](#39-渠道级出站指纹与-http3)
+40. [Gemini 原生响应省略 null 字段](#40-gemini-原生响应省略-null-字段)
 
 ---
 
@@ -95,6 +96,7 @@
 | 37 | 渠道报错行带模型名 | 与本文档同一提交 | 始终生效 | 无 | 服务器日志文件的 `channel error` 行末尾多一个 `model` 字段 |
 | 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 7 步） | 关闭（关闭时默认不拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`user_extend.asset_library`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库；管理员可在「编辑用户」里按用户覆盖每用户素材组 / 素材上限 |
 | 39 | 渠道级出站指纹与 HTTP/3 | 与本文档同一提交 | 关闭（渠道不选指纹配置、协议不选 HTTP/3、不填测试消息时与原来相同；全局总开关默认开，但没有渠道选用配置时不改变任何请求） | `fingerprint_setting.enabled` / `fingerprint_setting.profiles`；渠道 `setting` 的 `fingerprint_profile` / `http_protocol = "http3"` / `test_message` / `test_max_tokens` | 系统设置「出站指纹」一节；渠道编辑的「指纹配置」、`HTTP/3 (QUIC)`、「测试消息」「测试最大 Tokens」；`GET /api/channel/fingerprint_profiles`；选了配置的渠道的 HTTP 与 Realtime WebSocket 出站连接（TLS ClientHello、HTTP/2 参数、请求头顺序、默认 User-Agent）；新依赖 utls / req / quic-go |
+| 40 | Gemini 原生响应省略 null 字段 | 与本文档同一提交 | 关闭（渠道开关；转换路径的修正没有开关） | 渠道 `setting.gemini_omit_null_fields` | Gemini / Vertex AI 渠道的原生生成响应；其他格式转成 Gemini 格式的响应不再写出 `null` |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -2497,3 +2499,47 @@ HTTP/3：
   - 拒绝 13 项，都返回 `success: false` 且没有保存：删除仍被选用的配置、`http3` 加指纹配置 / 代理 / 2 个分片、渠道选不存在的配置、空白测试消息、`4:6291456`、`5:1048576`、无法解析的抓包、同时填预设与抓包、未知预设、非布尔的总开关、重名。
   - 网关日志里没有 panic。
   - 没有覆盖：代理路径、明文 HTTP 上游（只有单元测试）、真实供应商的接口。
+
+## 40. Gemini 原生响应省略 null 字段
+
+### 动机
+
+google-genai Java SDK（客户报错时用的是 1.59.0）把响应里的很多字段建模为可选值，读到显式的 `null`（例如 `"safetyRatings": null`）会抛 `JsonMappingException`。上游 issue 是 googleapis/java-genai#758，修复 PR #1362 截至 2026-11-12 仍未合并。
+
+Gemini 自己从不发 `null`，客户端却可能在两处收到：
+
+- 本网关把 OpenAI / Claude / Responses 格式的上游响应转成 Gemini 格式时，`finishReason`、`parts`、`safetyRatings`、三个 `*TokensDetails` 没有值就写成 `null`；流式的每一帧都带 `"finishReason": null`。
+- Gemini / Vertex AI 渠道原样转发上游字节。上游如果是另一个把响应解析后重新写出的网关，客户端收到的就是它写出的 `null`。
+
+### 行为
+
+- 转换路径（没有开关）：上面这些字段没有值时不再写出，空的 `safetyRatings`、`parts` 也省略。解析结果和计费不变。
+- 原生转发路径（渠道开关，默认关闭）：渠道编辑 →「请求与响应」→「请求处理」→「Gemini 响应省略 null 字段」，存为渠道 `setting.gemini_omit_null_fields`。只在 Gemini（24）和 Vertex AI（41）渠道上显示和保存。开启后，Gemini 原生 `generateContent` 的响应和 `streamGenerateContent` 的每个 SSE 帧在写给客户端之前删掉值为 `null` 的对象成员：
+  - 数组里的 `null` 保留；
+  - `args` 和 `response`（`functionCall.args`、`functionResponse.response`，类型是 `google.protobuf.Struct`，里面的 `null` 是调用方的值）原样保留；
+  - 其余成员的顺序和值的原文不变，网关不认识的字段（`modelVersion`、`responseId` 等）保留；重写后的文档没有 token 之间的空白；
+  - 不含 `null` 这四个字母的响应不解析，原样转发。
+- 开关关闭时与原来相同。
+
+### 实现
+
+- `relaykit/dto/gemini.go`：上述字段加 `omitempty`。
+- `relaykit/dto/channel_settings.go`：`GeminiOmitNullFields`。
+- `relay/channel/gemini/relay-gemini-native.go`：`omitGeminiNullFields` 用 moego `ojson` 遍历响应并复制原文；`GeminiTextGenerationHandler` 写回前、`GeminiTextGenerationStreamHandler` 每帧写出前，按渠道开关调用。Vertex AI 渠道共用这两个处理函数。
+- 前端：`constants.ts` 的 `GEMINI_NULL_FIELD_CHANNEL_TYPES`；渠道表单的读取与保存（只在开启且渠道类型匹配时写入 `setting`）；「请求与响应」标签的已配置标记；渠道编辑抽屉里的开关；七个语言文件各 2 个 key。
+
+### 已知限制
+
+- 只处理 Gemini 原生生成接口，embedding、countTokens 和图片接口不处理。
+- 开启后，含 `null` 的响应要完整遍历并重写一次；大的图片响应在 base64 里碰巧出现 `null` 时也会重写，内容不变。
+- 转换路径仍写出 `toolUsePromptTokenCount: 0` 这类补零的计数，SDK 能读。
+- 没有用 Java SDK 实测。
+
+### 测试
+
+- `relaykit/dto/gemini_response_test.go`：`TestGeminiChatResponseMarshalLeavesUnsetFieldsOut` 3 项（解析后的上游响应、没有内容 / 结束原因 / 安全评级的帧、没有候选），断言写出的 JSON 与期望相同且不含 `null`。改字段之前 3 项都失败，输出里有 `"safetyRatings":null` 等。
+- `relay/channel/gemini/relay_gemini_usage_test.go`：`TestGeminiTextGenerationHandlersOmitNullFieldsWhenTheChannelAsks` 5 项：非流式和流式在开关关闭时字节不变、开启时去掉 `null` 成员（数组里的 `null`、`functionCall.args` 里的 `null` 和字符串里的 `null` 保留，`modelVersion` 保留），以及不含 `null` 的响应开启后字节不变。以下 5 个改动都会让它失败：不保留 Struct 成员、连数组里的 `null` 一起删、流式不处理、非流式不处理、去掉不含 `null` 时的快速路径。
+- `relaykit/relayconvert` 的 golden 快照更新了 9 个文件（`*_to_gemini` 的流式事件，以及带 Gemini 用量附带数据的 `gemini_to_*`），只少了 `null` 和空数组。流式快照里不参与比较的 `usage` 段保持原样。
+- 前端 `channel-configuration.test.tsx` 新增 3 项：Gemini 渠道已保存的开关让「请求与响应」显示已配置，关掉后保存的 `setting` 不再带这个键；打开后保存为 `gemini_omit_null_fields: true`；OpenAI 渠道不显示开关，也不因为残留的设置显示已配置。实现之前前两项失败。
+- 已运行：`gofmt -l` 无输出；`go build ./...`；`go vet ./relay/channel/gemini`；根模块 `go test ./... -count=1` 通过；relaykit 里 `GOWORK=off go vet ./...`、`GOWORK=off go build ./...`、`GOWORK=off go test ./... -count=1` 通过；前端全量 249 个文件 2830 项通过，`tsgo -b`、`oxlint`、`oxfmt --check`（改动的文件）通过。
+- 没有覆盖：真实上游和 Java SDK、浏览器里的渠道编辑页。数据库没有改动（新键放在已有的渠道 `setting` JSON 里），没有跑 MySQL / PostgreSQL。

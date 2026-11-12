@@ -43,6 +43,7 @@ import { useAuthStore } from '@/stores/auth-store'
 
 import type { TaskPluginOption } from '../../api'
 import {
+  CHANNEL_TYPE_GEMINI,
   CHANNEL_TYPE_OLLAMA,
   CHANNEL_TYPE_SGLANG,
   CHANNEL_TYPE_VLLM,
@@ -1719,6 +1720,76 @@ test('an Ollama channel marks a saved OpenAI-compatible chat setting in Request 
   expect(JSON.parse(payload.settings)).toMatchObject({
     ollama_openai_chat: false,
   })
+})
+
+test('a Gemini channel marks a saved null-field omission in Request & Response and turning it off saves the setting without it', async () => {
+  editingChannel = {
+    ...editingChannel,
+    type: CHANNEL_TYPE_GEMINI,
+    setting: '{"gemini_omit_null_fields":true}',
+  }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const requestTab = screen.getByRole('tab', { name: /Request & Response/ })
+  expect(requestTab).toHaveAccessibleName(/Configured/)
+  await user.click(requestTab)
+  const toggle = screen.getByRole('switch', {
+    name: 'Omit Null Fields in Gemini Responses',
+  })
+  expect(toggle).toBeChecked()
+  await user.click(toggle)
+  expect(toggle).not.toBeChecked()
+  expect(requestTab).not.toHaveAccessibleName(/Configured/)
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  const payload = put.mock.calls[0]?.[1] as { setting: string }
+  expect(JSON.parse(payload.setting)).not.toHaveProperty(
+    'gemini_omit_null_fields'
+  )
+})
+
+test('turning on null-field omission for a Gemini channel saves it in the channel setting', async () => {
+  editingChannel = { ...editingChannel, type: CHANNEL_TYPE_GEMINI }
+  const put = vi
+    .spyOn(api, 'put')
+    .mockResolvedValue({ data: { success: true } })
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  await user.click(screen.getByRole('tab', { name: /Request & Response/ }))
+  const toggle = screen.getByRole('switch', {
+    name: 'Omit Null Fields in Gemini Responses',
+  })
+  expect(toggle).not.toBeChecked()
+  await user.click(toggle)
+  await user.click(screen.getByRole('button', { name: 'Update Channel' }))
+  await waitFor(() => expect(put).toHaveBeenCalled())
+  const payload = put.mock.calls[0]?.[1] as { setting: string }
+  expect(JSON.parse(payload.setting)).toMatchObject({
+    gemini_omit_null_fields: true,
+  })
+})
+
+test('a non-Gemini channel neither offers nor marks null-field omission', async () => {
+  editingChannel = {
+    ...editingChannel,
+    setting: '{"gemini_omit_null_fields":true}',
+  }
+  const user = userEvent.setup()
+  render(<ConfigurationHarness currentRow={editingChannel} />)
+  await screen.findByDisplayValue('Existing channel')
+  const requestTab = screen.getByRole('tab', { name: /Request & Response/ })
+  expect(requestTab).not.toHaveAccessibleName(/Configured/)
+  await user.click(requestTab)
+  expect(
+    screen.queryByRole('switch', {
+      name: 'Omit Null Fields in Gemini Responses',
+    })
+  ).not.toBeInTheDocument()
 })
 
 test('a saved upstream TLS verification skip marks Other Settings and turning it off saves the setting without it', async () => {
