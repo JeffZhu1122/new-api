@@ -388,3 +388,30 @@ func TestUsageLogsFilterByStreamMode(t *testing.T) {
 		assert.Equal(t, "Stream mode must be true or false", response.MessageKey)
 	}
 }
+
+// A user's own quota statistics follow the account, not the username: the
+// username filter matches a name holding % as a LIKE pattern, so an account
+// named "al%" would otherwise read the consumption of every "al…" account.
+func TestOwnQuotaStatIsScopedToTheCallerAccount(t *testing.T) {
+	setupLogFilterTest(t)
+	now := common.GetTimestamp()
+	for _, log := range []model.Log{
+		{UserId: 1, Username: "alice", Type: model.LogTypeConsume, ModelName: "gpt-4o", Quota: 5000, CreatedAt: now},
+		{UserId: 2, Username: "al%", Type: model.LogTypeConsume, ModelName: "gpt-4o", Quota: 7, CreatedAt: now},
+	} {
+		require.NoError(t, model.LOG_DB.Create(&log).Error)
+	}
+
+	recorder := httptest.NewRecorder()
+	c, _ := gin.CreateTestContext(recorder)
+	c.Request = httptest.NewRequest("GET", "/api/log/self/stat?type=2", nil)
+	c.Set("role", common.RoleCommonUser)
+	c.Set("id", 2)
+	c.Set("username", "al%")
+	GetLogsSelfStat(c)
+
+	var response logFilterResponse
+	require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response), recorder.Body.String())
+	require.True(t, response.Success, response.MessageKey)
+	assert.Equal(t, 7, response.Data.Quota)
+}

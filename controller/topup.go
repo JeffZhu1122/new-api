@@ -591,6 +591,13 @@ func AdminCompleteTopUp(c *gin.Context) {
 	LockOrder(req.TradeNo)
 	defer UnlockOrder(req.TradeNo)
 
+	// Completing an order credits its owner without a payment, so it follows
+	// the same rank rule as a manual quota adjustment: an administrator cannot
+	// credit itself, a peer or the root user. An unknown order falls through to
+	// ManualCompleteTopUp, which reports it.
+	if topUp := model.GetTopUpByTradeNo(req.TradeNo); topUp != nil && !requireManageableUser(c, topUp.UserId) {
+		return
+	}
 	if err := model.ManualCompleteTopUp(req.TradeNo, c.ClientIP()); err != nil {
 		common.ApiError(c, err)
 		return

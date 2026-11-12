@@ -19,6 +19,14 @@ import (
 
 const UserNameMaxLength = 20
 
+// NewUsernameAllowed reports whether username may be given to an account. The
+// login form accepts a username or an email address in one field, so a name
+// holding "@" could pass for somebody else's address. Accounts that already
+// carry such a name keep it and can still sign in.
+func NewUsernameAllowed(username string) bool {
+	return !strings.Contains(username, "@")
+}
+
 var userSortColumns = map[string]string{
 	"id":            "id",
 	"username":      "username",
@@ -428,7 +436,11 @@ func GetAllUsers(pageInfo *common.PageInfo, sortOptions ...UserSortOptions) (use
 
 	// Get paginated users within same transaction
 	order := resolveUserSortOptions(sortOptions)
-	err = order.Apply(tx.Unscoped()).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password", "access_token").Find(&users).Error
+	// The list is shown to every administrator, including rows of peers and of
+	// the root user that the caller cannot manage, so it leaves out the columns
+	// holding credentials: the personal setting JSON carries the webhook secret
+	// and the Bark / Gotify push credentials.
+	err = order.Apply(tx.Unscoped()).Limit(pageInfo.GetPageSize()).Offset(pageInfo.GetStartIdx()).Omit("password", "access_token", "setting").Find(&users).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
@@ -497,7 +509,7 @@ func SearchUsers(keyword string, group string, role *int, status *int, startIdx 
 
 	// 获取分页数据
 	order := resolveUserSortOptions(sortOptions)
-	err = order.Apply(query.Omit("password", "access_token")).Limit(num).Offset(startIdx).Find(&users).Error
+	err = order.Apply(query.Omit("password", "access_token", "setting")).Limit(num).Offset(startIdx).Find(&users).Error
 	if err != nil {
 		tx.Rollback()
 		return nil, 0, err
@@ -1061,32 +1073,64 @@ func deleteUserAuthenticationData(tx *gorm.DB, userId int) error {
 	return deleteUserOAuthBindingsByUserId(tx, userId)
 }
 
-// ValidateAndFill check password & user status
-func (user *User) ValidateAndFill() (err error) {
-	// When querying with struct, GORM will only query with non-zero fields,
-	// that means if your field's value is 0, '', false or other zero values,
-	// it won't be used to build query conditions
+// loginCandidateLimit bounds how many stored passwords one login attempt is
+// checked against. A username is unique and new email addresses are too, so
+// only historical duplicate addresses can reach it.
+const loginCandidateLimit = 4
+
+// LoginCandidates returns the accounts a login identifier can refer to: the
+// one holding it as its username and those holding it as their email address.
+// The login form takes either in one field, so both readings are kept and the
+// password decides between them.
+func LoginCandidates(identifier string) ([]User, error) {
+	identifier = strings.TrimSpace(identifier)
+	if identifier == "" {
+		return nil, ErrUserEmptyCredentials
+	}
+	var candidates []User
+	err := DB.Where("username = ? OR email = ?", identifier, identifier).Order("id").Limit(loginCandidateLimit).Find(&candidates).Error
+	if err != nil {
+		return nil, fmt.Errorf("%w: %v", ErrDatabase, err)
+	}
+	return candidates, nil
+}
+
+// FillFromLoginCandidates replaces user with the enabled candidate whose
+// stored password matches user.Password. Every attempt verifies at least one
+// password hash, whether or not a candidate exists.
+func (user *User) FillFromLoginCandidates(candidates []User) error {
 	password := user.Password
-	username := strings.TrimSpace(user.Username)
-	if username == "" || password == "" {
+	if password == "" {
 		return ErrUserEmptyCredentials
 	}
-	// find by username or email
-	err = DB.Where("username = ? OR email = ?", username, username).First(user).Error
-	if err != nil {
-		if errors.Is(err, gorm.ErrRecordNotFound) {
-			return ErrInvalidCredentials
+	verified := false
+	for i := range candidates {
+		candidate := &candidates[i]
+		if candidate.Password == "" {
+			continue
 		}
-		return fmt.Errorf("%w: %v", ErrDatabase, err)
+		verified = true
+		if common.ValidatePasswordAndHash(password, candidate.Password) && candidate.Status == common.UserStatusEnabled {
+			*user = *candidate
+			return nil
+		}
 	}
+	if !verified {
+		common.SpendAccountPasswordCheck(password)
+	}
+	return ErrInvalidCredentials
+}
+
+// ValidateAndFill check password & user status
+func (user *User) ValidateAndFill() error {
 	if user.Password == "" {
-		return ErrInvalidCredentials
+		return ErrUserEmptyCredentials
 	}
-	okay := common.ValidatePasswordAndHash(password, user.Password)
-	if !okay || user.Status != common.UserStatusEnabled {
-		return ErrInvalidCredentials
+	candidates, err := LoginCandidates(user.Username)
+	if err != nil {
+		return err
 	}
-	return nil
+	return user.FillFromLoginCandidates(candidates)
 }
 
 func (user *User) FillUserById() error {

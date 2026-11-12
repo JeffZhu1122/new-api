@@ -1,6 +1,7 @@
 package common
 
 import (
+	"crypto/subtle"
 	"strings"
 	"sync"
 	"time"
@@ -9,8 +10,9 @@ import (
 )
 
 type verificationValue struct {
-	code string
-	time time.Time
+	code     string
+	time     time.Time
+	failures int
 }
 
 const (
@@ -22,6 +24,11 @@ var verificationMutex sync.Mutex
 var verificationMap map[string]verificationValue
 var verificationMapMaxSize = 10
 var VerificationValidMinutes = 10
+
+// verificationMaxFailures is how many wrong guesses a code survives. The
+// registration code is six hex characters, so without a cap the per-address
+// request limit is the only thing between a guesser and the code.
+const verificationMaxFailures = 5
 
 func GenerateVerificationCode(length int) string {
 	code := uuid.New().String()
@@ -44,15 +51,31 @@ func RegisterVerificationCodeWithKey(key string, code string, purpose string) {
 	}
 }
 
+// VerifyCodeWithKey reports whether code is the live code for key. A match
+// leaves the code in place for the caller to delete once the operation it
+// guards has gone through; a wrong guess counts against the code, and the
+// guess that reaches verificationMaxFailures removes it.
 func VerifyCodeWithKey(key string, code string, purpose string) bool {
 	verificationMutex.Lock()
 	defer verificationMutex.Unlock()
 	value, okay := verificationMap[purpose+key]
-	now := time.Now()
-	if !okay || int(now.Sub(value.time).Seconds()) >= VerificationValidMinutes*60 {
+	if !okay {
 		return false
 	}
-	return code == value.code
+	if int(time.Since(value.time).Seconds()) >= VerificationValidMinutes*60 {
+		delete(verificationMap, purpose+key)
+		return false
+	}
+	if subtle.ConstantTimeCompare([]byte(code), []byte(value.code)) == 1 {
+		return true
+	}
+	value.failures++
+	if value.failures >= verificationMaxFailures {
+		delete(verificationMap, purpose+key)
+		return false
+	}
+	verificationMap[purpose+key] = value
+	return false
 }
 
 func DeleteKey(key string, purpose string) {

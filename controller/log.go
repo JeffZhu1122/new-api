@@ -353,7 +353,7 @@ func GetLogsStat(c *gin.Context) {
 	var stat model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, metrics)
+		stat, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, 0, username, tokenName, channels, group, metrics)
 		if err != nil {
 			common.ApiError(c, err)
 			return
@@ -372,7 +372,6 @@ func GetLogsStat(c *gin.Context) {
 }
 
 func GetLogsSelfStat(c *gin.Context) {
-	username := c.GetString("username")
 	logType, _ := strconv.Atoi(c.Query("type"))
 	startTimestamp, _ := strconv.ParseInt(c.Query("start_timestamp"), 10, 64)
 	endTimestamp, _ := strconv.ParseInt(c.Query("end_timestamp"), 10, 64)
@@ -399,7 +398,7 @@ func GetLogsSelfStat(c *gin.Context) {
 	var quotaNum model.Stat
 	if c.Query("rate_only") != "true" {
 		var err error
-		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, username, tokenName, channels, group, metrics)
+		quotaNum, err = model.SumUsedQuota(logType, startTimestamp, endTimestamp, modelName, c.GetInt("id"), "", tokenName, channels, group, metrics)
 		if err != nil {
 			common.ApiError(c, err)
 			return

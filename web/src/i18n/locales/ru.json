@@ -7477,6 +7477,7 @@
     "User-Agent must not exceed 512 bytes": "User-Agent не должен превышать 512 байт",
     "Username": "Имя пользователя",
     "Username already exists or has been deleted": "Имя пользователя уже занято или было удалено",
+    "Username cannot contain @": "Имя пользователя не может содержать @",
     "Username confirmation does not match": "Подтверждение имени пользователя не совпадает",
     "Username Field": "Поле имени пользователя",
     "Username must be {{max}} characters or fewer": "Имя пользователя должно содержать не более {{max}} символов",

@@ -362,6 +362,9 @@ func AdminBindSubscription(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if !requireManageableUser(c, req.UserId) {
+		return
+	}
 	msg, err := model.AdminBindSubscription(req.UserId, req.PlanId, "")
 	if err != nil {
 		common.ApiError(c, err)
@@ -388,6 +391,9 @@ func AdminListUserSubscriptions(c *gin.Context) {
 	userId, _ := strconv.Atoi(c.Param("id"))
 	if userId <= 0 {
 		common.ApiErrorT(c, "Invalid user ID")
+		return
+	}
+	if !requireManageableUser(c, userId) {
 		return
 	}
 	subs, err := model.GetAllUserSubscriptions(userId)
@@ -443,6 +449,9 @@ func AdminCreateUserSubscription(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if !requireManageableUser(c, userId) {
+		return
+	}
 	msg, err := model.AdminBindSubscription(userId, req.PlanId, "")
 	if err != nil {
 		common.ApiError(c, err)
@@ -464,6 +473,9 @@ func AdminResetUserSubscriptionsByPlan(c *gin.Context) {
 	}
 	if req.PlanId <= 0 {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	if !requireManageableUser(c, userId) {
 		return
 	}
 	advanceResetTime := resolveAdvanceResetTime(req.AdvanceResetTime)
@@ -514,11 +526,25 @@ func AdminResetPlanSubscriptions(c *gin.Context) {
 	common.ApiSuccess(c, result)
 }
 
+// requireManageableSubscription applies requireManageableUser to the account
+// that owns a user subscription, for the routes addressed by subscription id.
+func requireManageableSubscription(c *gin.Context, userSubscriptionId int) bool {
+	var sub model.UserSubscription
+	if err := model.DB.Select("id", "user_id").First(&sub, "id = ?", userSubscriptionId).Error; err != nil {
+		common.ApiError(c, err)
+		return false
+	}
+	return requireManageableUser(c, sub.UserId)
+}
+
 // AdminInvalidateUserSubscription cancels a user subscription immediately.
 func AdminInvalidateUserSubscription(c *gin.Context) {
 	subId, _ := strconv.Atoi(c.Param("id"))
 	if subId <= 0 {
 		common.ApiErrorT(c, "Invalid subscription ID")
+		return
+	}
+	if !requireManageableSubscription(c, subId) {
 		return
 	}
 	msg, err := model.AdminInvalidateUserSubscription(subId)
@@ -534,6 +560,9 @@ func AdminDeleteUserSubscription(c *gin.Context) {
 	subId, _ := strconv.Atoi(c.Param("id"))
 	if subId <= 0 {
 		common.ApiErrorT(c, "Invalid subscription ID")
+		return
+	}
+	if !requireManageableSubscription(c, subId) {
 		return
 	}
 	msg, err := model.AdminDeleteUserSubscription(subId)

@@ -724,3 +724,167 @@ func TestUpdateUserSettingKeepsWhatTheRequestLeavesOut(t *testing.T) {
 		})
 	}
 }
+
+// AdminAuth admits every administrator, so the routes that hand an account a
+// subscription or credit an unpaid order must also apply the rank rule the
+// other user-management routes apply: an administrator acts only on accounts
+// it outranks, never on itself, a peer or the root user.
+func TestAdminSubscriptionAndTopUpRoutesFollowTheRankRule(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	confirmPaymentComplianceForTest(t)
+	require.NoError(t, db.AutoMigrate(&model.SubscriptionPlan{}, &model.UserSubscription{}, &model.TopUp{}))
+	operator := createQuotaTestOperator(t, db, common.RoleAdminUser)
+	root := model.User{Id: 1, Username: "root", Password: "root-hash", Role: common.RoleRootUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "rank-root"}
+	peer := model.User{Id: 2, Username: "peer", Password: "peer-hash", Role: common.RoleAdminUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "rank-peer"}
+	member := model.User{Id: 3, Username: "member", Password: "member-hash", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AffCode: "rank-member"}
+	for _, user := range []*model.User{&root, &peer, &member} {
+		require.NoError(t, db.Create(user).Error)
+	}
+	plan := model.SubscriptionPlan{Id: 1, Title: "vip", Enabled: true, UpgradeGroup: "vip", DurationUnit: "month", DurationValue: 1, TotalAmount: 1000}
+	require.NoError(t, db.Create(&plan).Error)
+	end := time.Now().Add(time.Hour).Unix()
+	rootSub := model.UserSubscription{Id: 1, UserId: root.Id, PlanId: plan.Id, AmountTotal: 1000, AmountUsed: 400, Status: "active", EndTime: end}
+	memberSub := model.UserSubscription{Id: 2, UserId: member.Id, PlanId: plan.Id, AmountTotal: 1000, Status: "active", EndTime: end}
+	for _, sub := range []*model.UserSubscription{&rootSub, &memberSub} {
+		require.NoError(t, db.Create(sub).Error)
+	}
+	for _, order := range []model.TopUp{
+		{UserId: root.Id, Amount: 100, Money: 100, TradeNo: "order-root", Status: common.TopUpStatusPending},
+		{UserId: operator.Id, Amount: 100, Money: 100, TradeNo: "order-self", Status: common.TopUpStatusPending},
+		{UserId: member.Id, Amount: 1, Money: 1, TradeNo: "order-member", Status: common.TopUpStatusPending},
+	} {
+		require.NoError(t, db.Create(&order).Error)
+	}
+
+	type reply struct {
+		Success    bool   `json:"success"`
+		MessageKey string `json:"message_key"`
+	}
+	call := func(handler gin.HandlerFunc, method, pathID, body string) reply {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(method, "/api/subscription/admin", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Params = gin.Params{{Key: "id", Value: pathID}}
+		c.Set("id", operator.Id)
+		c.Set("role", common.RoleAdminUser)
+		c.Set("username", operator.Username)
+		handler(c)
+		var response reply
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response), recorder.Body.String())
+		return response
+	}
+
+	for _, test := range []struct {
+		name         string
+		handler      gin.HandlerFunc
+		method       string
+		pathID, body string
+	}{
+		{"bind a plan to the root user", AdminBindSubscription, http.MethodPost, "", `{"user_id":1,"plan_id":1}`},
+		{"bind a plan to itself", AdminBindSubscription, http.MethodPost, "", `{"user_id":9999,"plan_id":1}`},
+		{"create a subscription for a peer", AdminCreateUserSubscription, http.MethodPost, "2", `{"plan_id":1}`},
+		{"create a subscription for itself", AdminCreateUserSubscription, http.MethodPost, "9999", `{"plan_id":1}`},
+		{"reset the root user's plan quota", AdminResetUserSubscriptionsByPlan, http.MethodPost, "1", `{"plan_id":1}`},
+		{"cancel the root user's subscription", AdminInvalidateUserSubscription, http.MethodPost, "1", ""},
+		{"delete the root user's subscription", AdminDeleteUserSubscription, http.MethodDelete, "1", ""},
+		{"list the root user's subscriptions", AdminListUserSubscriptions, http.MethodGet, "1", ""},
+		{"complete the root user's order", AdminCompleteTopUp, http.MethodPost, "", `{"trade_no":"order-root"}`},
+		{"complete its own order", AdminCompleteTopUp, http.MethodPost, "", `{"trade_no":"order-self"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := call(test.handler, test.method, test.pathID, test.body)
+			assert.False(t, response.Success)
+			assert.Equal(t, "No permission to access users of same or higher level", response.MessageKey)
+		})
+	}
+
+	var subscriptions []model.UserSubscription
+	require.NoError(t, db.Order("id").Find(&subscriptions).Error)
+	require.Len(t, subscriptions, 2, "no refused request may create or delete a subscription")
+	assert.Equal(t, "active", subscriptions[0].Status)
+	assert.Equal(t, int64(400), subscriptions[0].AmountUsed)
+	var pending int64
+	require.NoError(t, db.Model(&model.TopUp{}).Where("status = ?", common.TopUpStatusPending).Count(&pending).Error)
+	assert.Equal(t, int64(3), pending)
+	for _, user := range []model.User{root, peer, operator} {
+		var stored model.User
+		require.NoError(t, db.First(&stored, user.Id).Error)
+		assert.Equal(t, user.Quota, stored.Quota, user.Username)
+		assert.Equal(t, user.Group, stored.Group, user.Username)
+	}
+
+	// The accounts it does outrank stay manageable.
+	assert.True(t, call(AdminCompleteTopUp, http.MethodPost, "", `{"trade_no":"order-member"}`).Success)
+	var credited model.User
+	require.NoError(t, db.First(&credited, member.Id).Error)
+	assert.Equal(t, int(common.QuotaPerUnit), credited.Quota)
+	assert.True(t, call(AdminInvalidateUserSubscription, http.MethodPost, "2", "").Success)
+	var cancelled model.UserSubscription
+	require.NoError(t, db.First(&cancelled, memberSub.Id).Error)
+	assert.Equal(t, "cancelled", cancelled.Status)
+	assert.False(t, call(AdminCompleteTopUp, http.MethodPost, "", `{"trade_no":"order-missing"}`).Success)
+}
+
+func TestNewUsernamesCannotPassForAnEmailAddress(t *testing.T) {
+	db := setupManageUserTestDB(t)
+	require.NoError(t, authz.Init(db))
+	operator := createQuotaTestOperator(t, db, common.RoleRootUser)
+	legacy := model.User{Id: 1, Username: "old@example.com", Password: "legacy-hash", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "name-legacy"}
+	plain := model.User{Id: 2, Username: "plain", Password: "plain-hash", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "name-plain"}
+	for _, user := range []*model.User{&legacy, &plain} {
+		require.NoError(t, db.Create(user).Error)
+	}
+	previousRegister, previousPasswordRegister, previousEmailVerification := common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled
+	common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled = true, true, false
+	t.Cleanup(func() {
+		common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled = previousRegister, previousPasswordRegister, previousEmailVerification
+	})
+
+	type reply struct {
+		Success    bool   `json:"success"`
+		MessageKey string `json:"message_key"`
+	}
+	call := func(handler gin.HandlerFunc, caller model.User, body string) reply {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/user", strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("id", caller.Id)
+		c.Set("role", caller.Role)
+		c.Set("username", caller.Username)
+		handler(c)
+		var response reply
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response), recorder.Body.String())
+		return response
+	}
+
+	for _, test := range []struct {
+		name    string
+		handler gin.HandlerFunc
+		caller  model.User
+		body    string
+	}{
+		{"registering", Register, model.User{}, `{"username":"new@example.com","password":"New-Password-123"}`},
+		{"an administrator creating an account", CreateUser, operator, `{"username":"new@example.com","password":"New-Password-123","role":1}`},
+		{"an administrator renaming an account", UpdateUser, operator, `{"id":2,"username":"plain@example.com"}`},
+		{"renaming oneself", UpdateSelf, plain, `{"username":"plain@example.com"}`},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := call(test.handler, test.caller, test.body)
+			assert.False(t, response.Success)
+			assert.Equal(t, "Username cannot contain @", response.MessageKey)
+		})
+	}
+	var names []string
+	require.NoError(t, db.Model(&model.User{}).Order("id").Pluck("username", &names).Error)
+	assert.Equal(t, []string{"old@example.com", "plain", "root-operator"}, names)
+
+	// An account that already carries such a name is still editable under it.
+	assert.True(t, call(UpdateUser, operator, `{"id":1,"username":"old@example.com","display_name":"Kept by admin"}`).Success)
+	assert.True(t, call(UpdateSelf, legacy, `{"username":"old@example.com","display_name":"Kept by owner"}`).Success)
+	var stored model.User
+	require.NoError(t, db.First(&stored, legacy.Id).Error)
+	assert.Equal(t, "old@example.com", stored.Username)
+	assert.Equal(t, "Kept by owner", stored.DisplayName)
+}

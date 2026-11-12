@@ -7477,6 +7477,7 @@
     "User-Agent must not exceed 512 bytes": "User-Agent không được vượt quá 512 byte",
     "Username": "Tên người dùng",
     "Username already exists or has been deleted": "Tên người dùng đã tồn tại hoặc đã bị xóa",
+    "Username cannot contain @": "Tên người dùng không được chứa @",
     "Username confirmation does not match": "Xác nhận tên người dùng không khớp",
     "Username Field": "Trường Tên người dùng",
     "Username must be {{max}} characters or fewer": "Tên người dùng tối đa {{max}} ký tự",

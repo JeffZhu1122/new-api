@@ -362,6 +362,43 @@ func TestValidateAndFillRejectsPasswordlessUser(t *testing.T) {
 	assert.Empty(t, stored.Password)
 }
 
+func TestLoginPasswordDecidesBetweenAccountsSharingAnIdentifier(t *testing.T) {
+	setupUserUpdateTestState(t)
+	t.Setenv("ACCOUNT_PASSWORD_HASH_ALGORITHM", "argon2id")
+	const identifier = "shared@example.com"
+	namePassword, err := common.HashAccountPassword("name-owner-password")
+	require.NoError(t, err)
+	mailPassword, err := common.HashAccountPassword("mail-owner-password")
+	require.NoError(t, err)
+	// The older account is named like the address the newer one registered with.
+	named := User{Username: identifier, Password: namePassword, Status: common.UserStatusEnabled, AffCode: "login-named"}
+	mailed := User{Username: "mail-owner", Email: identifier, Password: mailPassword, Status: common.UserStatusEnabled, AffCode: "login-mailed"}
+	require.NoError(t, DB.Create(&named).Error)
+	require.NoError(t, DB.Create(&mailed).Error)
+
+	login := func(username, password string) (User, error) {
+		user := User{Username: username, Password: password}
+		err := user.ValidateAndFill()
+		return user, err
+	}
+
+	user, err := login(identifier, "mail-owner-password")
+	require.NoError(t, err)
+	assert.Equal(t, mailed.Id, user.Id, "the address owner signs in to its own account")
+	user, err = login(identifier, "name-owner-password")
+	require.NoError(t, err)
+	assert.Equal(t, named.Id, user.Id)
+
+	_, err = login(identifier, "neither-password")
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
+	_, err = login("nobody-here", "mail-owner-password")
+	assert.ErrorIs(t, err, ErrInvalidCredentials)
+
+	require.NoError(t, DB.Model(&User{}).Where("id = ?", mailed.Id).Update("status", common.UserStatusDisabled).Error)
+	_, err = login(identifier, "mail-owner-password")
+	assert.ErrorIs(t, err, ErrInvalidCredentials, "a disabled account stays closed while another account shares its identifier")
+}
+
 func TestResetUserPasswordByEmailRequiresSingleActiveMatch(t *testing.T) {
 	setupUserUpdateTestState(t)
 

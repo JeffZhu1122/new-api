@@ -7477,6 +7477,7 @@
     "User-Agent must not exceed 512 bytes": "Le User-Agent ne doit pas dépasser 512 octets",
     "Username": "Nom d'utilisateur",
     "Username already exists or has been deleted": "Ce nom d’utilisateur existe déjà ou a été supprimé",
+    "Username cannot contain @": "Le nom d’utilisateur ne peut pas contenir @",
     "Username confirmation does not match": "La confirmation du nom d'utilisateur ne correspond pas",
     "Username Field": "Champ nom d'utilisateur",
     "Username must be {{max}} characters or fewer": "Le nom d’utilisateur doit comporter {{max}} caractères au maximum",

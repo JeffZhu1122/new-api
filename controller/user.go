@@ -79,25 +79,46 @@ func Login(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
-	user := model.User{
-		Username: username,
-		Password: password,
-	}
-	err = user.ValidateAndFill()
+	candidates, err := model.LoginCandidates(username)
 	if err != nil {
-		switch {
-		case errors.Is(err, model.ErrDatabase):
-			common.SysLog(common.LogText("Login database error for user %s: %v", username, err))
-			common.ApiErrorT(c, "Database error, please contact the administrator")
-		case errors.Is(err, model.ErrUserEmptyCredentials):
-			common.ApiErrorT(c, "Invalid parameters")
-		default:
-			common.ApiErrorT(c, "Username or password is incorrect, or user has been banned")
+		writeLoginCredentialError(c, username, err)
+		return
+	}
+	allowed, retryAfter, err := service.TakeLoginAttempt(c.Request.Context(), username, candidates)
+	if err != nil {
+		common.SysError(common.LogText("login attempt limit check failed: %v", err))
+		c.AbortWithStatus(http.StatusInternalServerError)
+		return
+	}
+	if !allowed {
+		common.SysLog(common.LogText("login attempts are over the limit for one account (matched accounts: %d, ip: %s)", len(candidates), c.ClientIP()))
+		if retryAfter > 0 {
+			c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
 		}
+		c.AbortWithStatus(http.StatusTooManyRequests)
+		return
+	}
+	user := model.User{Password: password}
+	if err := user.FillFromLoginCandidates(candidates); err != nil {
+		writeLoginCredentialError(c, username, err)
 		return
 	}
 
 	setupLogin(&user, nil, c)
+}
+
+// writeLoginCredentialError answers a failed password login. Every credential
+// failure gets the same message, whichever part of the check refused it.
+func writeLoginCredentialError(c *gin.Context, username string, err error) {
+	switch {
+	case errors.Is(err, model.ErrDatabase):
+		common.SysLog(common.LogText("Login database error for user %s: %v", username, err))
+		common.ApiErrorT(c, "Database error, please contact the administrator")
+	case errors.Is(err, model.ErrUserEmptyCredentials):
+		common.ApiErrorT(c, "Invalid parameters")
+	default:
+		common.ApiErrorT(c, "Username or password is incorrect, or user has been banned")
+	}
 }
 
 // loginMethodFromContext 根据请求路径推导登录方式，用于登录审计日志。
@@ -240,6 +261,10 @@ func Register(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": err.Error()})
 		return
 	}
+	if !model.NewUsernameAllowed(user.Username) {
+		common.ApiErrorT(c, "Username cannot contain @")
+		return
+	}
 	if common.EmailVerificationEnabled {
 		if user.Email == "" || user.VerificationCode == "" {
 			common.ApiErrorT(c, "Email verification is enabled, please enter email address and verification code")
@@ -291,6 +316,9 @@ func Register(c *gin.Context) {
 		}
 		common.ApiError(c, err)
 		return
+	}
+	if common.EmailVerificationEnabled {
+		common.DeleteKey(user.Email, common.EmailVerificationPurpose)
 	}
 
 	// 获取插入后的用户ID
@@ -383,6 +411,29 @@ func SearchUsers(c *gin.Context) {
 
 func canManageTargetRole(myRole int, targetRole int) bool {
 	return myRole == common.RoleRootUser || myRole > targetRole
+}
+
+// requireManageableUser lets an administrator act on the account with this id
+// only when the caller outranks it (the root user outranks everyone), and
+// writes the refusal otherwise. Every admin route that changes another
+// account's balance, group or subscriptions must pass through it: AdminAuth
+// alone lets an administrator act on peers, on the root user and on itself.
+// Soft-deleted accounts keep their rank.
+func requireManageableUser(c *gin.Context, userId int) bool {
+	var target model.User
+	if err := model.DB.Unscoped().Select("id", "role").First(&target, "id = ?", userId).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			common.ApiErrorT(c, "User does not exist")
+			return false
+		}
+		common.ApiError(c, err)
+		return false
+	}
+	if !canManageTargetRole(c.GetInt("role"), target.Role) {
+		common.ApiErrorT(c, "No permission to access users of same or higher level")
+		return false
+	}
+	return true
 }
 
 func GetUser(c *gin.Context) {
@@ -704,6 +755,10 @@ func UpdateUser(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	if updatedUser.Username != originUser.Username && !model.NewUsernameAllowed(updatedUser.Username) {
+		common.ApiErrorT(c, "Username cannot contain @")
+		return
+	}
 	updatedUser.Role = originUser.Role
 	myRole := c.GetInt("role")
 	if !canManageTargetRole(myRole, originUser.Role) {
@@ -916,6 +971,10 @@ func UpdateSelf(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid input")
 		return
 	}
+	if user.Username != c.GetString("username") && !model.NewUsernameAllowed(user.Username) {
+		common.ApiErrorT(c, "Username cannot contain @")
+		return
+	}
 
 	cleanUser := model.User{
 		Id:          c.GetInt("id"),
@@ -1058,6 +1117,10 @@ func CreateUser(c *gin.Context) {
 	}
 	if err := common.Validate.Struct(&user); err != nil {
 		common.ApiErrorT(c, "Invalid input {{error}}", map[string]any{"error": err.Error()})
+		return
+	}
+	if !model.NewUsernameAllowed(user.Username) {
+		common.ApiErrorT(c, "Username cannot contain @")
 		return
 	}
 	if !common.IsValidateRole(user.Role) {

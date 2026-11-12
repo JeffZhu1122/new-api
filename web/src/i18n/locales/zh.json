@@ -7477,6 +7477,7 @@
     "User-Agent must not exceed 512 bytes": "User-Agent 不能超过 512 字节",
     "Username": "用户名",
     "Username already exists or has been deleted": "用户名已存在，或已注销",
+    "Username cannot contain @": "用户名不能包含 @",
     "Username confirmation does not match": "用户名确认不匹配",
     "Username Field": "用户名字段",
     "Username must be {{max}} characters or fewer": "用户名长度不能超过{{max}}个字符",

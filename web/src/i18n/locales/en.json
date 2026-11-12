@@ -7477,6 +7477,7 @@
     "User-Agent must not exceed 512 bytes": "User-Agent must not exceed 512 bytes",
     "Username": "Username",
     "Username already exists or has been deleted": "Username already exists or has been deleted",
+    "Username cannot contain @": "Username cannot contain @",
     "Username confirmation does not match": "Username confirmation does not match",
     "Username Field": "Username Field",
     "Username must be {{max}} characters or fewer": "Username must be {{max}} characters or fewer",

@@ -826,10 +826,18 @@ type Stat struct {
 // SumUsedQuota sums the consumed quota matching the usage-log filters. The
 // log page's RPM / TPM come from the live statistics (service.LogRate), not
 // from this table.
-func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, username string, tokenName string, channelFilter []int, group string, metrics LogMetricsFilter) (stat Stat, err error) {
+//
+// A non-zero userId scopes the sum to that account and is what a user's own
+// statistics must pass: usernames are user-chosen text that the username
+// filter matches as a LIKE pattern when it contains %, so it can never stand
+// in for the caller's identity. username is the administrator's search filter
+// and is ignored once userId is set.
+func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelName string, userId int, username string, tokenName string, channelFilter []int, group string, metrics LogMetricsFilter) (stat Stat, err error) {
 	tx := LOG_DB.Table("logs").Select("COALESCE(sum(quota), 0) quota")
 
-	if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
+	if userId != 0 {
+		tx = tx.Where("user_id = ?", userId)
+	} else if tx, err = applyExplicitLogTextFilter(tx, "username", username); err != nil {
 		return stat, err
 	}
 	if tokenName != "" {

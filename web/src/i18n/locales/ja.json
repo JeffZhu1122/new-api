@@ -7477,6 +7477,7 @@
     "User-Agent must not exceed 512 bytes": "User-Agent は 512 バイト以内で指定してください",
     "Username": "ユーザー名",
     "Username already exists or has been deleted": "このユーザー名は既に存在するか、削除済みです",
+    "Username cannot contain @": "ユーザー名に @ は使用できません",
     "Username confirmation does not match": "ユーザー名の確認が一致しません",
     "Username Field": "ユーザー名フィールド",
     "Username must be {{max}} characters or fewer": "ユーザー名は {{max}} 文字以内で入力してください",

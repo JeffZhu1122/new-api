@@ -1,6 +1,10 @@
 package controller
 
 import (
+	"crypto/rand"
+	"crypto/subtle"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"net/http"
@@ -21,6 +25,13 @@ import (
 
 const oauthAuthFlowTTL = 10 * time.Minute
 
+// oauthLoginCookieName names the cookie that ties an OAuth sign-in to the
+// browser that started it. Bind and verification flows are tied to the
+// dashboard session; a sign-in has no session yet, and with nothing in its
+// place a callback URL produced in one browser could be opened in another to
+// sign that browser in to the first one's account.
+const oauthLoginCookieName = "new_api_oauth_login"
+
 type oauthStateRequest struct {
 	Provider string          `json:"provider"`
 	Intent   string          `json:"intent"`
@@ -35,6 +46,50 @@ type oauthFlowPayload struct {
 	Telegram        *oauth.TelegramOAuthFlow       `json:"telegram,omitempty"`
 	SessionIdentity *service.AuthIdentity          `json:"session_identity,omitempty"`
 	Authorization   *model.AuthFlowAuthorization   `json:"authorization,omitempty"`
+	// LoginBrowser is the digest of the oauthLoginCookieName cookie held by the
+	// browser that started a sign-in flow.
+	LoginBrowser string `json:"login_browser,omitempty"`
+}
+
+// oauthLoginBrowser returns the digest a sign-in flow stores for the browser
+// behind c, or "" when that browser holds no usable sign-in cookie.
+func oauthLoginBrowser(c *gin.Context) string {
+	value, err := c.Cookie(oauthLoginCookieName)
+	if err != nil {
+		return ""
+	}
+	nonce, err := base64.RawURLEncoding.DecodeString(value)
+	if err != nil || len(nonce) != model.AuthFlowTokenBytes {
+		return ""
+	}
+	return hex.EncodeToString(common.Sha256Raw(nonce))
+}
+
+// bindOAuthLoginToBrowser makes sure the browser behind c holds a sign-in
+// cookie that lasts as long as a flow started now, and returns its digest. A
+// cookie the browser already holds is kept, so that sign-ins started in
+// several tabs can all be completed.
+func bindOAuthLoginToBrowser(c *gin.Context) (string, error) {
+	browser := oauthLoginBrowser(c)
+	value, _ := c.Cookie(oauthLoginCookieName)
+	if browser == "" {
+		nonce := make([]byte, model.AuthFlowTokenBytes)
+		if _, err := rand.Read(nonce); err != nil {
+			return "", err
+		}
+		value = base64.RawURLEncoding.EncodeToString(nonce)
+		browser = hex.EncodeToString(common.Sha256Raw(nonce))
+	}
+	http.SetCookie(c.Writer, &http.Cookie{
+		Name:     oauthLoginCookieName,
+		Value:    value,
+		Path:     "/api/oauth",
+		MaxAge:   int(oauthAuthFlowTTL.Seconds()),
+		HttpOnly: true,
+		Secure:   common.SessionCookieSecure,
+		SameSite: http.SameSiteStrictMode,
+	})
+	return browser, nil
 }
 
 // providerParams returns the params of messages that name the OAuth provider.
@@ -110,6 +165,14 @@ func GenerateOAuthCode(c *gin.Context) {
 			}
 			flowPayload.Verification = verification
 		}
+	}
+	if request.Intent == model.AuthFlowIntentLogin {
+		browser, err := bindOAuthLoginToBrowser(c)
+		if err != nil {
+			writeSecurityOperationError(c, err)
+			return
+		}
+		flowPayload.LoginBrowser = browser
 	}
 	payload, err := common.Marshal(flowPayload)
 	if err != nil {
@@ -198,7 +261,19 @@ func HandleOAuth(c *gin.Context) {
 				return
 			}
 		}
-	} else if pendingFlow.Intent != model.AuthFlowIntentLogin {
+	} else if pendingFlow.Intent == model.AuthFlowIntentLogin {
+		// A sign-in is completed only in the browser that started it. The flow
+		// is left unconsumed, so a callback opened elsewhere cannot spend the
+		// sign-in that browser is still waiting on.
+		var payload oauthFlowPayload
+		browser := oauthLoginBrowser(c)
+		if err := common.UnmarshalJsonStr(pendingFlow.Payload, &payload); err != nil || browser == "" ||
+			subtle.ConstantTimeCompare([]byte(browser), []byte(payload.LoginBrowser)) != 1 {
+			common.SysLog(common.LogText("OAuth sign-in callback refused: this browser did not start the sign-in (provider: %s, ip: %s)", providerName, c.ClientIP()))
+			writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
+			return
+		}
+	} else {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
@@ -483,7 +558,7 @@ func findOrCreateOAuthUser(c *gin.Context, provider oauth.Provider, oauthUser *o
 	// Set up new user
 	user.Username = provider.GetProviderPrefix() + strconv.Itoa(model.GetMaxUserId()+1)
 
-	if oauthUser.Username != "" {
+	if oauthUser.Username != "" && model.NewUsernameAllowed(oauthUser.Username) {
 		if exists, err := model.CheckUserExistOrDeleted(oauthUser.Username, ""); err == nil && !exists {
 			// 防止索引退化
 			if len(oauthUser.Username) <= model.UserNameMaxLength {

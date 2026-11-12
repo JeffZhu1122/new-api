@@ -122,6 +122,7 @@ func securityEnrollmentRequest(method, path, body, proof string, identity servic
 	c.Request = httptest.NewRequest(method, path, strings.NewReader(body))
 	c.Request.Header.Set("Content-Type", "application/json")
 	c.Request.Header.Set("X-Security-Proof", proof)
+	c.Request.AddCookie(oauthTestBrowser())
 	c.Set("id", identity.UserID)
 	c.Set("role", common.RoleCommonUser)
 	c.Set("session_id", identity.SessionID)
