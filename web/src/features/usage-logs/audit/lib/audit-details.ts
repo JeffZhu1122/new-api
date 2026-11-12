@@ -557,6 +557,14 @@ export function buildAuditDetails(
     })
     delete params.expires_at
   }
+  if (entry.category === 'login' && typeof params.failure_reason === 'string') {
+    const reasons: Record<string, string> = {
+      invalid_credentials: t('Wrong password, or the account is disabled'),
+      second_factor_failed: t('Wrong two-factor code'),
+    }
+    params.failure_reason =
+      reasons[params.failure_reason] ?? params.failure_reason
+  }
   if (
     entry.category === 'access_token' &&
     typeof params.failure_reason === 'string'

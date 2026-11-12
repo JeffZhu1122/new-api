@@ -56,15 +56,35 @@ func getWeChatIdByCode(code string) (string, error) {
 	return res.Data, nil
 }
 
+// wechatAuthFlowProvider is the provider name of WeChat sign-in flows.
+const wechatAuthFlowProvider = "wechat"
+
+// WeChatAuth signs in with the code the WeChat official account gives a user.
+// That code names a WeChat account but not a browser, so the request must
+// also carry the state of a sign-in flow started from this browser: without
+// it, a link carrying someone else's code would sign whoever opens it in to
+// that person's account. The flow is spent only once the code has resolved to
+// a WeChat account, so a mistyped code can be corrected.
 func WeChatAuth(c *gin.Context) {
 	if !common.WeChatAuthEnabled {
 		common.ApiErrorT(c, "{{provider}} login and registration has not been enabled by administrator", providerParams("WeChat"))
+		return
+	}
+	state := c.Query("state")
+	flowMatch := model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth, Provider: wechatAuthFlowProvider, Intent: model.AuthFlowIntentLogin}
+	pendingFlow, err := model.GetAuthFlow(state, flowMatch)
+	if err != nil || !oauthLoginStartedInThisBrowser(c, pendingFlow) {
+		writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
 		return
 	}
 	code := c.Query("code")
 	wechatId, err := getWeChatIdByCode(code)
 	if err != nil {
 		common.ApiError(c, err)
+		return
+	}
+	if _, err := model.ConsumeAuthFlow(state, flowMatch); err != nil {
+		writeAccountStatusError(c, http.StatusForbidden, "State parameter is empty or mismatched")
 		return
 	}
 	user := model.User{

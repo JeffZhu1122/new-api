@@ -1096,27 +1096,25 @@ func LoginCandidates(identifier string) ([]User, error) {
 }
 
 // FillFromLoginCandidates replaces user with the enabled candidate whose
-// stored password matches user.Password. Every attempt verifies at least one
-// password hash, whether or not a candidate exists.
+// stored password matches user.Password. Every attempt verifies one password
+// of each storage algorithm, whether or not a candidate exists and whichever
+// algorithm its password is stored with.
 func (user *User) FillFromLoginCandidates(candidates []User) error {
 	password := user.Password
 	if password == "" {
 		return ErrUserEmptyCredentials
 	}
-	verified := false
+	var checks common.AccountPasswordChecks
+	defer checks.Finish(password)
 	for i := range candidates {
 		candidate := &candidates[i]
 		if candidate.Password == "" {
 			continue
 		}
-		verified = true
-		if common.ValidatePasswordAndHash(password, candidate.Password) && candidate.Status == common.UserStatusEnabled {
+		if checks.Validate(password, candidate.Password) && candidate.Status == common.UserStatusEnabled {
 			*user = *candidate
 			return nil
 		}
-	}
-	if !verified {
-		common.SpendAccountPasswordCheck(password)
 	}
 	return ErrInvalidCredentials
 }

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strconv"
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/constant"
@@ -219,10 +220,26 @@ func GetHomePageContent(c *gin.Context) {
 	serveRevalidatedJSON(c, homePageContent)
 }
 
+// takeMailboxMail spends one mail of purpose to email and answers the request
+// when the mailbox has had its share for now.
+func takeMailboxMail(c *gin.Context, purpose string, email string) bool {
+	allowed, retryAfter := service.TakeMailboxMail(c.Request.Context(), purpose, email)
+	if allowed {
+		return true
+	}
+	common.SysLog(common.LogText("mail request refused: the mailbox is over its limit (purpose: %s, ip: %s)", purpose, c.ClientIP()))
+	c.Header("Retry-After", strconv.FormatInt(retryAfter, 10))
+	common.ApiErrorStatus(c, http.StatusTooManyRequests, common.NewMessage("Too many requests for this email address. Please wait {{seconds}} seconds and try again.", map[string]any{"seconds": retryAfter}))
+	return false
+}
+
 func SendEmailVerification(c *gin.Context) {
 	email, err := service.ValidateAccountEmail(c.Query("email"))
 	if err != nil {
 		writeSecurityOperationError(c, err)
+		return
+	}
+	if !takeMailboxMail(c, common.EmailVerificationPurpose, email) {
 		return
 	}
 
@@ -230,7 +247,11 @@ func SendEmailVerification(c *gin.Context) {
 	// this anonymous endpoint does not say which addresses are registered.
 	// Registration refuses the address once the code proves the mailbox.
 	code := common.GenerateVerificationCode(6)
-	common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose)
+	if err := common.RegisterVerificationCodeWithKey(email, code, common.EmailVerificationPurpose); err != nil {
+		common.SysError(common.LogText("failed to store a registration code: %v", err))
+		common.ApiErrorT(c, "Failed to send verification email")
+		return
+	}
 	// The address may not belong to an account yet, so the mail follows the
 	// request language.
 	systemName := map[string]any{"SystemName": common.SystemName}
@@ -259,9 +280,14 @@ func SendPasswordResetEmail(c *gin.Context) {
 		common.ApiErrorT(c, "Invalid parameters")
 		return
 	}
+	// Counted before the address is looked up, so that unknown addresses run
+	// out exactly like registered ones.
+	if !takeMailboxMail(c, common.PasswordResetPurpose, email) {
+		return
+	}
 	if user, err := model.GetUniqueUserByEmail(email); err == nil {
 		code := common.GenerateVerificationCode(0)
-		common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
+		storeErr := common.RegisterVerificationCodeWithKey(email, code, common.PasswordResetPurpose)
 		link := fmt.Sprintf("%s/user/reset?email=%s&token=%s", system_setting.ServerAddress, url.QueryEscape(email), code)
 		lang := user.GetSetting().Language
 		if lang == "" {
@@ -281,6 +307,13 @@ func SendPasswordResetEmail(c *gin.Context) {
 		// Delivery runs after the response so that the time this request takes
 		// does not tell a registered address from an unknown one.
 		gopool.Go(func() {
+			// A token that could not be stored would only send a dead link. The
+			// request is still answered as usual: answering it differently
+			// would tell that the address is registered.
+			if storeErr != nil {
+				common.SysError(common.LogText("failed to store a password reset token: %v", storeErr))
+				return
+			}
 			if err := common.SendEmail(subject, email, content); err != nil {
 				common.SysError(common.LogText("failed to send password reset email to %s: %s", email, err.Error()))
 			}
@@ -295,10 +328,14 @@ func SendPasswordResetEmail(c *gin.Context) {
 }
 
 type PasswordResetRequest struct {
-	Email string `json:"email"`
-	Token string `json:"token"`
+	Email    string `json:"email"`
+	Token    string `json:"token"`
+	Password string `json:"password"`
 }
 
+// ResetPassword sets the password the account owner chose, once the token
+// mailed to the account's address proves control of that mailbox. No password
+// is generated here and none is sent back.
 func ResetPassword(c *gin.Context) {
 	var req PasswordResetRequest
 	err := common.DecodeJson(c.Request.Body, &req)
@@ -307,29 +344,38 @@ func ResetPassword(c *gin.Context) {
 		return
 	}
 	req.Email = model.NormalizeEmail(req.Email)
-	if req.Email == "" || req.Token == "" {
+	if req.Email == "" || req.Token == "" || req.Password == "" {
 		common.ApiErrorT(c, "Invalid parameters")
+		return
+	}
+	// The policy is checked first, so a password it refuses is reported as
+	// such without touching the token.
+	if err := common.ValidateNewAccountPassword(req.Password); err != nil {
+		writeSecurityOperationError(c, err)
 		return
 	}
 	if !common.VerifyCodeWithKey(req.Email, req.Token, common.PasswordResetPurpose) {
 		common.ApiErrorT(c, "Password reset link is invalid or has expired")
 		return
 	}
-	password := common.GenerateVerificationCode(12)
-	err = model.ResetUserPasswordByEmail(req.Email, password)
+	err = model.ResetUserPasswordByEmail(req.Email, req.Password)
 	if err != nil {
-		if errors.Is(err, model.ErrEmailNotFound) || errors.Is(err, model.ErrEmailAmbiguous) {
+		switch {
+		case errors.Is(err, model.ErrEmailNotFound), errors.Is(err, model.ErrEmailAmbiguous):
 			common.ApiErrorT(c, "Password reset link is invalid or has expired")
-			return
+		case errors.Is(err, common.ErrAccountPasswordLength), errors.Is(err, common.ErrPasswordLegacyLimit):
+			writeSecurityOperationError(c, err)
+		default:
+			common.ApiError(c, err)
 		}
-		common.ApiError(c, err)
 		return
 	}
 	common.DeleteKey(req.Email, common.PasswordResetPurpose)
+	if user, err := model.GetUniqueUserByEmail(req.Email); err == nil {
+		recordUserSecurityAudit(c, user.Id, "user.password_reset", nil)
+	}
 	c.JSON(http.StatusOK, gin.H{
 		"success": true,
 		"message": "",
-		"data":    password,
 	})
-	return
 }

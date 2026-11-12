@@ -215,14 +215,14 @@ func RecordLogWithAdminInfo(userId int, logType int, content string, adminInfo *
 // RecordLoginLog writes new login events to the independent audit table.
 // username 由调用方传入（登录流程已持有用户对象），避免额外的数据库查询。
 // content 为英文兜底文本（用于导出）；action+params 供前端本地化渲染。
-// other 包含 login_method、user_agent 等结构化信息。
-func RecordLoginLog(userId, actorRole int, username string, content string, ip string, action string, params map[string]any, other AuditOther, request ...*gin.Context) {
+// other 包含 login_method、user_agent 等结构化信息。success 为 false 时记录的是被拒绝的登录。
+func RecordLoginLog(userId, actorRole int, username string, content string, ip string, action string, success bool, params map[string]any, other AuditOther, request ...*gin.Context) {
 	other.Op = &AuditOperation{Action: action, Params: params}
 	var c *gin.Context
 	if len(request) > 0 {
 		c = request[0]
 	}
-	RecordAuditLog(c, AuditLog{UserId: userId, Username: username, ActorRole: actorRole, Category: AuditCategoryLogin, Action: action, Content: content, Ip: ip, Other: other, Success: true})
+	RecordAuditLog(c, AuditLog{UserId: userId, Username: username, ActorRole: actorRole, Category: AuditCategoryLogin, Action: action, Content: content, Ip: ip, Other: other, Success: success})
 }
 
 // RecordOperationAuditLog writes new operation/security events to the audit table.
