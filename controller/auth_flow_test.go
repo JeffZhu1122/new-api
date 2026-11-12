@@ -320,6 +320,264 @@ func TestSecurityLoginFactorStateDoesNotAddPasswordLoginQueries(t *testing.T) {
 	assert.Equal(t, 2, queries, "only the existing credential lookup and the replacement factor-state lookup run before the challenge")
 }
 
+func TestPasswordLoginAttemptsAreLimitedPerAccount(t *testing.T) {
+	setupSecurityEnrollmentTest(t)
+	previousPasswordLogin, previousEnable, previousNum := common.PasswordLoginEnabled, common.CriticalRateLimitEnable, common.CriticalRateLimitNum
+	common.PasswordLoginEnabled, common.CriticalRateLimitEnable, common.CriticalRateLimitNum = true, true, 3
+	t.Cleanup(func() {
+		common.PasswordLoginEnabled, common.CriticalRateLimitEnable, common.CriticalRateLimitNum = previousPasswordLogin, previousEnable, previousNum
+	})
+	password, err := common.Password2Hash("limited-password")
+	require.NoError(t, err)
+	// The limiter outlives the test database, so the account ids are new on every run.
+	firstID := 1_000_000 + int(time.Now().UnixNano()%1_000_000_000)
+	target := model.User{Id: firstID, Username: "limited-user", Email: "limited@example.com", Password: password, Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "limited-target"}
+	bystander := model.User{Id: firstID + 1, Username: "bystander", Password: password, Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "limited-bystander"}
+	require.NoError(t, model.DB.Create(&target).Error)
+	require.NoError(t, model.DB.Create(&bystander).Error)
+	unknown := fmt.Sprintf("ghost-%d", firstID)
+
+	login := func(identifier, password string) *httptest.ResponseRecorder {
+		body, err := common.Marshal(map[string]string{"username": identifier, "password": password})
+		require.NoError(t, err)
+		return securityEnrollmentRequest("POST", "/api/user/login", string(body), "", service.AuthIdentity{}, Login)
+	}
+
+	for _, identifier := range []string{"limited-user", unknown} {
+		for range 3 {
+			response := login(identifier, "wrong-password")
+			require.Equal(t, http.StatusOK, response.Code)
+			assert.Contains(t, response.Body.String(), "Username or password is incorrect, or user has been banned")
+		}
+		response := login(identifier, "wrong-password")
+		assert.Equal(t, http.StatusTooManyRequests, response.Code, "an account and an unowned name run out the same way")
+		assert.NotEmpty(t, response.Header().Get("Retry-After"))
+		assert.Empty(t, response.Body.String())
+	}
+
+	for _, identifier := range []string{"limited-user", "limited@example.com"} {
+		response := login(identifier, "limited-password")
+		assert.Equal(t, http.StatusTooManyRequests, response.Code, "the right password does not get past the limit as %q", identifier)
+		assert.Empty(t, response.Header().Values("Set-Cookie"))
+	}
+	sessions, err := model.CountActiveUserSessions(target.Id, time.Now().Unix())
+	require.NoError(t, err)
+	assert.Zero(t, sessions)
+
+	response := login("bystander", "limited-password")
+	require.Equal(t, http.StatusOK, response.Code)
+	assert.Contains(t, response.Body.String(), `"success":true`, "another account keeps its own budget")
+}
+
+func TestPasswordResetTokenIsSpentByUseAndByWrongGuesses(t *testing.T) {
+	setupSecurityEnrollmentTest(t)
+	password, err := common.HashAccountPassword("original-password")
+	require.NoError(t, err)
+	// The token store is process-wide, so the address is new on every run.
+	email := fmt.Sprintf("reset-%d@example.com", time.Now().UnixNano())
+	user := model.User{Username: "reset-user", Email: email, Password: password, Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "reset-user"}
+	require.NoError(t, model.DB.Create(&user).Error)
+
+	reset := func(token string) securityEnrollmentResponse {
+		body, err := common.Marshal(PasswordResetRequest{Email: email, Token: token})
+		require.NoError(t, err)
+		response := securityEnrollmentRequest("POST", "/api/user/reset", string(body), "", service.AuthIdentity{}, ResetPassword)
+		var result securityEnrollmentResponse
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+		return result
+	}
+	storedPassword := func() string {
+		var stored model.User
+		require.NoError(t, model.DB.First(&stored, user.Id).Error)
+		return stored.Password
+	}
+
+	t.Run("wrong guesses", func(t *testing.T) {
+		common.RegisterVerificationCodeWithKey(email, "right-token", common.PasswordResetPurpose)
+		for range 5 {
+			assert.False(t, reset("wrong-token").Success)
+		}
+		result := reset("right-token")
+		assert.False(t, result.Success, "the token does not outlive the guesses made at it")
+		assert.Equal(t, "Password reset link is invalid or has expired", result.Message)
+		assert.Equal(t, password, storedPassword())
+	})
+
+	t.Run("expiry", func(t *testing.T) {
+		common.RegisterVerificationCodeWithKey(email, "right-token", common.PasswordResetPurpose)
+		previous := common.VerificationValidMinutes
+		common.VerificationValidMinutes = 0
+		t.Cleanup(func() { common.VerificationValidMinutes = previous })
+		assert.False(t, reset("right-token").Success)
+		assert.Equal(t, password, storedPassword())
+	})
+
+	t.Run("use", func(t *testing.T) {
+		common.RegisterVerificationCodeWithKey(email, "right-token", common.PasswordResetPurpose)
+		assert.False(t, reset("wrong-token").Success)
+		result := reset("right-token")
+		require.True(t, result.Success, "one mistyped token does not cost the owner the reset")
+		var issued string
+		require.NoError(t, common.Unmarshal(result.Data, &issued))
+		afterReset := storedPassword()
+		assert.True(t, common.ValidatePasswordAndHash(issued, afterReset))
+
+		assert.False(t, reset("right-token").Success, "a used token cannot reset the password again")
+		assert.Equal(t, afterReset, storedPassword())
+	})
+}
+
+func TestRegistrationCodeIsSpentByUseAndByWrongGuesses(t *testing.T) {
+	setupSecurityEnrollmentTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Token{}))
+	previousRegister, previousPassword, previousVerification := common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled
+	common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled = true, true, true
+	t.Cleanup(func() {
+		common.RegisterEnabled, common.PasswordRegisterEnabled, common.EmailVerificationEnabled = previousRegister, previousPassword, previousVerification
+	})
+	// The code store is process-wide, so the addresses are new on every run.
+	run := time.Now().UnixNano()
+
+	register := func(username, email, code string) securityEnrollmentResponse {
+		body, err := common.Marshal(map[string]string{"username": username, "password": "registration-password", "email": email, "verification_code": code})
+		require.NoError(t, err)
+		response := securityEnrollmentRequest("POST", "/api/user/register", string(body), "", service.AuthIdentity{}, Register)
+		var result securityEnrollmentResponse
+		require.NoError(t, common.Unmarshal(response.Body.Bytes(), &result))
+		return result
+	}
+	registered := func(username string) int64 {
+		var count int64
+		require.NoError(t, model.DB.Model(&model.User{}).Where("username = ?", username).Count(&count).Error)
+		return count
+	}
+
+	t.Run("wrong guesses", func(t *testing.T) {
+		email := fmt.Sprintf("guessed-%d@example.com", run)
+		common.RegisterVerificationCodeWithKey(email, "a1b2c3", common.EmailVerificationPurpose)
+		for range 5 {
+			assert.False(t, register("guesser", email, "000000").Success)
+		}
+		result := register("guesser", email, "a1b2c3")
+		assert.False(t, result.Success, "the code does not outlive the guesses made at it")
+		assert.Equal(t, "Verification code is incorrect or has expired", result.Message)
+		assert.Zero(t, registered("guesser"))
+	})
+
+	t.Run("use", func(t *testing.T) {
+		email := fmt.Sprintf("owner-%d@example.com", run)
+		common.RegisterVerificationCodeWithKey(email, "a1b2c3", common.EmailVerificationPurpose)
+		assert.False(t, register("owner", email, "000000").Success)
+		result := register("owner", email, "a1b2c3")
+		require.True(t, result.Success, result.Message)
+		require.EqualValues(t, 1, registered("owner"))
+
+		result = register("second", email, "a1b2c3")
+		assert.False(t, result.Success)
+		assert.Equal(t, "Verification code is incorrect or has expired", result.Message, "a used code proves nothing about the mailbox any more")
+		assert.Zero(t, registered("second"))
+	})
+}
+
+func TestEmailCodeRequestAnswersTheSameForRegisteredAndFreeAddresses(t *testing.T) {
+	setupSecurityEnrollmentTest(t)
+	run := time.Now().UnixNano()
+	taken := fmt.Sprintf("taken-%d@example.com", run)
+	require.NoError(t, model.DB.Create(&model.User{Username: "taken-user", Email: taken, Password: "unused", Role: common.RoleCommonUser, Status: common.UserStatusEnabled, Group: "default", AuthVersion: 1, AffCode: "taken-user"}).Error)
+
+	request := func(email string) *httptest.ResponseRecorder {
+		return securityEnrollmentRequest("GET", "/api/verification?email="+email, "", "", service.AuthIdentity{}, SendEmailVerification)
+	}
+	registeredAnswer := request(taken)
+	freeAnswer := request(fmt.Sprintf("free-%d@example.com", run))
+
+	assert.Equal(t, freeAnswer.Code, registeredAnswer.Code)
+	assert.Equal(t, freeAnswer.Body.String(), registeredAnswer.Body.String())
+	assert.NotContains(t, registeredAnswer.Body.String(), "already in use")
+}
+
+func TestOAuthLoginCompletesOnlyInTheBrowserThatStartedIt(t *testing.T) {
+	provider := setupAuthFlowControllerTest(t)
+	start := func(cookies ...*http.Cookie) (string, []*http.Cookie) {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/oauth/state", strings.NewReader(`{"provider":"auth-flow-test","intent":"login"}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		for _, cookie := range cookies {
+			c.Request.AddCookie(cookie)
+		}
+		GenerateOAuthCode(c)
+		var body struct {
+			Data struct {
+				FlowToken string `json:"flow_token"`
+			} `json:"data"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &body))
+		require.NotEmpty(t, body.Data.FlowToken, recorder.Body.String())
+		assert.NotContains(t, recorder.Body.String(), oauthLoginCookieName)
+		return body.Data.FlowToken, recorder.Result().Cookies()
+	}
+	consumed := func(state string) bool {
+		_, err := model.GetAuthFlow(state, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
+		return errors.Is(err, model.ErrAuthFlowConsumed)
+	}
+
+	state, issued := start()
+	require.Len(t, issued, 1)
+	browser := issued[0]
+	assert.Equal(t, oauthLoginCookieName, browser.Name)
+	assert.True(t, browser.HttpOnly)
+	assert.Equal(t, http.SameSiteStrictMode, browser.SameSite)
+	assert.Equal(t, "/api/oauth", browser.Path)
+	assert.Positive(t, browser.MaxAge)
+	flow, err := model.GetAuthFlow(state, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
+	require.NoError(t, err)
+	assert.NotContains(t, flow.Payload, browser.Value, "the stored flow does not hold the cookie itself")
+
+	for _, test := range []struct {
+		name    string
+		query   string
+		cookies []*http.Cookie
+	}{
+		{"no cookie", "code=test", nil},
+		{"another browser", "code=test", []*http.Cookie{oauthTestBrowser()}},
+		{"malformed cookie", "code=test", []*http.Cookie{{Name: oauthLoginCookieName, Value: "not-a-sign-in-cookie"}}},
+		{"provider error from another browser", "error=access_denied", []*http.Cookie{oauthTestBrowser()}},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			response := oauthLoginCallback("auth-flow-test", "state="+state+"&"+test.query, test.cookies...)
+			assert.Equal(t, http.StatusForbidden, response.Code)
+			assert.Zero(t, provider.exchangeCalls)
+			assert.False(t, consumed(state), "a callback from elsewhere does not spend the sign-in")
+		})
+	}
+
+	t.Run("flow without a browser", func(t *testing.T) {
+		unbound, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
+			Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
+			Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute),
+		})
+		require.NoError(t, err)
+		response := oauthLoginCallback("auth-flow-test", "state="+unbound+"&code=test", browser)
+		assert.Equal(t, http.StatusForbidden, response.Code)
+		assert.Zero(t, provider.exchangeCalls)
+	})
+
+	secondState, reissued := start(browser)
+	require.Len(t, reissued, 1)
+	assert.Equal(t, browser.Value, reissued[0].Value, "a second tab keeps the cookie the first sign-in depends on")
+
+	for _, started := range []string{state, secondState} {
+		oauthLoginCallback("auth-flow-test", "state="+started+"&code=test", browser)
+		assert.True(t, consumed(started))
+	}
+	assert.Equal(t, 2, provider.exchangeCalls)
+
+	replay := oauthLoginCallback("auth-flow-test", "state="+state+"&code=test", browser)
+	assert.Equal(t, http.StatusForbidden, replay.Code)
+	assert.Equal(t, 2, provider.exchangeCalls)
+}
+
 type boundLoginOAuthProvider struct {
 	authFlowTestOAuthProvider
 	userID int
@@ -381,12 +639,7 @@ func TestSecurityLoginAllPrimaryTransportsRequireAdditionalVerification(t *testi
 					oauth.Register(slug, &boundLoginOAuthProvider{userID: user.Id})
 				}
 				t.Cleanup(func() { oauth.Unregister(slug) })
-				token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{Purpose: model.AuthFlowPurposeOAuth, Provider: slug, Intent: model.AuthFlowIntentLogin, Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute)})
-				require.NoError(t, err)
-				router := gin.New()
-				router.GET("/api/oauth/:provider", HandleOAuth)
-				response = httptest.NewRecorder()
-				router.ServeHTTP(response, httptest.NewRequest("GET", "/api/oauth/"+slug+"?state="+token+"&code=provider-code", nil))
+				response = oauthLoginCallback(slug, "state="+startOAuthLogin(t, slug)+"&code=provider-code", oauthTestBrowser())
 			}
 			var result struct {
 				Success bool                   `json:"success"`
@@ -673,6 +926,41 @@ func setupAuthFlowControllerTest(t *testing.T) *authFlowTestOAuthProvider {
 	return provider
 }
 
+// oauthTestBrowser is the sign-in cookie of the browser these tests act as.
+func oauthTestBrowser() *http.Cookie {
+	return &http.Cookie{Name: oauthLoginCookieName, Value: strings.Repeat("A", 43)}
+}
+
+// startOAuthLogin starts a sign-in with provider from the test browser, the
+// way the sign-in page does, and returns the state of the flow.
+func startOAuthLogin(t *testing.T, provider string) string {
+	t.Helper()
+	response := securityEnrollmentRequest(http.MethodPost, "/api/oauth/state", `{"provider":"`+provider+`","intent":"login"}`, "", service.AuthIdentity{}, GenerateOAuthCode)
+	var body struct {
+		Success bool `json:"success"`
+		Data    struct {
+			FlowToken string `json:"flow_token"`
+		} `json:"data"`
+	}
+	require.NoError(t, common.Unmarshal(response.Body.Bytes(), &body))
+	require.True(t, body.Success, response.Body.String())
+	return body.Data.FlowToken
+}
+
+// oauthLoginCallback delivers a provider callback carrying query from a
+// browser that holds cookies.
+func oauthLoginCallback(provider, query string, cookies ...*http.Cookie) *httptest.ResponseRecorder {
+	router := gin.New()
+	router.GET("/api/oauth/:provider", HandleOAuth)
+	request := httptest.NewRequest(http.MethodGet, "/api/oauth/"+provider+"?"+query, nil)
+	for _, cookie := range cookies {
+		request.AddCookie(cookie)
+	}
+	response := httptest.NewRecorder()
+	router.ServeHTTP(response, request)
+	return response
+}
+
 func TestGenerateOAuthCodeCarriesAffiliateInLoginFlow(t *testing.T) {
 	setupAuthFlowControllerTest(t)
 	recorder := httptest.NewRecorder()
@@ -737,18 +1025,12 @@ func TestOAuthLoginConsumesFlowOnlyAfterProviderIdentity(t *testing.T) {
 		t.Run(test.name, func(t *testing.T) {
 			provider.exchangeErr = test.exchangeErr
 			provider.userInfoErr = test.userInfoErr
-			token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
-				Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
-				Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute),
-			})
-			require.NoError(t, err)
+			calls := provider.exchangeCalls
+			token := startOAuthLogin(t, "auth-flow-test")
 
-			router := gin.New()
-			router.GET("/api/oauth/:provider", HandleOAuth)
-			request := httptest.NewRequest(http.MethodGet, "/api/oauth/auth-flow-test?state="+token+"&code=test", nil)
-			response := httptest.NewRecorder()
-			router.ServeHTTP(response, request)
+			oauthLoginCallback("auth-flow-test", "state="+token+"&code=test", oauthTestBrowser())
 
+			assert.Equal(t, calls+1, provider.exchangeCalls)
 			flow, err := model.GetAuthFlow(token, model.AuthFlowMatch{
 				Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
 			})
@@ -763,29 +1045,15 @@ func TestOAuthLoginConsumesFlowAfterProviderIdentityAndOnProviderError(t *testin
 
 	provider.exchangeErr = nil
 	provider.userInfoErr = nil
-	successToken, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
-		Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
-		Payload: `{invalid`, ExpiresAt: time.Now().Add(time.Minute),
-	})
-	require.NoError(t, err)
-	router := gin.New()
-	router.GET("/api/oauth/:provider", HandleOAuth)
-	request := httptest.NewRequest(http.MethodGet, "/api/oauth/auth-flow-test?state="+successToken+"&code=test", nil)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, request)
-	_, err = model.GetAuthFlow(successToken, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
+	successToken := startOAuthLogin(t, "auth-flow-test")
+	oauthLoginCallback("auth-flow-test", "state="+successToken+"&code=test", oauthTestBrowser())
+	_, err := model.GetAuthFlow(successToken, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
 	assert.ErrorIs(t, err, model.ErrAuthFlowConsumed)
 	assert.Equal(t, 1, provider.exchangeCalls)
 	assert.Equal(t, 1, provider.userInfoCalls)
 
-	providerErrorToken, _, err := model.CreateAuthFlow(model.AuthFlowCreate{
-		Purpose: model.AuthFlowPurposeOAuth, Provider: "auth-flow-test", Intent: model.AuthFlowIntentLogin,
-		Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute),
-	})
-	require.NoError(t, err)
-	request = httptest.NewRequest(http.MethodGet, "/api/oauth/auth-flow-test?state="+providerErrorToken+"&error=access_denied", nil)
-	response = httptest.NewRecorder()
-	router.ServeHTTP(response, request)
+	providerErrorToken := startOAuthLogin(t, "auth-flow-test")
+	oauthLoginCallback("auth-flow-test", "state="+providerErrorToken+"&error=access_denied", oauthTestBrowser())
 	_, err = model.GetAuthFlow(providerErrorToken, model.AuthFlowMatch{Purpose: model.AuthFlowPurposeOAuth})
 	assert.ErrorIs(t, err, model.ErrAuthFlowConsumed)
 	assert.Equal(t, 1, provider.exchangeCalls)
@@ -858,13 +1126,7 @@ func legacyGitHubOAuthLogin(t *testing.T, provider *legacyGitHubOAuthProvider) *
 	const slug = "github-legacy-login-test"
 	oauth.Register(slug, provider)
 	t.Cleanup(func() { oauth.Unregister(slug) })
-	token, _, err := model.CreateAuthFlow(model.AuthFlowCreate{Purpose: model.AuthFlowPurposeOAuth, Provider: slug, Intent: model.AuthFlowIntentLogin, Payload: `{}`, ExpiresAt: time.Now().Add(time.Minute)})
-	require.NoError(t, err)
-	router := gin.New()
-	router.GET("/api/oauth/:provider", HandleOAuth)
-	response := httptest.NewRecorder()
-	router.ServeHTTP(response, httptest.NewRequest(http.MethodGet, "/api/oauth/"+slug+"?state="+token+"&code=provider-code", nil))
-	return response
+	return oauthLoginCallback(slug, "state="+startOAuthLogin(t, slug)+"&code=provider-code", oauthTestBrowser())
 }
 
 // legacyGitHubBindingAudits returns the account binding audit rows in creation

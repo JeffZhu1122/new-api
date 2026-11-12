@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"os"
 	"strings"
+	"sync"
 	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
@@ -83,4 +84,22 @@ func validateArgon2AccountPassword(password, encoded string) bool {
 	}
 	actual := argon2.IDKey([]byte(password), salt, accountPasswordTime, accountPasswordMemory, 1, accountPasswordKeyBytes)
 	return subtle.ConstantTimeCompare(actual, expected) == 1
+}
+
+// decoyAccountPasswordHash is the stored form of a random password that is
+// thrown away, written with the algorithm new account passwords use.
+var decoyAccountPasswordHash = sync.OnceValue(func() string {
+	hash, err := HashAccountPassword(GetRandomString(MaxAccountPasswordLength / 2))
+	if err != nil {
+		SysError(LogText("failed to prepare the decoy account password: %v", err))
+	}
+	return hash
+})
+
+// SpendAccountPasswordCheck does the work of one password verification when
+// there is no account to verify against. A login for an identifier nobody owns
+// then costs what a login for a real account costs, so the response time does
+// not tell the two apart.
+func SpendAccountPasswordCheck(password string) {
+	ValidatePasswordAndHash(password, decoyAccountPasswordHash())
 }
