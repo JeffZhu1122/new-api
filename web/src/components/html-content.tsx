@@ -21,7 +21,11 @@ import { useEffect, useMemo, useRef } from 'react'
 
 import { cn } from '@/lib/utils'
 
-export type HtmlContentVariant = 'inline' | 'isolated'
+// inline: sanitized HTML with prose typography.
+// plain: sanitized HTML that keeps the surrounding text styles, for short
+// snippets such as a custom footer; links may open in a new tab.
+// isolated: sanitized HTML rendered in a shadow root, iframes sandboxed.
+export type HtmlContentVariant = 'inline' | 'plain' | 'isolated'
 
 interface HtmlContentProps {
   content: string
@@ -87,7 +91,13 @@ const isolatedSanitizeOptions = {
   FORCE_BODY: true,
 } satisfies Config
 
-function hardenIsolatedHtml(html: string): string {
+const plainSanitizeOptions = {
+  ADD_ATTR: ['target'],
+} satisfies Config
+
+// hardenSanitizedHtml adds rel="noopener noreferrer" to links that open a new
+// tab and sandboxes iframes.
+function hardenSanitizedHtml(html: string): string {
   if (typeof document === 'undefined') {
     return html
   }
@@ -125,7 +135,13 @@ function sanitizeHtmlContent(
   if (variant === 'isolated') {
     const html = DOMPurify.sanitize(content, isolatedSanitizeOptions)
 
-    return hardenIsolatedHtml(html)
+    return hardenSanitizedHtml(html)
+  }
+
+  if (variant === 'plain') {
+    return hardenSanitizedHtml(
+      DOMPurify.sanitize(content, plainSanitizeOptions)
+    )
   }
 
   return DOMPurify.sanitize(content)
@@ -192,6 +208,16 @@ export function HtmlContent(props: HtmlContentProps) {
 
   if (variant === 'isolated') {
     return <IsolatedHtmlContent className={props.className} html={html} />
+  }
+
+  if (variant === 'plain') {
+    return (
+      <div
+        className={props.className}
+        // eslint-disable-next-line react/no-danger -- html is sanitized above
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    )
   }
 
   return (

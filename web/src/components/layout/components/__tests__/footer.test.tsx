@@ -93,6 +93,27 @@ describe('Footer', () => {
     ).toHaveAttribute('href', '/privacy-policy')
   })
 
+  it('with custom footer HTML drops scripts and event handlers but keeps new-tab links', async () => {
+    useSystemConfigStore.getState().setConfig({
+      footerHtml:
+        '<a href="https://beian.example/1" target="_blank">ICP 1</a>' +
+        '<img src="x" onerror="window.__footerXss = 1">' +
+        '<script>window.__footerXss = 2</script>' +
+        '<a href="javascript:window.__footerXss = 3">bad link</a>',
+    })
+    const { container } = await renderFooter()
+
+    const filing = await screen.findByRole('link', { name: 'ICP 1' })
+    expect(filing).toHaveAttribute('href', 'https://beian.example/1')
+    expect(filing).toHaveAttribute('target', '_blank')
+    expect(filing.getAttribute('rel')?.split(' ')).toEqual(
+      expect.arrayContaining(['noopener', 'noreferrer'])
+    )
+    expect(container.querySelector('script')).toBeNull()
+    expect(container.querySelector('[onerror]')).toBeNull()
+    expect(screen.getByText('bad link')).not.toHaveAttribute('href')
+  })
+
   it('with legal pages disabled renders no legal links', async () => {
     await renderFooter()
 

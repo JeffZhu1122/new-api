@@ -1643,3 +1643,43 @@ func TestOAuthRegistrationPersistsInviter(t *testing.T) {
 		})
 	}
 }
+
+// The Discovery preview fetches a URL typed into the console, so it goes
+// through the SSRF-protected client: a loopback issuer is refused until the
+// fetch settings allow private addresses and the port.
+func TestCustomOAuthDiscoveryRefusesPrivateAddressesUnlessAllowed(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	service.InitHttpClient()
+	fetchSetting := system_setting.GetFetchSetting()
+	original := *fetchSetting
+	t.Cleanup(func() { *fetchSetting = original })
+
+	issuer := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"issuer":"https://idp.example","authorization_endpoint":"https://idp.example/authorize"}`))
+	}))
+	t.Cleanup(issuer.Close)
+	issuerURL, err := url.Parse(issuer.URL)
+	require.NoError(t, err)
+
+	discover := func() bool {
+		recorder := httptest.NewRecorder()
+		c, _ := gin.CreateTestContext(recorder)
+		c.Request = httptest.NewRequest(http.MethodPost, "/api/custom-oauth-provider/discovery", strings.NewReader(`{"issuer_url":"`+issuer.URL+`"}`))
+		c.Request.Header.Set("Content-Type", "application/json")
+		FetchCustomOAuthDiscovery(c)
+		var response struct {
+			Success bool `json:"success"`
+		}
+		require.NoError(t, common.Unmarshal(recorder.Body.Bytes(), &response))
+		return response.Success
+	}
+
+	fetchSetting.EnableSSRFProtection = true
+	fetchSetting.AllowPrivateIp = false
+	fetchSetting.AllowedPorts = []string{issuerURL.Port()}
+	assert.False(t, discover(), "a loopback issuer must be refused")
+
+	fetchSetting.AllowPrivateIp = true
+	assert.True(t, discover(), "allowing private addresses lets the preview reach it")
+}
