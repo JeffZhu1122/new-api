@@ -177,7 +177,7 @@ func StripeWebhook(c *gin.Context) {
 	}
 
 	signature := c.GetHeader("Stripe-Signature")
-	logger.LogInfo(ctx, common.LogText("Stripe webhook received request path=%q client_ip=%s signature=%q body=%q", c.Request.RequestURI, c.ClientIP(), signature, string(payload)))
+	logger.LogInfo(ctx, common.LogText("Stripe webhook received request path=%q client_ip=%s body_bytes=%d", c.Request.RequestURI, c.ClientIP(), len(payload)))
 	event, err := webhook.ConstructEventWithOptions(payload, signature, setting.StripeWebhookSecret, webhook.ConstructEventOptions{
 		IgnoreAPIVersionMismatch: true,
 	})
@@ -191,24 +191,56 @@ func StripeWebhook(c *gin.Context) {
 	callerIp := c.ClientIP()
 	logger.LogInfo(ctx, common.LogText("Stripe webhook signature verified event_type=%s client_ip=%s path=%q", string(event.Type), callerIp, c.Request.RequestURI))
 	switch event.Type {
-	case stripe.EventTypeCheckoutSessionCompleted:
-		sessionCompleted(ctx, event, callerIp)
-	case stripe.EventTypeCheckoutSessionExpired:
-		sessionExpired(ctx, event)
-	case stripe.EventTypeCheckoutSessionAsyncPaymentSucceeded:
-		sessionAsyncPaymentSucceeded(ctx, event, callerIp)
-	case stripe.EventTypeCheckoutSessionAsyncPaymentFailed:
-		sessionAsyncPaymentFailed(ctx, event, callerIp)
+	case stripe.EventTypeCheckoutSessionCompleted, stripe.EventTypeCheckoutSessionExpired,
+		stripe.EventTypeCheckoutSessionAsyncPaymentSucceeded, stripe.EventTypeCheckoutSessionAsyncPaymentFailed:
 	default:
 		logger.LogInfo(ctx, common.LogText("Stripe webhook ignored event event_type=%s client_ip=%s", string(event.Type), callerIp))
+		c.Status(http.StatusOK)
+		return
+	}
+
+	referenceId, bound := stripeSessionTradeNo(event)
+	if !bound {
+		logger.LogWarn(ctx, common.LogText("Stripe Checkout Session was not created for this order, ignored event_type=%s session_id=%s trade_no=%s client_ip=%s", string(event.Type), event.GetObjectValue("id"), referenceId, callerIp))
+		c.Status(http.StatusOK)
+		return
+	}
+	switch event.Type {
+	case stripe.EventTypeCheckoutSessionCompleted:
+		sessionCompleted(ctx, event, referenceId, callerIp)
+	case stripe.EventTypeCheckoutSessionExpired:
+		sessionExpired(ctx, event, referenceId)
+	case stripe.EventTypeCheckoutSessionAsyncPaymentSucceeded:
+		sessionAsyncPaymentSucceeded(ctx, event, referenceId, callerIp)
+	case stripe.EventTypeCheckoutSessionAsyncPaymentFailed:
+		sessionAsyncPaymentFailed(ctx, referenceId, callerIp)
 	}
 
 	c.Status(http.StatusOK)
 }
 
-func sessionCompleted(ctx context.Context, event stripe.Event, callerIp string) {
-	customerId := event.GetObjectValue("customer")
+// stripeTradeNoMetadataKey names the order in the metadata of every Checkout
+// Session this gateway creates.
+const stripeTradeNoMetadataKey = "new_api_trade_no"
+
+func stripeSessionMetadata(referenceId string) map[string]string {
+	return map[string]string{stripeTradeNoMetadataKey: referenceId}
+}
+
+// stripeSessionTradeNo returns the order a Checkout Session event names and
+// whether the session was created for it. client_reference_id alone does not
+// prove that: a Payment Link in the same Stripe account takes any
+// client_reference_id from its URL, so a smaller payment there could complete
+// a larger pending order. Only the API that creates sessions can set metadata.
+func stripeSessionTradeNo(event stripe.Event) (string, bool) {
 	referenceId := event.GetObjectValue("client_reference_id")
+	metadata, _ := event.Data.Object["metadata"].(map[string]any)
+	tradeNo, _ := metadata[stripeTradeNoMetadataKey].(string)
+	return referenceId, referenceId != "" && tradeNo == referenceId
+}
+
+func sessionCompleted(ctx context.Context, event stripe.Event, referenceId string, callerIp string) {
+	customerId := event.GetObjectValue("customer")
 	status := event.GetObjectValue("status")
 	if "complete" != status {
 		logger.LogWarn(ctx, common.LogText("Stripe checkout.completed has unexpected status, ignored trade_no=%s status=%s client_ip=%s", referenceId, status, callerIp))
@@ -226,9 +258,8 @@ func sessionCompleted(ctx context.Context, event stripe.Event, callerIp string) 
 
 // sessionAsyncPaymentSucceeded handles delayed payment methods (bank transfer, SEPA, etc.)
 // that confirm payment after the checkout session completes.
-func sessionAsyncPaymentSucceeded(ctx context.Context, event stripe.Event, callerIp string) {
+func sessionAsyncPaymentSucceeded(ctx context.Context, event stripe.Event, referenceId string, callerIp string) {
 	customerId := event.GetObjectValue("customer")
-	referenceId := event.GetObjectValue("client_reference_id")
 	logger.LogInfo(ctx, common.LogText("Stripe async payment succeeded trade_no=%s client_ip=%s", referenceId, callerIp))
 
 	fulfillOrder(ctx, event, referenceId, customerId, callerIp)
@@ -236,8 +267,7 @@ func sessionAsyncPaymentSucceeded(ctx context.Context, event stripe.Event, calle
 
 // sessionAsyncPaymentFailed marks orders as failed when delayed payment methods
 // ultimately fail (e.g. bank transfer not received, SEPA rejected).
-func sessionAsyncPaymentFailed(ctx context.Context, event stripe.Event, callerIp string) {
-	referenceId := event.GetObjectValue("client_reference_id")
+func sessionAsyncPaymentFailed(ctx context.Context, referenceId string, callerIp string) {
 	logger.LogWarn(ctx, common.LogText("Stripe async payment failed trade_no=%s client_ip=%s", referenceId, callerIp))
 
 	if len(referenceId) == 0 {
@@ -306,8 +336,7 @@ func fulfillOrder(ctx context.Context, event stripe.Event, referenceId string, c
 	logger.LogInfo(ctx, common.LogText("Stripe top-up succeeded trade_no=%s amount_total=%.2f currency=%s event_type=%s client_ip=%s", referenceId, total/100, currency, string(event.Type), callerIp))
 }
 
-func sessionExpired(ctx context.Context, event stripe.Event) {
-	referenceId := event.GetObjectValue("client_reference_id")
+func sessionExpired(ctx context.Context, event stripe.Event, referenceId string) {
 	status := event.GetObjectValue("status")
 	if "expired" != status {
 		logger.LogWarn(ctx, common.LogText("Stripe checkout.expired has unexpected status, ignored trade_no=%s status=%s", referenceId, status))
@@ -372,6 +401,7 @@ func genStripeLink(referenceId string, customerId string, email string, amount i
 
 	params := &stripe.CheckoutSessionParams{
 		ClientReferenceID: stripe.String(referenceId),
+		Metadata:          stripeSessionMetadata(referenceId),
 		SuccessURL:        stripe.String(successURL),
 		CancelURL:         stripe.String(cancelURL),
 		LineItems: []*stripe.CheckoutSessionLineItemParams{

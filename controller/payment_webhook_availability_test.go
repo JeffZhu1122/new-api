@@ -1,20 +1,27 @@
 package controller
 
 import (
+	"bytes"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/Calcium-Ion/go-epay/epay"
+	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
 	"github.com/QuantumNous/new-api/setting"
 	"github.com/QuantumNous/new-api/setting/operation_setting"
 	"github.com/QuantumNous/new-api/setting/system_setting"
 	"github.com/gin-gonic/gin"
+	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"github.com/stripe/stripe-go/v81/webhook"
+	"gorm.io/gorm"
 )
 
 func confirmPaymentComplianceForTest(t *testing.T) {
@@ -281,5 +288,100 @@ func TestEpayCallbacksVerifyBeforeSettlement(t *testing.T) {
 				})
 			}
 		}
+	}
+}
+
+// A paid checkout completes an order only when the gateway created it for that
+// order. A Stripe Payment Link takes any client_reference_id from its URL, so a
+// smaller payment there could otherwise complete a larger pending order; the
+// gateway's own sessions and Creem checkouts also name the order in metadata,
+// which only the creating API can set. The webhook logs carry neither the
+// signature nor the payload.
+func TestPaymentWebhooksCompleteOnlyCheckoutsCreatedForTheOrder(t *testing.T) {
+	confirmPaymentComplianceForTest(t)
+	originalStripe := []string{setting.StripeApiSecret, setting.StripeWebhookSecret, setting.StripePriceId}
+	originalCreem := []string{setting.CreemApiKey, setting.CreemProducts, setting.CreemWebhookSecret}
+	originalDB, originalLogDB := model.DB, model.LOG_DB
+	originalMainType, originalLogType := common.MainDatabaseType(), common.LogDatabaseType()
+	originalRedis := common.RedisEnabled
+	t.Cleanup(func() {
+		setting.StripeApiSecret, setting.StripeWebhookSecret, setting.StripePriceId = originalStripe[0], originalStripe[1], originalStripe[2]
+		setting.CreemApiKey, setting.CreemProducts, setting.CreemWebhookSecret = originalCreem[0], originalCreem[1], originalCreem[2]
+		model.DB, model.LOG_DB = originalDB, originalLogDB
+		common.SetDatabaseTypes(originalMainType, originalLogType)
+		common.RedisEnabled = originalRedis
+	})
+	setting.StripeApiSecret, setting.StripeWebhookSecret, setting.StripePriceId = "sk_test_123", "whsec_test", "price_123"
+	setting.CreemApiKey, setting.CreemProducts, setting.CreemWebhookSecret = "creem_api_key", `[{"productId":"prod_123"}]`, "creem_secret"
+	common.RedisEnabled = false
+
+	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
+	require.NoError(t, err)
+	require.NoError(t, db.AutoMigrate(&model.User{}, &model.TopUp{}, &model.Log{}))
+	model.DB, model.LOG_DB = db, db
+	common.SetDatabaseTypes(common.DatabaseTypeSQLite, common.DatabaseTypeSQLite)
+	require.NoError(t, db.Create(&model.User{Id: 1, Username: "payer", Password: "unused-password", Status: common.UserStatusEnabled}).Error)
+
+	var logs bytes.Buffer
+	common.LogWriterMu.Lock()
+	originalWriter, originalErrorWriter := gin.DefaultWriter, gin.DefaultErrorWriter
+	gin.DefaultWriter, gin.DefaultErrorWriter = &logs, &logs
+	common.LogWriterMu.Unlock()
+	t.Cleanup(func() {
+		common.LogWriterMu.Lock()
+		gin.DefaultWriter, gin.DefaultErrorWriter = originalWriter, originalErrorWriter
+		common.LogWriterMu.Unlock()
+	})
+
+	router := gin.New()
+	router.POST("/api/stripe/webhook", StripeWebhook)
+	router.POST("/api/creem/webhook", CreemWebhook)
+	stripeEvent := func(tradeNo string, metadata string) (string, string) {
+		body := `{"id":"evt_1","object":"event","api_version":"2024-06-20","type":"checkout.session.completed","data":{"object":{"id":"cs_test_1","object":"checkout.session","client_reference_id":"` + tradeNo + `","customer":"cus_1","status":"complete","payment_status":"paid","amount_total":100,"currency":"usd","customer_details":{"email":"payer@example.com"},"metadata":` + metadata + `}}}`
+		signed := webhook.GenerateTestSignedPayload(&webhook.UnsignedPayload{Payload: []byte(body), Secret: setting.StripeWebhookSecret})
+		return body, signed.Header
+	}
+	creemEvent := func(tradeNo string, metadata string) (string, string) {
+		body := `{"id":"evt_c1","eventType":"checkout.completed","object":{"id":"ch_1","object":"checkout","request_id":"` + tradeNo + `","order":{"id":"ord_1","amount_paid":100,"currency":"USD","status":"paid","type":"onetime"},"product":{"id":"prod_123","name":"Pack"},"customer":{"email":"payer@example.com","name":"Payer"},"metadata":` + metadata + `,"status":"completed"}}`
+		return body, generateCreemSignature(body, setting.CreemWebhookSecret)
+	}
+
+	tests := []struct {
+		name      string
+		provider  string
+		path      string
+		header    string
+		event     func(tradeNo string, metadata string) (string, string)
+		metadata  string
+		completed bool
+	}{
+		{"stripe payment link without metadata", model.PaymentProviderStripe, "/api/stripe/webhook", "Stripe-Signature", stripeEvent, `{}`, false},
+		{"stripe session made for another order", model.PaymentProviderStripe, "/api/stripe/webhook", "Stripe-Signature", stripeEvent, `{"new_api_trade_no":"ref_other"}`, false},
+		{"stripe session made for this order", model.PaymentProviderStripe, "/api/stripe/webhook", "Stripe-Signature", stripeEvent, `{"new_api_trade_no":"%s"}`, true},
+		{"creem checkout without metadata", model.PaymentProviderCreem, "/api/creem/webhook", CreemSignatureHeader, creemEvent, `{}`, false},
+		{"creem checkout made for another order", model.PaymentProviderCreem, "/api/creem/webhook", CreemSignatureHeader, creemEvent, `{"reference_id":"ref_other"}`, false},
+		{"creem checkout made for this order", model.PaymentProviderCreem, "/api/creem/webhook", CreemSignatureHeader, creemEvent, `{"reference_id":"%s"}`, true},
+	}
+	for i, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			tradeNo := fmt.Sprintf("ref_order_%d", i)
+			require.NoError(t, db.Create(&model.TopUp{UserId: 1, Amount: 100, Money: 100, TradeNo: tradeNo, PaymentMethod: tt.provider, PaymentProvider: tt.provider, CreateTime: time.Now().Unix(), Status: common.TopUpStatusPending}).Error)
+			logs.Reset()
+
+			body, signature := tt.event(tradeNo, strings.ReplaceAll(tt.metadata, "%s", tradeNo))
+			request := httptest.NewRequest(http.MethodPost, tt.path, strings.NewReader(body))
+			request.Header.Set(tt.header, signature)
+			recorder := httptest.NewRecorder()
+			router.ServeHTTP(recorder, request)
+			assert.Equal(t, http.StatusOK, recorder.Code)
+
+			status := common.TopUpStatusPending
+			if tt.completed {
+				status = common.TopUpStatusSuccess
+			}
+			assert.Equal(t, status, model.GetTopUpByTradeNo(tradeNo).Status)
+			assert.NotContains(t, logs.String(), signature)
+			assert.NotContains(t, logs.String(), "payer@example.com")
+		})
 	}
 }
