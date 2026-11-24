@@ -4,13 +4,24 @@ export const meta = {
   name: "Kling",
   icon: "Kling.Color",
   description: {
-    en: "Kuaishou Kling video generation (text-to-video and image-to-video)",
-    zh: "快手可灵视频生成（文生视频、图生视频）",
+    en: "Kuaishou Kling video generation (text-to-video, image-to-video and omni reference)",
+    zh: "快手可灵视频生成（文生视频、图生视频、全能参考生视频）",
   },
-  version: "1.2.0",
+  version: "1.3.0",
   author: { name: "QuantumNous" },
   channelTypes: [50],
-  models: ["kling-v2-5-turbo", "kling-v2-6", "kling-v3", "kling-4.0"],
+  models: [
+    "kling-v2-5-turbo",
+    "kling-v2-6",
+    "kling-v3",
+    "kling-2.5-turbo",
+    "kling-2.6",
+    "kling-3.0",
+    "kling-3.0-turbo",
+    "kling-3.0-omni",
+    "kling-4.0",
+    "kling-4.0-flash",
+  ],
   fetchMode: "per_task",
   upstreams: ["vendor", "new_api"],
   usageSchema: {
@@ -28,6 +39,9 @@ export const meta = {
     { label: "v3 4k 5s", facts: { units: 15 } },
     { label: "4.0 1080p 10s", facts: { units: 15 } },
     { label: "4.0 1080p 10s · video input", facts: { units: 18 } },
+    { label: "4.0 Flash 720p 10s", facts: { units: 6 } },
+    { label: "3.0 1080p 5s · audio", facts: { units: 6 } },
+    { label: "3.0 Omni 1080p 5s · reference video", facts: { units: 6 } },
   ],
   protocols: [{ name: "openai_responses", supports: ["stream", "sync", "background"] }, "openai_video"],
   // Kling's own paths; the gateway also serves each under /kling.
@@ -36,12 +50,12 @@ export const meta = {
     { method: "POST", path: "/v1/videos/image2video", type: "submit", action: "image_to_video", decode: "decodeSubmit", render: "taskCreated" },
     { method: "GET", path: "/v1/videos/text2video/:task_id", type: "query", render: "taskStatus" },
     { method: "GET", path: "/v1/videos/image2video/:task_id", type: "query", render: "taskStatus" },
-    // Kling 4.0 takes the model in the path and answers its tasks at
-    // GET /tasks?task_ids=.
-    { method: "POST", path: "/text-to-video/kling-4.0", type: "submit", action: "text_to_video", decode: "kling4TextToVideo", render: "kling4Created" },
-    { method: "POST", path: "/image-to-video/kling-4.0", type: "submit", action: "image_to_video", decode: "kling4ImageToVideo", render: "kling4Created" },
-    { method: "POST", path: "/omni-video/kling-4.0", type: "submit", action: "reference_to_video", decode: "kling4OmniVideo", render: "kling4Created" },
-    { method: "GET", path: "/tasks", type: "query", taskIdParam: "task_ids", render: "kling4Tasks" },
+    // Kling's model-in-path API names the model in the last segment and
+    // answers every task at GET /tasks?task_ids=.
+    { method: "POST", path: "/text-to-video/:model", type: "submit", action: "text_to_video", decode: "pathTextToVideo", render: "pathTaskCreated" },
+    { method: "POST", path: "/image-to-video/:model", type: "submit", action: "image_to_video", decode: "pathImageToVideo", render: "pathTaskCreated" },
+    { method: "POST", path: "/omni-video/:model", type: "submit", action: "reference_to_video", decode: "pathOmniVideo", render: "pathTaskCreated" },
+    { method: "GET", path: "/tasks", type: "query", taskIdParam: "task_ids", render: "pathTasks" },
   ],
 };
 
@@ -65,27 +79,96 @@ const DEFAULT_KLING_MODEL = {
   voiceUnits: { std: 1.2, pro: 1.2, "4k": 3.0 },
 };
 
-// Kling 4.0 takes the model in the path and bills units per second of a total
-// duration (kling.ai/document-api/pricing/base/video): the output alone, or,
-// with an input video, twice the output, or input plus output when the input
-// is longer. Input videos are feature_video, base_video and video character
-// elements; Kling reports their length in usage.input_duration.
-const KLING4_MODELS = ["kling-4.0"];
-const KLING4_UNITS = { "720p": 1.0, "1080p": 1.5 };
-const KLING4_VIDEO_INPUT_UNITS = { "720p": 0.6, "1080p": 0.9 };
-// The shortest and the longest output in seconds; the longest is also the
-// longest total of input videos.
-const KLING4_MIN_SECONDS = 3;
-const KLING4_MAX_SECONDS = 30;
-// Whether an element is a video character is not in the request, so an
-// element counts as an input video.
-const KLING4_VIDEO_INPUTS = ["feature_video", "base_video", "element"];
-const KLING4_ACTIONS = { "text-to-video": "text_to_video", "image-to-video": "image_to_video", "omni-video": "reference_to_video" };
-// The text-to-video aspect ratios of kling-v2-5-turbo, kling-v2-6 and
-// kling-v3, then of Kling 4.0. The host protocols send the one nearest the
-// request's size; without a size Kling uses its default, 16:9.
+// The text-to-video aspect ratios of kling-v2-5-turbo, kling-v2-6, kling-v3
+// and the 2.x and 3.x models of the model-in-path API, then of Kling 4.0 and
+// 4.0 Flash. The host protocols send the one nearest the request's size;
+// without a size Kling uses its default, 16:9.
 const KLING_ASPECT_RATIOS = ["16:9", "9:16", "1:1"];
 const KLING4_ASPECT_RATIOS = ["16:9", "9:16", "1:1", "21:9", "4:3", "3:4"];
+
+const TEXT_TO_VIDEO = "text-to-video";
+const IMAGE_TO_VIDEO = "image-to-video";
+const OMNI_VIDEO = "omni-video";
+const PATH_ACTIONS = { "text-to-video": "text_to_video", "image-to-video": "image_to_video", "omni-video": "reference_to_video" };
+
+// Kling's model-in-path API (kling.ai/document-api/api/video/...): the model
+// is the last path segment, it takes only an API key, and its units per
+// second (kling.ai/document-api/pricing/base/video) depend on the resolution.
+// Each model lists the endpoints it serves, its resolutions with Kling's
+// default first, and its durations: a range, or the values it accepts.
+//
+// Kling 4.0 and 4.0 Flash bill a total duration (`total`): the output alone,
+// or, with an input video, twice the output, or input plus output when the
+// input is longer. Their input videos are at most as long as their longest
+// output, and without a duration Kling follows the prompt or the base_video.
+//
+// The other models bill the output at the rate of what they make (`units`):
+// `base`, with native audio (`audio`), with a reference voice (`voice`), or,
+// on 3.0 Omni, with a reference video (`videoInput`), whatever the audio.
+// Kling 3.0 Turbo always makes audio and has one rate. Without a duration
+// Kling makes `seconds.default`.
+const PATH_MODELS = {
+  "kling-4.0": {
+    endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO, OMNI_VIDEO],
+    resolutions: ["1080p", "720p"],
+    seconds: { min: 3, max: 30 },
+    aspectRatios: KLING4_ASPECT_RATIOS,
+    total: { units: { "720p": 1.0, "1080p": 1.5 }, videoInput: { "720p": 0.6, "1080p": 0.9 } },
+  },
+  "kling-4.0-flash": {
+    endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO, OMNI_VIDEO],
+    resolutions: ["720p"],
+    seconds: { min: 3, max: 20 },
+    aspectRatios: KLING4_ASPECT_RATIOS,
+    total: { units: { "720p": 0.6 }, videoInput: { "720p": 0.4 } },
+  },
+  "kling-3.0": {
+    endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO],
+    resolutions: ["720p", "1080p", "4k"],
+    seconds: { min: 3, max: 15, default: 5 },
+    aspectRatios: KLING_ASPECT_RATIOS,
+    units: { base: { "720p": 0.6, "1080p": 0.8, "4k": 3.0 }, audio: { "720p": 0.9, "1080p": 1.2, "4k": 3.0 } },
+  },
+  "kling-3.0-omni": {
+    endpoints: [OMNI_VIDEO],
+    resolutions: ["720p", "1080p", "4k"],
+    seconds: { min: 3, max: 15, default: 5 },
+    aspectRatios: KLING_ASPECT_RATIOS,
+    units: {
+      base: { "720p": 0.6, "1080p": 0.8, "4k": 3.0 },
+      audio: { "720p": 0.8, "1080p": 1.0, "4k": 3.0 },
+      videoInput: { "720p": 0.9, "1080p": 1.2, "4k": 3.0 },
+    },
+  },
+  "kling-3.0-turbo": {
+    endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO],
+    resolutions: ["720p", "1080p"],
+    seconds: { min: 3, max: 15, default: 5 },
+    aspectRatios: KLING_ASPECT_RATIOS,
+    units: { base: { "720p": 0.8, "1080p": 1.0 } },
+  },
+  "kling-2.6": {
+    endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO],
+    resolutions: ["720p", "1080p"],
+    seconds: { values: [5, 10], default: 5 },
+    aspectRatios: KLING_ASPECT_RATIOS,
+    units: { base: { "720p": 0.3, "1080p": 0.5 }, audio: { "1080p": 1.0 }, voice: { "1080p": 1.2 } },
+  },
+  "kling-2.5-turbo": {
+    endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO],
+    resolutions: ["720p", "1080p"],
+    seconds: { values: [5, 10], default: 5 },
+    aspectRatios: KLING_ASPECT_RATIOS,
+    units: { base: { "720p": 0.3, "1080p": 0.5 } },
+  },
+};
+// The shorter side of each resolution, for the one nearest a size.
+const RESOLUTION_SIDES = { "720p": 720, "1080p": 1080, "4k": 2160 };
+// The earlier API's modes that ask for more than Kling's default resolution.
+const MODE_RESOLUTIONS = { pro: "1080p", "4k": "4k" };
+// Whether an element is a video character is not in the request, so an
+// element counts as an input video.
+const PATH_VIDEO_INPUTS = ["feature_video", "base_video", "element"];
 
 // Kling's numeric error codes for the statuses the gateway answers with
 // (kling.ai/document-api/api/get-started/error-codes).
@@ -155,12 +238,15 @@ function viaGateway(ctx) {
   return !!(ctx.upstream && ctx.upstream.kind === "new_api") || isRelay(ctx.apiKey);
 }
 
-function tokenFor(ctx) {
+// The earlier API takes an API key or a JWT signed with accessKey|secretKey;
+// the model-in-path API refuses the JWT.
+function tokenFor(ctx, modelPath) {
   const apiKey = trimmed(ctx.apiKey);
   if (!apiKey) throw new Error("api_key is empty");
   if (viaGateway(ctx)) return apiKey;
   const parts = apiKey.split("|");
   if (parts.length === 1) return apiKey;
+  if (modelPath) throw new Error("this Kling model takes an API key, not accessKey|secretKey; create an API key in the Kling console");
   if (parts.length !== 2) throw new Error("invalid api_key, required format is accessKey|secretKey");
   const now = utils.unixNow();
   return utils.jwtSignHS256({ iss: parts[0].trim(), exp: now + 1800, nbf: now - 5 }, parts[1].trim());
@@ -178,8 +264,8 @@ function urlFor(ctx, action) {
   return apiRoot(ctx) + pathFor(action);
 }
 
-function requestHeaders(ctx) {
-  return { Accept: "application/json", Authorization: "Bearer " + tokenFor(ctx), "User-Agent": "kling-sdk/1.0" };
+function requestHeaders(ctx, modelPath) {
+  return { Accept: "application/json", Authorization: "Bearer " + tokenFor(ctx, modelPath), "User-Agent": "kling-sdk/1.0" };
 }
 
 // A host-protocol size, WIDTHxHEIGHT.
@@ -227,12 +313,16 @@ function validateKlingDuration(value) {
   return n;
 }
 
-// Kling 4.0 makes 3 to 30 seconds, so another duration is refused before it is
-// reserved.
-function kling4Duration(value) {
+// A model-in-path model makes only its own durations, so another one is
+// refused before it is reserved.
+function pathDuration(spec, value) {
   const n = typeof value === "string" && value.trim() !== "" ? Number(value) : value;
-  if (!Number.isInteger(n) || n < KLING4_MIN_SECONDS || n > KLING4_MAX_SECONDS)
-    throw new Error("duration must be an integer from " + KLING4_MIN_SECONDS + " to " + KLING4_MAX_SECONDS);
+  const seconds = spec.seconds;
+  if (seconds.values) {
+    if (!seconds.values.includes(n)) throw new Error("duration must be one of " + seconds.values.join(", "));
+    return n;
+  }
+  if (!Number.isInteger(n) || n < seconds.min || n > seconds.max) throw new Error("duration must be an integer from " + seconds.min + " to " + seconds.max);
   return n;
 }
 
@@ -286,42 +376,79 @@ function plainObject(value) {
   return value && typeof value === "object" && !Array.isArray(value) ? value : {};
 }
 
-function isKling4(model) {
-  return KLING4_MODELS.includes(model);
+function pathSpec(model) {
+  return Object.prototype.hasOwnProperty.call(PATH_MODELS, model) ? PATH_MODELS[model] : null;
 }
 
-// A native body goes to the API family of the route the client called; the
-// host protocols pick it by model.
-function usesKling4(ctx, req) {
-  return req.vendorBody ? Boolean(req.endpoint) : isKling4(submitModel(ctx, req));
+function hasValue(value) {
+  return value !== undefined && value !== null;
 }
 
-// 1080p is Kling's default and the dearer; a resolution Kling does not list
-// reserves it.
-function kling4Resolution(settings) {
-  return trimmed(settings.resolution).toLowerCase() === "720p" ? "720p" : "1080p";
+// A native body goes to the API of the route the client called; the host
+// protocols pick it by model.
+function usesModelPath(ctx, req) {
+  return req.vendorBody ? Boolean(req.endpoint) : Boolean(pathSpec(submitModel(ctx, req)));
+}
+
+// The resolution billed: Kling's default without one, else the one sent. A
+// resolution the model does not list is billed at its dearest rate.
+function billedResolution(spec, settings) {
+  return trimmed(settings.resolution).toLowerCase() || spec.resolutions[0];
+}
+
+function rateFor(table, resolution) {
+  if (Object.prototype.hasOwnProperty.call(table, resolution)) return table[resolution];
+  return Object.keys(table).reduce((dearest, key) => Math.max(dearest, table[key]), 0);
+}
+
+// The model's resolution whose shorter side is nearest the size's; a tie takes
+// the larger.
+function nearestResolution(dimensions, resolutions) {
+  const side = Math.min(dimensions.width, dimensions.height);
+  let nearest = resolutions[0];
+  let distance = Infinity;
+  for (const resolution of resolutions) {
+    const resolutionDistance = Math.abs(side - RESOLUTION_SIDES[resolution]);
+    if (resolutionDistance < distance || (resolutionDistance === distance && RESOLUTION_SIDES[resolution] > RESOLUTION_SIDES[nearest])) {
+      nearest = resolution;
+      distance = resolutionDistance;
+    }
+  }
+  return nearest;
+}
+
+function hasVideoInput(contents) {
+  return contents.some(function (item) {
+    return item && PATH_VIDEO_INPUTS.includes(item.type);
+  });
 }
 
 // Kling would call back, or look tasks up, by ids the gateway does not hand
-// out. The duration is billed, so it is kept within Kling 4.0's range.
-function checkKling4Body(body) {
+// out. The duration is billed, so it is kept within the model's durations.
+function checkPathBody(spec, body) {
   const options = plainObject(body.options);
   for (const name of UNSUPPORTED_FIELDS) {
     const value = options[name];
     if (value !== undefined && value !== null && value !== "") throw new Error("options." + name + " is not supported; query the task instead");
   }
   const settings = plainObject(body.settings);
-  if (settings.duration !== undefined && settings.duration !== null) kling4Duration(settings.duration);
+  if (hasValue(settings.duration)) pathDuration(spec, settings.duration);
 }
 
-// The Kling 4.0 request: a native body as the client wrote it, for the
+// The model-in-path request: a native body as the client wrote it, for the
 // endpoint it called. The host protocols send text-to-video, or image-to-video
-// with the first frame and an optional last frame; metadata adds Kling's own
-// fields. Kling 4.0 has no mode, and without a duration Kling picks one.
-function kling4Submission(ctx) {
+// with the first frame and an optional last frame, or omni-video with the
+// same contents for a model that has only that endpoint; metadata adds Kling's
+// own fields. The earlier API's pro and 4k modes ask for that resolution and
+// sound "on" for native audio, when the model has them. Kling 4.0 and 4.0
+// Flash pick the length when the request has none; the other models get their
+// default duration.
+function pathSubmission(ctx) {
   const req = ctx.requestBody || {};
+  const spec = pathSpec(submitModel(ctx, req));
+  if (!spec) throw new Error("model " + submitModel(ctx, req) + " is not a Kling model-in-path model");
   if (req.vendorBody) {
-    checkKling4Body(req.vendorBody);
+    checkPathBody(spec, req.vendorBody);
     return { endpoint: req.endpoint, body: req.vendorBody };
   }
   const metadata = Object.assign({}, plainObject(req.metadata));
@@ -332,21 +459,24 @@ function kling4Submission(ctx) {
     return frame[1];
   });
   let duration = metadata.duration;
-  if (duration === undefined || duration === null) duration = req.duration;
-  for (const name of ["mode", "duration", "image", "image_tail"]) delete metadata[name];
-  const endpoint = frames.length ? "image-to-video" : "text-to-video";
+  if (!hasValue(duration)) duration = req.duration;
+  const mode = klingMode(req.mode || metadata.mode);
+  const sound = trimmed(metadata.sound).toLowerCase();
+  for (const name of ["mode", "sound", "duration", "image", "image_tail"]) delete metadata[name];
+  let endpoint = frames.length ? IMAGE_TO_VIDEO : TEXT_TO_VIDEO;
+  if (!spec.endpoints.includes(endpoint)) endpoint = OMNI_VIDEO;
   const settings = {};
   const size = trimmed(req.size);
   if (size) {
     const dimensions = sizeDimensions(size);
-    // Kling 4.0 makes 720p and 1080p; a size gets the one whose shorter side
-    // is nearer its own.
-    settings.resolution = Math.min(dimensions.width, dimensions.height) < 900 ? "720p" : "1080p";
-    if (endpoint === "text-to-video") settings.aspect_ratio = aspectRatio(dimensions, KLING4_ASPECT_RATIOS);
-  }
-  if (duration !== undefined && duration !== null) settings.duration = kling4Duration(duration);
+    settings.resolution = nearestResolution(dimensions, spec.resolutions);
+    if (!frames.length) settings.aspect_ratio = aspectRatio(dimensions, spec.aspectRatios);
+  } else if (!spec.total && spec.resolutions.includes(MODE_RESOLUTIONS[mode])) settings.resolution = MODE_RESOLUTIONS[mode];
+  if (sound === "on" && spec.units && spec.units.audio) settings.audio = "native";
+  if (hasValue(duration)) settings.duration = pathDuration(spec, duration);
+  else if (!spec.total) settings.duration = spec.seconds.default;
   let body;
-  if (endpoint === "text-to-video") body = req.prompt ? { prompt: req.prompt } : {};
+  if (endpoint === TEXT_TO_VIDEO) body = req.prompt ? { prompt: req.prompt } : {};
   else {
     const contents = req.prompt ? [{ type: "prompt", text: req.prompt }] : [];
     for (const frame of frames) contents.push({ type: frame[0], url: filePlaceholder(frame[1]) });
@@ -354,28 +484,41 @@ function kling4Submission(ctx) {
   }
   if (Object.keys(settings).length) body.settings = settings;
   Object.assign(body, metadata);
-  checkKling4Body(body);
+  checkPathBody(spec, body);
   return { endpoint: endpoint, body: body };
 }
 
-// Without a duration Kling follows the prompt or the base_video, so the
-// longest output is reserved; only Kling knows the length of an input video,
-// so the longest input is reserved. The units Kling reports settle the task.
-function kling4ReservedUnits(body) {
+// Kling 4.0 and 4.0 Flash follow the prompt or the base_video without a
+// duration, so their longest output is reserved, and only Kling knows the
+// length of an input video, so their longest input is reserved. The other
+// models make their default duration. The units Kling reports settle the
+// task.
+function pathReservedUnits(spec, body) {
   const settings = plainObject(body.settings);
-  const resolution = kling4Resolution(settings);
-  const seconds = settings.duration === undefined || settings.duration === null ? KLING4_MAX_SECONDS : kling4Duration(settings.duration);
+  const resolution = billedResolution(spec, settings);
   const contents = Array.isArray(body.contents) ? body.contents : [];
-  const videoInput = contents.some(function (item) {
-    return item && KLING4_VIDEO_INPUTS.includes(item.type);
-  });
-  if (!videoInput) return KLING4_UNITS[resolution] * seconds;
-  return KLING4_VIDEO_INPUT_UNITS[resolution] * Math.max(seconds * 2, KLING4_MAX_SECONDS + seconds);
+  const videoInput = hasVideoInput(contents);
+  if (spec.total) {
+    const seconds = hasValue(settings.duration) ? pathDuration(spec, settings.duration) : spec.seconds.max;
+    if (!videoInput) return rateFor(spec.total.units, resolution) * seconds;
+    return rateFor(spec.total.videoInput, resolution) * Math.max(seconds * 2, spec.seconds.max + seconds);
+  }
+  const seconds = hasValue(settings.duration) ? pathDuration(spec, settings.duration) : spec.seconds.default;
+  const units = spec.units;
+  let table = units.base;
+  if (videoInput && units.videoInput) table = units.videoInput;
+  else if (trimmed(settings.audio).toLowerCase() === "native") {
+    const voice = contents.some(function (item) {
+      return item && item.type === "voice";
+    });
+    table = (voice && units.voice) || units.audio || units.base;
+  }
+  return rateFor(table, resolution) * seconds;
 }
 
-// The task's entry in a Kling 4.0 reply: the list GET /tasks answers, or the
-// single task of the create reply.
-function kling4Entry(reply, taskId) {
+// The task's entry in a model-in-path reply: the list GET /tasks answers, or
+// the single task of the create reply.
+function pathEntry(reply, taskId) {
   const data = plainObject(reply).data;
   if (!Array.isArray(data)) return plainObject(data);
   return (
@@ -385,14 +528,14 @@ function kling4Entry(reply, taskId) {
   );
 }
 
-// A Kling 4.0 reply carries the task as data, or as the only entry of the list
-// GET /tasks answers; the earlier API's reply has data.task_id.
-function isKling4Reply(reply) {
+// A model-in-path reply carries the task as data, or as the only entry of the
+// list GET /tasks answers; the earlier API's reply has data.task_id.
+function isPathReply(reply) {
   const data = plainObject(reply).data;
   return Array.isArray(data) || Boolean(data && typeof data === "object" && data.id && !data.task_id);
 }
 
-function kling4Videos(entry) {
+function pathVideos(entry) {
   return (Array.isArray(entry.outputs) ? entry.outputs : []).filter(function (output) {
     return output && output.type === "video";
   });
@@ -404,35 +547,56 @@ function reportedSeconds(value) {
   return Number.isFinite(seconds) && seconds > 0 ? Math.min(seconds, 3600) : 0;
 }
 
-// The units Kling deducted. A cash deduction counts its list_price, not its
-// amount, which is the discounted price; the durations Kling reports run
-// slightly longer than the requested duration it bills.
-function kling4CompletedUnits(ctx, body) {
-  const entry = kling4Entry(body, ctx && ctx.taskId);
+// The units Kling deducted: a resource package's amount, or a cash deduction's
+// list_price, not its amount, which is the discounted price. A unit lists at
+// one yuan, so only a deduction in CNY converts; one in another currency has
+// no fixed rate to units. Without a deduction that converts, Kling 4.0 and 4.0
+// Flash settle on the durations Kling bills (usage.output_duration; the
+// video's own duration runs slightly longer), and the other models keep their
+// reservation, which their request fixes.
+function pathCompletedUnits(ctx, body) {
+  const entry = pathEntry(body, ctx && ctx.taskId);
   if (entry.status !== "succeeded") return null;
   const deductions = Array.isArray(entry.billing) ? entry.billing : [];
   const deducted = deductions.reduce(function (sum, item) {
     const type = item && item.charge_type;
-    const units = Number.parseFloat(type === "unit" ? item.amount : type === "cash" ? item.list_price : "");
+    let units = Number.NaN;
+    if (type === "unit") units = Number.parseFloat(item.amount);
+    else if (type === "cash" && trimmed(item.currency).toUpperCase() === "CNY") units = Number.parseFloat(item.list_price);
     return units >= 0 ? sum + units : Number.NaN;
   }, 0);
   if (deductions.length && Number.isFinite(deducted)) return { units: deducted };
-  const videos = kling4Videos(entry);
-  const output = reportedSeconds(videos.length ? videos[0].duration : "");
+  const spec = pathSpec(submitModel(ctx, null));
+  if (!spec || !spec.total) return null;
+  const usage = plainObject(entry.usage);
+  let output = reportedSeconds(usage.output_duration);
+  if (!output) {
+    const videos = pathVideos(entry);
+    output = reportedSeconds(videos.length ? videos[0].duration : "");
+  }
   if (!output) return null;
-  const input = reportedSeconds(plainObject(entry.usage).input_duration);
-  const resolution = kling4Resolution(plainObject(ctx && ctx.state));
-  if (!input) return { units: KLING4_UNITS[resolution] * output };
-  return { units: KLING4_VIDEO_INPUT_UNITS[resolution] * (input <= output ? output * 2 : input + output) };
+  const input = reportedSeconds(usage.input_duration);
+  const resolution = billedResolution(spec, plainObject(ctx && ctx.state));
+  if (!input) return { units: rateFor(spec.total.units, resolution) * output };
+  return { units: rateFor(spec.total.videoInput, resolution) * (input <= output ? output * 2 : input + output) };
 }
 
-function decodeKling4Submit(endpoint) {
+// A model-in-path route names the model in its last segment.
+function decodePathSubmit(endpoint) {
   return function (ctx) {
     if (!ctx.body || ctx.body.kind !== "json") throw new Error("JSON body required");
     const body = ctx.body.value;
     if (!body || typeof body !== "object" || Array.isArray(body)) throw new Error("request body must be an object");
-    checkKling4Body(body);
-    return { kind: "submit", model: "kling-4.0", requestBody: { model: "kling-4.0", vendorBody: body, endpoint: endpoint } };
+    const model = trimmed((ctx.params || {}).model);
+    const spec = pathSpec(model);
+    if (!spec || !spec.endpoints.includes(endpoint)) {
+      const served = Object.keys(PATH_MODELS).filter(function (name) {
+        return PATH_MODELS[name].endpoints.includes(endpoint);
+      });
+      throw new Error("Kling does not serve " + (model || "an empty model") + " at /" + endpoint + "; use one of " + served.join(", "));
+    }
+    checkPathBody(spec, body);
+    return { kind: "submit", model: model, requestBody: { model: model, vendorBody: body, endpoint: endpoint } };
   };
 }
 
@@ -462,7 +626,7 @@ export const native = {
   // reports as running (poll failures or the task timeout); it then reads failed.
   taskStatus: function (ctx, task) {
     const statusMap = { NOT_START: "submitted", SUBMITTED: "submitted", QUEUED: "submitted", IN_PROGRESS: "processing", SUCCESS: "succeed", FAILURE: "failed" };
-    const result = task.data && typeof task.data === "object" && !Array.isArray(task.data) && !isKling4Reply(task.data) ? task.data : null;
+    const result = task.data && typeof task.data === "object" && !Array.isArray(task.data) && !isPathReply(task.data) ? task.data : null;
     if (result) {
       const data = Object.assign({}, result.data && typeof result.data === "object" ? result.data : {}, { task_id: task.task_id });
       if (task.status === "FAILURE" && data.task_status !== "failed") {
@@ -484,16 +648,17 @@ export const native = {
       },
     };
   },
-  kling4TextToVideo: decodeKling4Submit("text-to-video"),
-  kling4ImageToVideo: decodeKling4Submit("image-to-video"),
-  kling4OmniVideo: decodeKling4Submit("omni-video"),
-  kling4Created: function (ctx, task) {
+  pathTextToVideo: decodePathSubmit(TEXT_TO_VIDEO),
+  pathImageToVideo: decodePathSubmit(IMAGE_TO_VIDEO),
+  pathOmniVideo: decodePathSubmit(OMNI_VIDEO),
+  pathTaskCreated: function (ctx, task) {
     const result = plainObject(task.data);
     return Object.assign({}, result, { data: Object.assign({}, plainObject(result.data), { id: task.task_id }) });
   },
-  // Kling 4.0 answers GET /tasks with a list; the gateway answers for one
-  // task, from Kling's last reply. A task the gateway failed reads failed.
-  kling4Tasks: function (ctx, task) {
+  // The model-in-path API answers GET /tasks with a list; the gateway answers
+  // for one task, from Kling's last reply. A task the gateway failed reads
+  // failed.
+  pathTasks: function (ctx, task) {
     const statusMap = {
       NOT_START: "submitted",
       SUBMITTED: "submitted",
@@ -502,10 +667,10 @@ export const native = {
       SUCCESS: "succeeded",
       FAILURE: "failed",
     };
-    const result = isKling4Reply(task.data) ? plainObject(task.data) : {};
+    const result = isPathReply(task.data) ? plainObject(task.data) : {};
     const entry = Object.assign(
       { status: statusMap[task.status] || "submitted", create_time: task.created_at * 1000, update_time: (task.updated_at || task.created_at) * 1000 },
-      kling4Entry(result),
+      pathEntry(result),
       { id: task.task_id },
     );
     if (task.status === "FAILURE" && entry.status !== "failed") {
@@ -525,15 +690,15 @@ export const native = {
 // duration, at Kling's defaults when absent.
 export function buildSubmitRequest(ctx) {
   const req = ctx.requestBody;
-  if (usesKling4(ctx, req)) {
+  if (usesModelPath(ctx, req)) {
     const model = submitModel(ctx, req);
-    const submission = kling4Submission(ctx);
+    const submission = pathSubmission(ctx);
     return {
       url: apiRoot(ctx) + "/" + submission.endpoint + "/" + model,
       method: "POST",
-      headers: Object.assign({ "Content-Type": "application/json" }, requestHeaders(ctx)),
+      headers: Object.assign({ "Content-Type": "application/json" }, requestHeaders(ctx, true)),
       body: submission.body,
-      action: KLING4_ACTIONS[submission.endpoint],
+      action: PATH_ACTIONS[submission.endpoint],
     };
   }
   const metadata = req.metadata || {};
@@ -567,9 +732,9 @@ export function buildSubmitRequest(ctx) {
   };
 }
 
-// A Kling 4.0 task keeps the resolution it was sent at, for a settlement
+// A model-in-path task keeps the resolution it was billed at, for a settlement
 // without a unit deduction; the state also marks the task as one.
-function isKling4Task(ctx) {
+function isPathTask(ctx) {
   return Boolean(plainObject(ctx && ctx.state).resolution);
 }
 
@@ -577,10 +742,10 @@ export function parseSubmitResponse(ctx, resp) {
   const result = resp.body || {};
   if (result.code !== 0) throw new Error(result.message || "kling submit failed");
   const req = (ctx && ctx.requestBody) || {};
-  if (usesKling4(ctx, req)) {
+  if (usesModelPath(ctx, req)) {
     if (!result.data || !result.data.id) throw new Error("missing task id");
-    const settings = plainObject(kling4Submission(ctx).body.settings);
-    return { taskId: result.data.id, taskData: result, state: { resolution: kling4Resolution(settings) } };
+    const settings = plainObject(pathSubmission(ctx).body.settings);
+    return { taskId: result.data.id, taskData: result, state: { resolution: billedResolution(pathSpec(submitModel(ctx, req)), settings) } };
   }
   if (!result.data || !result.data.task_id) throw new Error("missing task_id");
   return { taskId: result.data.task_id, taskData: result };
@@ -589,26 +754,26 @@ export function parseSubmitResponse(ctx, resp) {
 export function extractUsage(ctx) {
   if (ctx.usagePurpose === "billing_ratios") return null;
   const req = ctx.requestBody || {};
-  if (usesKling4(ctx, req)) return { units: kling4ReservedUnits(kling4Submission(ctx).body) };
+  if (usesModelPath(ctx, req)) return { units: pathReservedUnits(pathSpec(submitModel(ctx, req)), pathSubmission(ctx).body) };
   // A native body reads like the metadata of a host-protocol request.
   const source = req.vendorBody ? { metadata: req.vendorBody } : req;
   return { units: unitsPerSecond(submitModel(ctx, req), outboundMode(source), source.metadata || {}) * outboundDuration(source) };
 }
 
 export function buildQueryRequest(ctx) {
-  const url = isKling4Task(ctx) ? apiRoot(ctx) + "/tasks?task_ids=" + encodeURIComponent(ctx.taskId) : urlFor(ctx, ctx.action) + "/" + ctx.taskId;
-  return { url: url, method: "GET", headers: requestHeaders(ctx) };
+  const url = isPathTask(ctx) ? apiRoot(ctx) + "/tasks?task_ids=" + encodeURIComponent(ctx.taskId) : urlFor(ctx, ctx.action) + "/" + ctx.taskId;
+  return { url: url, method: "GET", headers: requestHeaders(ctx, isPathTask(ctx)) };
 }
 
-function parseKling4Result(ctx, body) {
-  const entry = kling4Entry(body, ctx.taskId);
+function parsePathResult(ctx, body) {
+  const entry = pathEntry(body, ctx.taskId);
   const statuses = { submitted: "SUBMITTED", processing: "IN_PROGRESS", succeeded: "SUCCESS", failed: "FAILURE" };
   const status = statuses[entry.status];
   if (!status) return { status: "UNKNOWN", reason: "unknown task status: " + String(entry.status || "") };
   const result = { code: body.code || 0, taskId: entry.id, status: status, reason: entry.message || "" };
-  const videos = status === "SUCCESS" ? kling4Videos(entry) : [];
+  const videos = status === "SUCCESS" ? pathVideos(entry) : [];
   if (videos.length && videos[0].url) result.url = videos[0].url;
-  const usage = kling4CompletedUnits(ctx, body);
+  const usage = pathCompletedUnits(ctx, body);
   if (usage && usage.units > 0) {
     result.completionTokens = Math.ceil(usage.units);
     result.totalTokens = Math.ceil(usage.units);
@@ -617,7 +782,7 @@ function parseKling4Result(ctx, body) {
 }
 
 export function parseTaskResult(ctx, body) {
-  if (isKling4Task(ctx)) return parseKling4Result(ctx, body);
+  if (isPathTask(ctx)) return parsePathResult(ctx, body);
   const data = body.data || {};
   const statuses = { submitted: "SUBMITTED", processing: "IN_PROGRESS", succeed: "SUCCESS", failed: "FAILURE" };
   const status = statuses[data.task_status];
@@ -640,8 +805,8 @@ function artifactData(ctx) {
 }
 
 function artifactVideoURL(ctx) {
-  if (isKling4Task(ctx)) {
-    const videos = kling4Videos(kling4Entry(artifactData(ctx), ctx.taskId));
+  if (isPathTask(ctx)) {
+    const videos = pathVideos(pathEntry(artifactData(ctx), ctx.taskId));
     return videos.length ? String(videos[0].url || "").trim() : "";
   }
   const result = (artifactData(ctx).data || {}).task_result || {};
@@ -661,7 +826,7 @@ export function buildContentRequest(ctx) {
 }
 
 export function extractUsageOnComplete(ctx, _taskResult, body) {
-  if (isKling4Task(ctx)) return kling4CompletedUnits(ctx, body);
+  if (isPathTask(ctx)) return pathCompletedUnits(ctx, body);
   const data = (body && body.data) || {};
   if (
     !Object.prototype.hasOwnProperty.call(data, "final_unit_deduction") ||
@@ -776,7 +941,7 @@ export const protocols = {
       }
       const seconds = req.seconds === undefined ? req.duration : req.seconds;
       // Without a duration the request builder sends Kling's default, 5, and
-      // Kling 4.0 picks the length itself.
+      // Kling 4.0 and 4.0 Flash pick the length themselves.
       if (seconds !== undefined) req.duration = validateKlingDuration(seconds);
       if (hasInputReferenceFile) {
         req.image = { __fileRef: "request_file:input_reference", encoding: "base64", maxBytes: 10485760 };
@@ -808,11 +973,11 @@ export const protocols = {
         progress: Number(String(task.progress || "0").replace("%", "")),
         created_at: data.created_at || 0,
       };
-      // Kling 4.0 replies carry the task as data, or as the only entry of the
-      // list GET /tasks answers.
-      if (isKling4Reply(response)) {
-        const entry = kling4Entry(response);
-        const videos = kling4Videos(entry);
+      // Model-in-path replies carry the task as data, or as the only entry of
+      // the list GET /tasks answers.
+      if (isPathReply(response)) {
+        const entry = pathEntry(response);
+        const videos = pathVideos(entry);
         output.created_at = entry.create_time || 0;
         if (entry.update_time) output.completed_at = entry.update_time;
         if (videos.length && videos[0].duration) output.seconds = videos[0].duration;
