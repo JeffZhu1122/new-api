@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
 | 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 79 个（含本文档相关提交） |
-| 变更规模 | 476 个文件，+49450 / −3007 行（不含本文档） |
+| fork 专有提交数 | 80 个（含本文档相关提交） |
+| 变更规模 | 475 个文件，+49661 / −3007 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -946,7 +946,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/routeTree.gen.ts` | §38 新路由 `/_authenticated/asset-library/` 和匿名的 `/asset-library-verification`（构建时生成，冲突时重新生成即可） |
 | `model/channel.go` | §12 `UpdateChannelStatus`：开内存缓存时渠道不在缓存里不再直接返回 false，照常改数据库（新建的禁用渠道可以直接启用）；上游的「请求失败不覆盖手动禁用」判断放在缓存命中的分支里，数据库侧的同一判断保留 |
 | `controller/channel_create_test.go` | 上游测试只迁移上游的表；fork 的 `BatchDeleteChannels` 会删 `channel_extend`，初始化里要有 `ChannelExtend`。上游新增的直接调 `AddChannel` / `BatchDeleteChannels` 的测试同理 |
-| `router/plugin-router.go` | §38 插件路由链在 `PrepareTaskPluginRoute` 之前插入 `middleware.AssetLibraryAutoUpload()`（必须在插件解析请求体之前） |
+| `controller/relay.go` | §38 `executeTaskSubmissionWith` 重试循环里，选定渠道并 `AppendUsedChannel` 之后、读请求体之前，调用 `middleware.AutoUploadAssetLibraryReferences(c, channel.Id)`（自动入库，失败即结束请求） |
 | `router/access_token_scope_test.go` | §38 匿名的 `POST /api/asset-library/verification/callback` 加入 `accessTokenExemptRoutes` |
 | `web/src/i18n/static-keys.ts` | §38 素材库的任务名和网关写入的失败原因（运行时才传给 `t()`） |
 | `web/src/components/search.tsx` | 顶栏搜索按钮 class |
@@ -2268,16 +2268,24 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
   - `first_frame` 等其他角色、已经是 `asset://` 的引用、base64 内容都原样不动。
   - 参考素材数量按方舟官方上限、分类型计算：Seedance 2.0 系列最多 9 张图、3 个视频、3 段音频；Seedance 2.5（以及名字里不含 `seedance-2-0` 的其他 2.x 模型）最多 30 张图、10 个视频、10 段音频。`asset://`、base64 形式的参考也计入。超过时网关不上传任何素材，把请求原样交给方舟，由方舟返回官方的报错。
   - 第一版写死了「一个请求最多 9 个、不分类型」，超过就由网关返回 400。这样 Seedance 2.5 带 10 张参考图的合法请求被拦下（线上实际遇到），Seedance 2.0 的「9 张图 + 1 个视频」也会被误拦。已改为上面的规则。
+- **先选渠道，再入选中渠道的库**（2026-11-25 起）：`asset://` 只有素材所在方舟账号的 Key 能读，所以自动入库在选定渠道之后才做，入的是该渠道「素材库账号」绑定的那个账号。
+  - 渠道没有绑定素材库账号（例如 BytePlus 渠道，或者没配置素材库的火山渠道）时不入库，请求里的 URL 原样发给上游。
+  - 入库成功后，这个请求的重试只会选绑定了同一个账号的渠道（加上与手动 `asset://` 相同的账号过滤），保证改写后的请求体对重试的渠道仍然有效。
+  - 第一次选中的渠道没绑定、没入库，重试换到绑定了账号的渠道时，在那次重试时入库。
+  - 选渠道本身不再受自动入库影响：以前先入库（进优先级最高、还有空位的账号），再只在绑定了那个账号的渠道里选，BytePlus 等没绑定的渠道就被排除，报「无可用渠道」。
 - **入库方式**：与 `/volc` 的 `CreateAsset` 走同一套处理，归属、每用户上限、账号每分钟上传次数、任务日志（免费）都相同。
-  - 素材放在该用户名为 `auto-upload` 的虚拟人像组里，第一次使用时自动创建。
-  - 素材名是 `auto-` 加 URL 的 SHA-256 前 16 位。同一用户再次引用同一个 URL 时，直接复用未失败的那个素材，不重复上传。
+  - 素材放在该用户**在这个账号里**名为 `auto-upload` 的虚拟人像组里，第一次在这个账号使用时自动创建（只建在这个账号，不按账号优先级挑选；账号没开虚拟人像、不允许该用户分组或组数已满时，请求返回 400 并写明原因）。一个用户在几个账号都用过自动入库，就会有几个 `auto-upload` 组。
+  - 素材名是 `auto-` 加 URL 的 SHA-256 前 16 位。同一用户在同一个账号里再次引用同一个 URL 时，直接复用未失败的那个素材，不重复上传；换了账号会再上传一份。
 - **等待与失败**：
   - 网关轮询素材状态，最多等 120 秒，生效后改写请求体再交给插件。
   - 火山审核不通过（素材变为 Failed）时，请求返回 400「第 N 个参考素材未能加入素材库：<火山的错误码和说明>」，不会提交到上游。
   - 超时返回 504「仍在处理中，请稍后重试」。素材会继续处理，下次请求直接复用。
   - 错误信息走后端 i18n（en / zh-CN / zh-TW）。
 - **审核**：网关不跳过火山的内容审核。上传内容必须符合虚拟人像库的规则（官方：素材不得与任何自然人肖像雷同），由运营方负责。
-- **位置**：`middleware.AssetLibraryAutoUpload` 挂在插件路由链里 `PrepareTaskPluginRoute` 之前。插件在 `PrepareTaskPluginRoute` 里就解析了请求体，放在 `Distribute` 里改写已经太晚。改写后的请求体同样经过 `Distribute` 里的 `asset://` 校验，并只发往绑定了该素材库账号的渠道。**插件本身没有改动**，更新插件不受影响。
+- **位置**：任务提交的每次尝试选定渠道之后、提交之前（`controller/relay.go` `executeTaskSubmissionWith` 的重试循环），调用 `middleware.AutoUploadAssetLibraryReferences(c, channel.Id)`。账号取自 `model.GetChannelExtendSettings(channelId).AssetLibraryAccountId`。改写请求体后调用 `RefreshTaskPluginRequest`（请求插件改了请求体时也用它），插件按新的请求体重新解析，上游收到的就是 `asset://`。**插件本身没有改动**，更新插件不受影响。
+  - 2026-11-25 前是挂在插件路由链里 `PrepareTaskPluginRoute` 之前的中间件，选渠道之前就入库，改写后的请求体再经过 `Distribute` 的 `asset://` 校验，只发往绑定了该账号的渠道。
+  - 入库失败的错误现在以任务提交错误返回（`code` 为 `asset_library_auto_upload_failed`，状态码和文案与以前相同）。
+  - 请求插件的入口钩子现在看到的是原始 URL（以前是改写后的 `asset://`）。
 
 ### 第 7 步：按用户覆盖每用户上限（已完成）
 
@@ -2294,7 +2302,7 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 - 网关只认自己登记过的素材组和素材。直接在火山控制台创建的不会出现在页面和 `/volc` 里，也不能被引用（管理员也不行）；直接在火山控制台删除的，网关记录还在，在网关删除时火山返回资源不存在，记录删不掉，仍占用户上限。目前没有导入和对账功能。
 - 刷脸认证只用模拟的火山接口测过。火山在人还没完成认证时返回的具体错误码、`GetVisualValidateResult` 能否重复调用，都没有在真实账号上确认；网关把火山的任何错误都当作「还没完成」，所以需要用真实账号和手机实际走一遍。
 - `/volc` 的调用方用自己的 `CallbackURL` 时，网关收不到认证结果：人没通过的认证要到 32 分钟后才判为失败，期间占一个素材组名额。
-- 自动入库按「模型名含 `seedance-2`」和「路由以 `/contents/generations/tasks` 结尾」判断。插件以后如果改了原生路由的路径，或者出现新的 Seedance 系列命名，需要同步调整。等待素材生效会让请求多等几秒到两分钟。自动入库的素材同样占每用户素材上限，用户需要在素材库页面里自行清理 `auto-upload` 组。
+- 自动入库按「模型名含 `seedance-2`」和「路由以 `/contents/generations/tasks` 结尾」判断。插件以后如果改了原生路由的路径，或者出现新的 Seedance 系列命名，需要同步调整。等待素材生效会让请求多等几秒到两分钟。自动入库的素材同样占每用户素材上限，用户需要在素材库页面里自行清理 `auto-upload` 组。入库失败（包括选中渠道绑定的账号不接受该用户分组、组数已满）直接结束请求，不会换一个渠道重试；渠道绑定的账号要和它的 API Key 属于同一个火山账号，否则上游读不到素材。
 - H5 链接里带有火山签发的临时凭证。按设计它要交给被认证的人，页面会显示二维码和复制按钮；网关不保存这个链接。
 
 ### 测试
@@ -2368,6 +2376,11 @@ CloudWatch 上的告警 Lambda（`newapi_error_router`）按服务器日志的 `
 - 第 5 步数据库：三种数据库的矩阵测试通过（MySQL 5.7.44、PostgreSQL 9.6.24）。官方 rc.46 建的库、第 3 步版本建的库（预先写入一个账号）和空库，分别在 SQLite、MySQL、PostgreSQL 上用新版本启动两次，都正常、日志无错误。新列在三种库上都是可空布尔，已有账号通过接口读出来是关（保持直接建组）；新表的 `byted_token` 唯一索引都在。
 - 第 6 步 `TestAssetLibraryAutoUploadsReferenceURLs`（模拟方舟）：开关默认关闭时不处理；打开后 `reference_image` / `reference_video` 的 URL 换成 `asset://`，`first_frame` 和已有的 `asset://` 不动，并自动建 `auto-upload` 组；同一 URL 再次请求不重复上传；Seedance 1.x 不处理；Seedance 2.0 的 9 张图 + 1 个视频照常入库，10 张图不上传、请求原样放行；Seedance 2.5 的 10 张图全部入库（让 2.0 也用 2.5 的上限，或改回「总数最多 9 个」，测试都会失败）；火山判为失败时返回火山的原因。去掉复用逻辑或角色过滤后，测试失败。模拟方舟改为在 `GetAsset` 里返回上传时的素材名，与真实方舟一致。
 - 第 6 步三种数据库：矩阵测试加入按名称精确查找素材组和素材，失败的素材不会被复用（SQLite、MySQL 5.7.44、PostgreSQL 9.6.24）。没有表结构变化。
+- 2026-11-25「先选渠道再入库」：
+  - `TestAssetLibraryAutoUploadsReferenceURLs` 改为传入账号：入库进指定账号的 `auto-upload` 组；账号为 0（渠道没绑定）时不上传、不调火山；指定优先级较低的账号时在那个账号另建一个组、重新上传。
+  - `TestAssetLibraryAutoUploadFollowsTheSelectedChannel`：选中绑定了账号的渠道时，请求体改为 `asset://`、插件按新请求体重新解析、重试只能选同一账号的渠道；其他路由（`/v1/videos`）不处理；火山判为失败时返回 400 和火山的原因。
+  - `TestNativeSeedanceReferencesFollowTheSelectedChannel`（原生路由 → 选定渠道 → 豆包插件组装上游请求，模拟方舟）：绑定了账号的火山渠道，上游收到 `asset://`，素材进绑定的账号；没绑定的 BytePlus 渠道（`dreamina-seedance-2-0-260128`），上游收到原始 URL 和 `dreamina-` 模型名，不调火山。去掉选渠道后那一步调用时，这个测试失败。
+  - 三种数据库：`TestAssetLibraryAccountsAcrossDatabases` 加了按账号查找 `auto-upload` 组（另一个账号查不到），SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24 都通过。只改了查询条件，没有表结构变化。
 - 第 6 步前端 `asset-library-settings.test.tsx`：打开自动入库开关后保存 `asset_library_setting.auto_upload_references`。
 - 第 6 步本地端到端（本地实例 + 豆包插件 + 模拟方舟，模拟方舟记录上游实际收到的视频请求体）10 项：
   - 开关关闭时 URL 原样到达上游；打开后上游收到 `asset://`，网关先调用了 `CreateAsset`，约 4 秒后素材生效，素材在用户的 `auto-upload` 组里；
@@ -2798,7 +2811,7 @@ BytePlus ModelArk（火山方舟的海外版，`https://ark.ap-southeast.byteplu
 
 ### 已知限制
 
-- 素材库自动入库（§38）按模型名里有没有 `seedance-2` 判断，`dreamina-` 名字也会触发；入的是火山方舟的素材库，并且只会把请求发给绑定了素材库账号的渠道。BytePlus 渠道的用户不要打开自动入库。另外 2.5 flash 最多 5 个参考视频，自动入库按 2.5 的 10 个检查，6–10 个参考视频会先入库，再被上游拒绝。
+- 素材库自动入库（§38）在选定渠道之后才做，只入渠道绑定的火山账号；BytePlus 渠道没有绑定素材库账号，URL 原样发给 BytePlus，不受自动入库影响（2026-11-25 起；之前会因为先入库而找不到渠道）。
 - BytePlus 的档位比例是按官方每条视频的价格反推的，官方页面没有直接列每百万 token 单价；BytePlus 调价后要重新核对。
 - 没有内置价格，模型上线前要先在定价页设价格。
 

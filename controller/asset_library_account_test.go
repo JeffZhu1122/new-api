@@ -332,13 +332,15 @@ func TestAssetLibraryAccountsAcrossDatabases(t *testing.T) {
 			assert.Equal(t, "group-person", verifyData["GroupId"])
 
 			// Lookups behind automatic reference uploads: exact names only,
-			// and a failed asset is not reused.
+			// in the one account, and a failed asset is not reused.
 			autoGroup := &model.AssetLibraryGroup{UserId: 5, AccountId: low.Id, RemoteId: "group-auto", GroupType: "AIGC", Name: "auto-upload"}
 			require.NoError(t, model.CreateAssetLibraryGroup(autoGroup))
-			foundGroup, err := model.GetUserAssetLibraryGroupByName(5, "AIGC", "auto-upload")
+			foundGroup, err := model.GetUserAssetLibraryGroupByName(5, low.Id, "AIGC", "auto-upload")
 			require.NoError(t, err)
 			assert.Equal(t, "group-auto", foundGroup.RemoteId)
-			_, err = model.GetUserAssetLibraryGroupByName(5, "AIGC", "auto-uploa")
+			_, err = model.GetUserAssetLibraryGroupByName(5, low.Id, "AIGC", "auto-uploa")
+			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
+			_, err = model.GetUserAssetLibraryGroupByName(5, high.Id, "AIGC", "auto-upload")
 			assert.ErrorIs(t, err, gorm.ErrRecordNotFound)
 			autoAsset := &model.AssetLibraryAsset{UserId: 5, AccountId: low.Id, GroupId: autoGroup.Id, RemoteGroupId: "group-auto", RemoteId: "asset-auto", AssetType: "Image", Name: "auto-0123456789abcdef", Status: model.AssetLibraryAssetProcessing}
 			require.NoError(t, model.CreateAssetLibraryUpload(autoAsset, "default"))

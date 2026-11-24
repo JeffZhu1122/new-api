@@ -94,10 +94,10 @@ func GetUserAssetLibraryGroup(userId int, remoteId string) (*AssetLibraryGroup, 
 }
 
 // GetUserAssetLibraryGroupByName returns the user's group of the type with
-// exactly that name.
-func GetUserAssetLibraryGroupByName(userId int, groupType, name string) (*AssetLibraryGroup, error) {
+// exactly that name in the account.
+func GetUserAssetLibraryGroupByName(userId, accountId int, groupType, name string) (*AssetLibraryGroup, error) {
 	var group AssetLibraryGroup
-	err := DB.Where("user_id = ? AND group_type = ? AND name = ?", userId, groupType, name).Order("id").First(&group).Error
+	err := DB.Where("user_id = ? AND account_id = ? AND group_type = ? AND name = ?", userId, accountId, groupType, name).Order("id").First(&group).Error
 	if err != nil {
 		return nil, err
 	}

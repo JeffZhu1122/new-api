@@ -747,6 +747,12 @@ func executeTaskSubmissionWith(
 		diagnostics.attempt(retryParam.GetRetry()+1, channel, relayInfo.LockedChannel != nil)
 
 		service.AppendUsedChannel(c, channel.Id)
+		// URL references go to the asset library of the selected channel's
+		// account; an upload failure ends the request.
+		stage = "asset_library_upload"
+		if taskErr = middleware.AutoUploadAssetLibraryReferences(c, channel.Id); taskErr != nil {
+			break
+		}
 		bodyStorage, bodyErr := common.GetBodyStorage(c)
 		if bodyErr != nil {
 			stage = "read_body"

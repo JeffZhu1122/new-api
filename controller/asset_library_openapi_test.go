@@ -15,10 +15,15 @@ import (
 	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/dto"
 	"github.com/QuantumNous/new-api/i18n"
+	"github.com/QuantumNous/new-api/middleware"
 	"github.com/QuantumNous/new-api/model"
+	pluginruntime "github.com/QuantumNous/new-api/pkg/jsplugin"
+	"github.com/QuantumNous/new-api/relay"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	relaykitdto "github.com/QuantumNous/new-api/relaykit/dto"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/QuantumNous/new-api/setting/config"
+	"github.com/QuantumNous/new-api/setting/ratio_setting"
 
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -804,12 +809,15 @@ func countArkCalls(calls []string, action string) int {
 }
 
 // With auto upload on, URL references of a Seedance 2.x request become
-// asset:// references to uploads in the caller's auto-upload group. The same
-// URL is uploaded once, other roles and models are left alone, and an upload
-// Ark refuses fails the request with Ark's reason.
+// asset:// references to uploads in the caller's auto-upload group of the
+// selected channel's account. The same URL is uploaded once per account,
+// other roles and models are left alone, a channel bound to no account gets
+// nothing uploaded, and an upload Ark refuses fails the request with Ark's
+// reason.
 func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
 	fixture := setupAssetLibraryOpenAPI(t)
 	caller := service.AssetLibraryCaller{UserId: 1, UserGroup: "default"}
+	high, low := fixture.accounts["aigc-high"].Id, fixture.accounts["aigc-low"].Id
 	modelName := "doubao-seedance-2-0-fast-260128"
 	body := []byte(`{"model":"doubao-seedance-2-0-fast-260128","content":[{"type":"text","text":"x"},` +
 		`{"type":"image_url","image_url":{"url":"https://cdn.example/a.png"},"role":"reference_image"},` +
@@ -817,11 +825,11 @@ func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
 		`{"type":"video_url","video_url":{"url":"https://cdn.example/v.mp4"},"role":"reference_video"},` +
 		`{"type":"image_url","image_url":{"url":"asset://asset-own"},"role":"reference_image"}]}`)
 
-	upload := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, body, "req")
+	upload := service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, modelName, body, "req")
 	assert.Nil(t, upload.Body, "the switch is off by default")
 	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"auto_upload_references": "true"}))
 
-	upload = service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, body, "req")
+	upload = service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, modelName, body, "req")
 	require.Zero(t, upload.StatusCode, upload)
 	imageRef := gjson.GetBytes(upload.Body, "content.1.image_url.url").String()
 	videoRef := gjson.GetBytes(upload.Body, "content.3.video_url.url").String()
@@ -830,9 +838,9 @@ func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
 	assert.Equal(t, "https://cdn.example/first.png", gjson.GetBytes(upload.Body, "content.2.image_url.url").String())
 	assert.Equal(t, "asset://asset-own", gjson.GetBytes(upload.Body, "content.4.image_url.url").String())
 	assert.Equal(t, "x", gjson.GetBytes(upload.Body, "content.0.text").String())
-	group, err := model.GetUserAssetLibraryGroupByName(1, "AIGC", service.AssetLibraryAutoUploadGroupName)
+	group, err := model.GetUserAssetLibraryGroupByName(1, high, "AIGC", service.AssetLibraryAutoUploadGroupName)
 	require.NoError(t, err)
-	assert.Equal(t, fixture.accounts["aigc-high"].Id, group.AccountId)
+	assert.Equal(t, high, group.AccountId)
 	calls := fixture.ark.recorded()
 	assert.Equal(t, 1, countArkCalls(calls, "CreateAssetGroup"))
 	require.Equal(t, 2, countArkCalls(calls, "CreateAsset"))
@@ -841,15 +849,22 @@ func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
 	assert.Contains(t, calls[2], `"AssetType":"Video"`)
 
 	// The same URLs are reused, not uploaded again.
-	again := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, body, "req")
+	again := service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, modelName, body, "req")
 	require.Zero(t, again.StatusCode, again)
 	assert.Equal(t, imageRef, gjson.GetBytes(again.Body, "content.1.image_url.url").String())
 	assert.Equal(t, videoRef, gjson.GetBytes(again.Body, "content.3.video_url.url").String())
 	assert.Equal(t, 2, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
 
-	// Seedance 1.x takes no asset:// references.
+	// A channel bound to no account, such as one of another platform, gets
+	// the URLs as they are.
 	before := len(fixture.ark.recorded())
-	other := service.AutoUploadAssetLibraryReferences(context.Background(), caller, "doubao-seedance-1-0-pro-250528", body, "req")
+	unbound := service.AutoUploadAssetLibraryReferences(context.Background(), caller, 0, modelName, body, "req")
+	assert.Nil(t, unbound.Body)
+	assert.Zero(t, unbound.StatusCode)
+	assert.Len(t, fixture.ark.recorded(), before)
+
+	// Seedance 1.x takes no asset:// references.
+	other := service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, "doubao-seedance-1-0-pro-250528", body, "req")
 	assert.Nil(t, other.Body)
 	assert.Zero(t, other.StatusCode)
 	assert.Len(t, fixture.ark.recorded(), before)
@@ -858,22 +873,35 @@ func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
 	// 9 images and 3 videos, so 9 images and a video are uploaded but 10
 	// images go on as they are for Ark to answer; Seedance 2.5 takes 30 images.
 	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"max_assets_per_user": "0"}))
+
+	// A channel bound to the lower-priority account gets uploads of its own
+	// account, in the caller's auto-upload group there.
+	inLow := service.AutoUploadAssetLibraryReferences(context.Background(), caller, low, modelName, body, "req")
+	require.Zero(t, inLow.StatusCode, inLow)
+	lowImageRef := gjson.GetBytes(inLow.Body, "content.1.image_url.url").String()
+	assert.True(t, strings.HasPrefix(lowImageRef, "asset://asset-"), lowImageRef)
+	assert.NotEqual(t, imageRef, lowImageRef)
+	lowGroup, err := model.GetUserAssetLibraryGroupByName(1, low, "AIGC", service.AssetLibraryAutoUploadGroupName)
+	require.NoError(t, err)
+	assert.NotEqual(t, group.RemoteId, lowGroup.RemoteId)
+	assert.Equal(t, 2, countArkCalls(fixture.ark.recorded(), "CreateAssetGroup"))
+	assert.Equal(t, 4, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
 	refs := make([]string, 10)
 	for i := range refs {
 		refs[i] = fmt.Sprintf(`{"type":"image_url","image_url":{"url":"https://cdn.example/%d.png"},"role":"reference_image"}`, i)
 	}
 	video := `{"type":"video_url","video_url":{"url":"https://cdn.example/v.mp4"},"role":"reference_video"}`
-	mixed := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, []byte(`{"content":[`+strings.Join(refs[:9], ",")+`,`+video+`]}`), "req")
+	mixed := service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, modelName, []byte(`{"content":[`+strings.Join(refs[:9], ",")+`,`+video+`]}`), "req")
 	require.Zero(t, mixed.StatusCode, mixed)
 	assert.True(t, strings.HasPrefix(gjson.GetBytes(mixed.Body, "content.8.image_url.url").String(), "asset://asset-"))
 	assert.Equal(t, videoRef, gjson.GetBytes(mixed.Body, "content.9.video_url.url").String())
 	tenImages := []byte(`{"content":[` + strings.Join(refs, ",") + `]}`)
 	uploads := countArkCalls(fixture.ark.recorded(), "CreateAsset")
-	over := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName, tenImages, "req")
+	over := service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, modelName, tenImages, "req")
 	assert.Zero(t, over.StatusCode)
 	assert.Nil(t, over.Body)
 	assert.Equal(t, uploads, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
-	within := service.AutoUploadAssetLibraryReferences(context.Background(), caller, "doubao-seedance-2-5-260628", tenImages, "req")
+	within := service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, "doubao-seedance-2-5-260628", tenImages, "req")
 	require.Zero(t, within.StatusCode, within)
 	for i := range refs {
 		assert.True(t, strings.HasPrefix(gjson.GetBytes(within.Body, fmt.Sprintf("content.%d.image_url.url", i)).String(), "asset://asset-"), i)
@@ -882,9 +910,164 @@ func TestAssetLibraryAutoUploadsReferenceURLs(t *testing.T) {
 
 	// An upload Ark refuses fails the request with Ark's reason.
 	fixture.ark.assetStatus = "Failed"
-	refused := service.AutoUploadAssetLibraryReferences(context.Background(), caller, modelName,
+	refused := service.AutoUploadAssetLibraryReferences(context.Background(), caller, high, modelName,
 		[]byte(`{"content":[{"type":"image_url","image_url":{"url":"https://cdn.example/face.png"},"role":"reference_image"}]}`), "req")
 	assert.Equal(t, http.StatusBadRequest, refused.StatusCode)
 	assert.Equal(t, i18n.MsgAssetLibraryAutoUploadFailed, refused.MessageID)
 	assert.Equal(t, map[string]any{"Index": 1, "Reason": "FaceMismatch: face does not match"}, refused.Params)
+}
+
+// Once a channel is selected, the URL references go to the asset library of
+// the account that channel is bound to, the plugin reads the rewritten body
+// and the retries keep to that account. Other routes get the request as it
+// is, and an upload Ark refuses ends the request with Ark's reason.
+func TestAssetLibraryAutoUploadFollowsTheSelectedChannel(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	fixture := setupAssetLibraryOpenAPI(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.ChannelExtend{}))
+	previousCache := common.MemoryCacheEnabled
+	common.MemoryCacheEnabled = false
+	t.Cleanup(func() { common.MemoryCacheEnabled = previousCache })
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"auto_upload_references": "true"}))
+	low := fixture.accounts["aigc-low"].Id
+	const boundChannel = 7
+	require.NoError(t, model.UpsertChannelExtend(model.DB, boundChannel, relaykitdto.ChannelExtendSettings{AssetLibraryAccountId: low}))
+	reference := func(url string) string {
+		return `{"model":"doubao-seedance-2-0-260128","content":[{"type":"text","text":"x"},{"type":"image_url","image_url":{"url":"` + url + `"},"role":"reference_image"}]}`
+	}
+	attempt := func(path, body string, channelId int) (*gin.Context, *dto.TaskError) {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest(http.MethodPost, path, strings.NewReader(body))
+		c.Request.Header.Set("Content-Type", "application/json")
+		c.Set("id", 1)
+		common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+		c.Set("task_request", map[string]any{"model": "doubao-seedance-2-0-260128"})
+		return c, middleware.AutoUploadAssetLibraryReferences(c, channelId)
+	}
+	read := func(c *gin.Context) string {
+		storage, err := common.GetBodyStorage(c)
+		require.NoError(t, err)
+		raw, err := storage.Bytes()
+		require.NoError(t, err)
+		return string(raw)
+	}
+
+	c, taskErr := attempt("/api/v3/contents/generations/tasks", reference("https://cdn.example/a.png"), boundChannel)
+	require.Nil(t, taskErr)
+	ref := gjson.Get(read(c), "content.1.image_url.url").String()
+	assert.True(t, strings.HasPrefix(ref, "asset://asset-"), ref)
+	group, err := model.GetUserAssetLibraryGroupByName(1, low, "AIGC", service.AssetLibraryAutoUploadGroupName)
+	require.NoError(t, err, "the upload goes to the bound account, not the highest-priority one")
+	assert.Equal(t, low, group.AccountId)
+	taskRequest, _ := c.Get("task_request")
+	encoded, err := common.Marshal(taskRequest)
+	require.NoError(t, err)
+	assert.Equal(t, ref, gjson.GetBytes(encoded, "content.1.image_url.url").String(), "the plugin decodes the rewritten body")
+	assert.True(t, c.GetBool(pluginruntime.ContextKeyRequestRefreshed))
+	assert.Contains(t, service.GetChannelConstraints(c).Filters, dto.ChannelFilter{Kind: dto.FilterAssetLibraryAccount, AssetLibraryAccountId: low}, "retries keep to the account")
+
+	calls := len(fixture.ark.recorded())
+	body := reference("https://cdn.example/b.png")
+	c, taskErr = attempt("/v1/videos", body, boundChannel)
+	require.Nil(t, taskErr)
+	assert.JSONEq(t, body, read(c))
+	assert.Empty(t, service.GetChannelConstraints(c).Filters)
+	assert.False(t, c.GetBool(pluginruntime.ContextKeyRequestRefreshed))
+	assert.Len(t, fixture.ark.recorded(), calls, "nothing is uploaded on another route")
+
+	fixture.ark.assetStatus = "Failed"
+	_, taskErr = attempt("/api/v3/contents/generations/tasks", reference("https://cdn.example/face.png"), boundChannel)
+	require.NotNil(t, taskErr)
+	assert.Equal(t, http.StatusBadRequest, taskErr.StatusCode)
+	assert.Equal(t, "asset_library_auto_upload_failed", taskErr.Code)
+	assert.Contains(t, taskErr.Message, "FaceMismatch: face does not match")
+}
+
+// On Ark's native video task route the upload happens once the channel is
+// selected: a Volcengine channel bound to an account sends Ark the asset://
+// references of that account, while a BytePlus channel bound to none sends
+// the URLs as the client gave them and nothing is uploaded for it.
+func TestNativeSeedanceReferencesFollowTheSelectedChannel(t *testing.T) {
+	require.NoError(t, i18n.Init())
+	service.InitHttpClient()
+	fixture := setupAssetLibraryOpenAPI(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Channel{}, &model.Log{}, &model.ChannelExtend{}))
+	previousMemoryCache, previousBatchUpdate, previousLogConsume := common.MemoryCacheEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled
+	common.MemoryCacheEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled = false, false, false
+	previousModelRatios := ratio_setting.ModelRatio2JSONString()
+	require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(`{"doubao-seedance-2-0-260128":1,"dreamina-seedance-2-0-260128":1}`))
+	t.Cleanup(func() {
+		common.MemoryCacheEnabled, common.BatchUpdateEnabled, common.LogConsumeEnabled = previousMemoryCache, previousBatchUpdate, previousLogConsume
+		require.NoError(t, ratio_setting.UpdateModelRatioByJSONString(previousModelRatios))
+	})
+	require.NoError(t, config.UpdateConfigFromMap(config.GlobalConfig.Get("asset_library_setting"), map[string]string{"auto_upload_references": "true"}))
+	require.NoError(t, model.DB.Model(&model.User{}).Where("id = ?", 1).Update("quota", 1_000_000).Error)
+
+	var sent string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		sent = string(body)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"id":"cgt-native"}`)
+	}))
+	defer upstream.Close()
+	low := fixture.accounts["aigc-low"].Id
+	const reference = "https://cdn.example/ref.png"
+
+	for _, tc := range []struct {
+		name      string
+		model     string
+		account   int
+		wantAsset bool
+	}{
+		{"Volcengine channel bound to an account", "doubao-seedance-2-0-260128", low, true},
+		{"BytePlus channel bound to none", "dreamina-seedance-2-0-260128", 0, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			channel := model.Channel{Type: constant.ChannelTypeVolcEngine, Name: tc.name, Key: "ark-key", BaseURL: &upstream.URL, Status: common.ChannelStatusEnabled, Models: tc.model, Group: "default"}
+			require.NoError(t, model.DB.Create(&channel).Error)
+			require.NoError(t, model.UpsertChannelExtend(model.DB, channel.Id, relaykitdto.ChannelExtendSettings{AssetLibraryAccountId: tc.account}))
+			uploads := countArkCalls(fixture.ark.recorded(), "CreateAsset")
+
+			generation := pluginruntime.DefaultRegistry.Generation()
+			binding, found := generation.LookupDeclaredRoute(http.MethodPost, "/api/v3/contents/generations/tasks")
+			require.True(t, found)
+			recorder := httptest.NewRecorder()
+			c, _ := gin.CreateTestContext(recorder)
+			c.Request = httptest.NewRequest(http.MethodPost, "/api/v3/contents/generations/tasks", strings.NewReader(
+				`{"model":"`+tc.model+`","content":[{"type":"text","text":"a cat"},{"type":"image_url","image_url":{"url":"`+reference+`"},"role":"reference_image"}]}`))
+			c.Request.Header.Set("Content-Type", "application/json")
+			c.Set(pluginruntime.ContextKeyPinnedRoute, pluginruntime.PinnedRoute{Generation: generation, Plugin: binding.Plugin, Route: binding.Route})
+			c.Set("id", 1)
+			common.SetContextKey(c, constant.ContextKeyUserId, 1)
+			common.SetContextKey(c, constant.ContextKeyUserGroup, "default")
+			common.SetContextKey(c, constant.ContextKeyUsingGroup, "default")
+			common.SetContextKey(c, constant.ContextKeyTokenGroup, "default")
+			common.SetContextKey(c, constant.ContextKeyUserQuota, 1_000_000)
+			middleware.PrepareTaskPluginRoute()(c)
+			require.False(t, c.IsAborted(), recorder.Body.String())
+			require.Nil(t, middleware.SetupContextForSelectedChannel(c, &channel, tc.model))
+			relayInfo := &relaycommon.RelayInfo{
+				UserId: 1, UserGroup: "default", UsingGroup: "default", UserQuota: 1_000_000, TokenGroup: "default",
+				OriginModelName: tc.model, Billing: &nativeRouteBilling{userID: 1},
+				TaskRelayInfo: &relaycommon.TaskRelayInfo{Action: c.GetString("task_action"), PublicTaskID: "task_" + tc.model, LockedChannel: &channel},
+			}
+
+			_, taskErr := executeTaskSubmissionWith(c, relayInfo, relay.RelayTaskSubmit)
+
+			require.Nil(t, taskErr)
+			got := gjson.Get(sent, "content.1.image_url.url").Str
+			if tc.wantAsset {
+				assert.True(t, strings.HasPrefix(got, "asset://asset-"), sent)
+				assert.Equal(t, uploads+1, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
+				group, err := model.GetUserAssetLibraryGroupByName(1, low, "AIGC", service.AssetLibraryAutoUploadGroupName)
+				require.NoError(t, err)
+				assert.Equal(t, low, group.AccountId)
+				return
+			}
+			assert.Equal(t, reference, got, sent)
+			assert.Equal(t, tc.model, gjson.Get(sent, "model").Str)
+			assert.Equal(t, uploads, countArkCalls(fixture.ark.recorded(), "CreateAsset"))
+		})
+	}
 }

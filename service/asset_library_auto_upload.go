@@ -24,6 +24,9 @@ import (
 // videos and audio by URL. With auto_upload_references on, the gateway adds
 // those references to the caller's virtual avatar (AIGC) library first and
 // sends them as asset://<id>, so callers need not upload them themselves.
+// It does so once a channel is selected, in the account that channel is bound
+// to, because only that account's keys can read the assets; a channel bound
+// to no account, such as one of another platform, gets the URLs as they are.
 // Uploads go through the same handling as /volc (ownership, limits, upload
 // rate, task log) and Ark still reviews each one: a reference Ark refuses fails
 // the request with Ark's reason. One user's same URL is uploaded once and
@@ -63,12 +66,13 @@ type assetLibraryAutoUploadRef struct {
 }
 
 // AutoUploadAssetLibraryReferences uploads the request's URL references with a
-// reference_* role when the model is Seedance 2.x and the feature is on. It
-// returns an empty result when there is nothing to do.
-func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCaller, modelName string, body []byte, requestId string) AssetLibraryAutoUpload {
+// reference_* role into the caller's group in the account accountId when the
+// model is Seedance 2.x and the feature is on. It returns an empty result when
+// there is nothing to do, including for accountId 0.
+func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCaller, accountId int, modelName string, body []byte, requestId string) AssetLibraryAutoUpload {
 	setting := asset_library_setting.GetSetting()
 	lowerModel := strings.ToLower(modelName)
-	if !setting.Enabled || !setting.AutoUploadReferences || !setting.UserGroupAllowed(caller.UserGroup) || !strings.Contains(lowerModel, "seedance-2") {
+	if accountId == 0 || !setting.Enabled || !setting.AutoUploadReferences || !setting.UserGroupAllowed(caller.UserGroup) || !strings.Contains(lowerModel, "seedance-2") {
 		return AssetLibraryAutoUpload{}
 	}
 	content := gjson.GetBytes(body, "content")
@@ -104,7 +108,7 @@ func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCa
 		}
 	}
 
-	group, reason := assetLibraryAutoUploadGroup(ctx, caller, requestId)
+	group, reason := assetLibraryAutoUploadGroup(ctx, caller, accountId, requestId)
 	if reason != "" {
 		return assetLibraryAutoUploadFailed(1, reason)
 	}
@@ -120,7 +124,7 @@ func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCa
 		}
 		var created volcark.CreatedResource
 		payload := map[string]any{"GroupId": group.RemoteId, "URL": ref.url, "AssetType": ref.assetType, "Name": name}
-		if reason := callAssetLibraryAction(ctx, caller, "CreateAsset", payload, requestId, &created); reason != "" {
+		if reason := callAssetLibraryAction(ctx, caller, accountId, "CreateAsset", payload, requestId, &created); reason != "" {
 			return assetLibraryAutoUploadFailed(i+1, reason)
 		}
 		ids[i] = created.Id
@@ -130,7 +134,7 @@ func AutoUploadAssetLibraryReferences(ctx context.Context, caller AssetLibraryCa
 	for i, id := range ids {
 		for {
 			var asset volcark.Asset
-			if reason := callAssetLibraryAction(ctx, caller, "GetAsset", map[string]any{"Id": id}, requestId, &asset); reason != "" {
+			if reason := callAssetLibraryAction(ctx, caller, accountId, "GetAsset", map[string]any{"Id": id}, requestId, &asset); reason != "" {
 				return assetLibraryAutoUploadFailed(i+1, reason)
 			}
 			if asset.Status == model.AssetLibraryAssetActive {
@@ -166,14 +170,14 @@ func assetLibraryAutoUploadFailed(index int, reason string) AssetLibraryAutoUplo
 }
 
 // assetLibraryAutoUploadGroup returns the caller's group for automatic
-// uploads, creating it on first use.
-func assetLibraryAutoUploadGroup(ctx context.Context, caller AssetLibraryCaller, requestId string) (*model.AssetLibraryGroup, string) {
-	if group, err := model.GetUserAssetLibraryGroupByName(caller.UserId, volcark.GroupTypeAIGC, AssetLibraryAutoUploadGroupName); err == nil {
+// uploads in the account, creating it there on first use.
+func assetLibraryAutoUploadGroup(ctx context.Context, caller AssetLibraryCaller, accountId int, requestId string) (*model.AssetLibraryGroup, string) {
+	if group, err := model.GetUserAssetLibraryGroupByName(caller.UserId, accountId, volcark.GroupTypeAIGC, AssetLibraryAutoUploadGroupName); err == nil {
 		return group, ""
 	}
 	var created volcark.CreatedResource
 	payload := map[string]any{"Name": AssetLibraryAutoUploadGroupName, "Description": "References added automatically from video requests", "GroupType": volcark.GroupTypeAIGC}
-	if reason := callAssetLibraryAction(ctx, caller, "CreateAssetGroup", payload, requestId, &created); reason != "" {
+	if reason := callAssetLibraryAction(ctx, caller, accountId, "CreateAssetGroup", payload, requestId, &created); reason != "" {
 		return nil, reason
 	}
 	group, err := model.GetUserAssetLibraryGroup(caller.UserId, created.Id)
@@ -184,14 +188,15 @@ func assetLibraryAutoUploadGroup(ctx context.Context, caller AssetLibraryCaller,
 }
 
 // callAssetLibraryAction runs an action as the caller through the /volc
-// handling and decodes its Result into out, or returns Ark's or the gateway's
-// error as "Code: Message".
-func callAssetLibraryAction(ctx context.Context, caller AssetLibraryCaller, action string, payload map[string]any, requestId string, out any) string {
+// handling, any new group going to the account, and decodes its Result into
+// out, or returns Ark's or the gateway's error as "Code: Message".
+func callAssetLibraryAction(ctx context.Context, caller AssetLibraryCaller, accountId int, action string, payload map[string]any, requestId string, out any) string {
 	encoded, err := common.Marshal(payload)
 	if err != nil {
 		return err.Error()
 	}
-	response := HandleAssetLibraryAction(ctx, caller, action, volcark.APIVersion, encoded, requestId)
+	request := &assetLibraryRequest{ctx: ctx, caller: caller, action: action, requestId: requestId, body: encoded, accountId: accountId}
+	response := runAssetLibraryAction(request, volcark.APIVersion)
 	decodeErr := (&volcark.Response{StatusCode: response.StatusCode, Body: response.Body}).Decode(action, out)
 	if decodeErr == nil {
 		return ""

@@ -85,6 +85,8 @@ type assetLibraryRequest struct {
 	action    string
 	requestId string
 	body      []byte
+	// accountId, when set, is the only account a new group may go to.
+	accountId int
 }
 
 var assetLibraryActions = map[string]func(*assetLibraryRequest) AssetLibraryResponse{
@@ -105,12 +107,15 @@ var assetLibraryActions = map[string]func(*assetLibraryRequest) AssetLibraryResp
 
 // HandleAssetLibraryAction runs one Ark asset action for the caller.
 func HandleAssetLibraryAction(ctx context.Context, caller AssetLibraryCaller, action, version string, body []byte, requestId string) AssetLibraryResponse {
-	request := &assetLibraryRequest{ctx: ctx, caller: caller, action: action, requestId: requestId, body: body}
-	handler, ok := assetLibraryActions[action]
+	return runAssetLibraryAction(&assetLibraryRequest{ctx: ctx, caller: caller, action: action, requestId: requestId, body: body}, version)
+}
+
+func runAssetLibraryAction(request *assetLibraryRequest, version string) AssetLibraryResponse {
+	handler, ok := assetLibraryActions[request.action]
 	if !ok || version != volcark.APIVersion {
-		return request.fail(http.StatusBadRequest, assetLibraryCodeInvalidAction, fmt.Sprintf("The action %q of version %q is not supported.", action, version))
+		return request.fail(http.StatusBadRequest, assetLibraryCodeInvalidAction, fmt.Sprintf("The action %q of version %q is not supported.", request.action, version))
 	}
-	if !asset_library_setting.GetSetting().UserGroupAllowed(caller.UserGroup) {
+	if !asset_library_setting.GetSetting().UserGroupAllowed(request.caller.UserGroup) {
 		return request.fail(http.StatusForbidden, assetLibraryCodeAccessDenied, "Your user group may not use the asset library.")
 	}
 	return handler(request)
@@ -349,7 +354,8 @@ func accountTakesGroups(account *model.AssetLibraryAccount, groupType string, ve
 
 // accountForNewGroup picks the highest-priority enabled account that takes
 // groups of the type, created directly or through face verification, from
-// the caller's user group and still has room.
+// the caller's user group and still has room. A request restricted to one
+// account considers that account alone.
 func (r *assetLibraryRequest) accountForNewGroup(groupType string, verify bool) (*model.AssetLibraryAccount, AssetLibraryResponse, bool) {
 	accounts, err := model.ListAssetLibraryAccounts()
 	if err != nil {
@@ -357,6 +363,9 @@ func (r *assetLibraryRequest) accountForNewGroup(groupType string, verify bool) 
 	}
 	accepting, otherWay := false, false
 	for _, account := range accounts {
+		if r.accountId != 0 && account.Id != r.accountId {
+			continue
+		}
 		if !account.Enabled || !account.UserGroupAllowed(r.caller.UserGroup) {
 			continue
 		}
