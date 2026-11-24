@@ -14,6 +14,34 @@ const VIDEO_MODELS = {
   "doubao-seedance-2-0-fast-260128": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
   "doubao-seedance-2-0-mini-260615": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
   "doubao-seedance-2-5-260628": { resolutions: ["480p", "720p", "1080p"], maxDuration: 30, videoInput: true },
+  // BytePlus ModelArk (https://ark.ap-southeast.bytepluses.com, the same API)
+  // names Seedance 2.x Dreamina, from its own model list: Seedance 2.5 there
+  // also outputs 4K, and 2.5 flash outputs 480p and 720p for up to 30 seconds.
+  "dreamina-seedance-2-0-260128": { resolutions: ["480p", "720p", "1080p", "4k"], maxDuration: 15, videoInput: true },
+  "dreamina-seedance-2-0-fast-260128": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
+  "dreamina-seedance-2-0-mini-260615": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
+  "dreamina-seedance-2-5-260628": { resolutions: ["480p", "720p", "1080p", "4k"], maxDuration: 30, videoInput: true },
+  "dreamina-seedance-2-5-flash-261115": { resolutions: ["480p", "720p"], maxDuration: 30, videoInput: true },
+};
+
+// Seedance 2.x token unit prices by resolution tier, [without, with] reference
+// video input, as ratios to the 720p price without it; 480p bills as 720p.
+// Only legacy ratio pricing reads them, its price being that 720p price.
+// Volcengine Ark prices in CNY. The BytePlus ratios are its USD prices of a
+// 5-second 16:9 video divided by the formula tokens: per million tokens,
+// 2.0 7.0 / 4.3 (1080p 7.7 / 4.7, 4K 4.0 / 2.4), 2.0 fast 5.6 / 3.3,
+// 2.0 mini 3.5 / 2.1, 2.5 10.7 / 6.4 (1080p 11.7 / 7.0, 4K 4.7 / 2.9) and
+// 2.5 flash 7.0 / 4.3.
+const SEEDANCE_TIER_RATIOS = {
+  "doubao-seedance-2-0-260128": { "720p": [1, 28 / 46], "1080p": [51 / 46, 31 / 46], "4k": [26 / 46, 16 / 46] },
+  "doubao-seedance-2-0-fast-260128": { "720p": [1, 22 / 37] },
+  "doubao-seedance-2-0-mini-260615": { "720p": [1, 14 / 23] },
+  "doubao-seedance-2-5-260628": { "720p": [1, 42 / 70], "1080p": [11.7 / 10.7, 7.0 / 10.7] },
+  "dreamina-seedance-2-0-260128": { "720p": [1, 4.3 / 7.0], "1080p": [7.7 / 7.0, 4.7 / 7.0], "4k": [4.0 / 7.0, 2.4 / 7.0] },
+  "dreamina-seedance-2-0-fast-260128": { "720p": [1, 3.3 / 5.6] },
+  "dreamina-seedance-2-0-mini-260615": { "720p": [1, 2.1 / 3.5] },
+  "dreamina-seedance-2-5-260628": { "720p": [1, 6.4 / 10.7], "1080p": [11.7 / 10.7, 7.0 / 10.7], "4k": [4.7 / 10.7, 2.9 / 10.7] },
+  "dreamina-seedance-2-5-flash-261115": { "720p": [1, 4.3 / 7.0] },
 };
 // Every Ark resolution tier; an endpoint ID reached through channel mapping
 // without a declared profile keeps them all and the longest Seedance duration.
@@ -325,7 +353,7 @@ export const meta = {
     en: "Volcengine Doubao Seedance video generation and Seedream image generation",
     zh: "火山引擎豆包 Seedance 视频生成与 Seedream 图片生成",
   },
-  version: "1.5.0",
+  version: "1.6.0",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
   models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),
@@ -463,20 +491,17 @@ function estimateTokens(seconds, resolution) {
   return (seconds * dims[0] * dims[1] * 24) / 1024;
 }
 
-function videoInputRatio(model, resolution, content) {
-  const video = hasVideo(content);
-  const res = trimmed(resolution).toLowerCase();
-  if (model === "doubao-seedance-2-5-260628") {
-    if (res === "1080p") return video ? 7.0 / 10.7 : 11.7 / 10.7;
-    return video ? 42 / 70 : 1;
+// Legacy pricing ratio of a Seedance request's tier. Like videoProfile, an
+// endpoint ID reached through channel mapping takes the declared model's
+// ratios; a model without tier prices bills at 1.
+function videoInputRatio(ctx, resolution, content) {
+  for (const model of [ctx && ctx.upstreamModel, ctx && ctx.model].map(trimmed)) {
+    if (!Object.prototype.hasOwnProperty.call(SEEDANCE_TIER_RATIOS, model)) continue;
+    const ratios = SEEDANCE_TIER_RATIOS[model];
+    const res = trimmed(resolution).toLowerCase();
+    const tier = Object.prototype.hasOwnProperty.call(ratios, res) ? ratios[res] : ratios["720p"];
+    return tier[hasVideo(content) ? 1 : 0];
   }
-  if (model === "doubao-seedance-2-0-260128") {
-    if (res === "1080p") return video ? 31 / 46 : 51 / 46;
-    if (res === "4k") return video ? 16 / 46 : 26 / 46;
-    return video ? 28 / 46 : 1;
-  }
-  if (model === "doubao-seedance-2-0-fast-260128") return video ? 22 / 37 : 1;
-  if (model === "doubao-seedance-2-0-mini-260615") return video ? 14 / 23 : 1;
   return 1;
 }
 
@@ -951,7 +976,7 @@ export function extractUsage(ctx) {
   const req = ctx.requestBody || {};
   const metadata = req.vendorBody || req.metadata || {};
   if (ctx.usagePurpose === "billing_ratios") {
-    const ratio = videoInputRatio(ctx.upstreamModel || ctx.model, metadata.resolution, metadata.content);
+    const ratio = videoInputRatio(ctx, metadata.resolution, metadata.content);
     return ratio === 1 ? null : { video_input_ratio: ratio };
   }
   const profile = videoProfile(ctx);

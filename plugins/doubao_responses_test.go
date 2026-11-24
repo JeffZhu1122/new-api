@@ -270,9 +270,12 @@ func TestDoubaoImageSubmission(t *testing.T) {
 			assert.ElementsMatch(t, usageKeys, keysOf(schema), name)
 			assert.NotEmpty(t, examples, name)
 		}
-		_, found := registry.Generation().LookupEndpoint(http.MethodPost, "/v1/videos", "doubao-seedance-2-0-260128")
-		assert.True(t, found)
-		_, found = registry.Generation().LookupEndpoint(http.MethodPost, "/v1/images/generations", "doubao-seedance-2-0-260128")
+		for _, name := range []string{"doubao-seedance-2-0-260128", "dreamina-seedance-2-5-flash-261115"} {
+			binding, found := registry.Generation().LookupEndpoint(http.MethodPost, "/v1/videos", name)
+			require.True(t, found, name)
+			assert.Equal(t, "openai_video", binding.Protocol, name)
+		}
+		_, found := registry.Generation().LookupEndpoint(http.MethodPost, "/v1/images/generations", "doubao-seedance-2-0-260128")
 		assert.False(t, found)
 		schema, _ := plugin.Meta.UsageForModel("doubao-seedance-2-0-260128")
 		assert.ElementsMatch(t, []string{"tokens", "resolution", "video_input"}, keysOf(schema))
@@ -283,9 +286,9 @@ func TestDoubaoImageSubmission(t *testing.T) {
 	})
 }
 
-// Capability profiles follow the Ark model list: pricing lists only the
-// resolutions each Seedance model offers, reference video input only on
-// Seedance 2.x, and audio output only on Seedance 1.5 pro.
+// Capability profiles follow the Ark and BytePlus ModelArk model lists:
+// pricing lists only the resolutions each Seedance model offers, reference
+// video input only on Seedance 2.x, and audio output only on Seedance 1.5 pro.
 func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 	_, plugin := newDoubaoPlugin(t)
 	const (
@@ -295,6 +298,10 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		fast20 = "doubao-seedance-2-0-fast-260128"
 		mini20 = "doubao-seedance-2-0-mini-260615"
 		v25    = "doubao-seedance-2-5-260628"
+		// BytePlus ModelArk's names for Seedance 2.x.
+		dreamina20   = "dreamina-seedance-2-0-260128"
+		dreamina25   = "dreamina-seedance-2-5-260628"
+		dreaminaLite = "dreamina-seedance-2-5-flash-261115"
 	)
 	families := []struct {
 		models      []string
@@ -303,8 +310,8 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 	}{
 		{[]string{pro10, "doubao-seedance-1-0-lite-t2v", "doubao-seedance-1-0-lite-i2v"}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens"}},
 		{[]string{pro15}, []string{"480p", "720p", "1080p"}, []string{"generate_audio", "resolution", "tokens"}},
-		{[]string{v20}, []string{"480p", "720p", "1080p", "4k"}, []string{"resolution", "tokens", "video_input"}},
-		{[]string{fast20, mini20}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
+		{[]string{v20, dreamina20, dreamina25}, []string{"480p", "720p", "1080p", "4k"}, []string{"resolution", "tokens", "video_input"}},
+		{[]string{fast20, mini20, "dreamina-seedance-2-0-fast-260128", "dreamina-seedance-2-0-mini-260615", dreaminaLite}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
 		{[]string{v25}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens", "video_input"}},
 	}
 	profiled := make([]string, 0, len(plugin.Meta.Models))
@@ -364,6 +371,9 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		{"mini rejects a 1080p size", mini20, map[string]any{"size": "1920x1080"}, nil, mini20 + " resolution must be one of 480p, 720p"},
 		{"fast rejects 4k", fast20, map[string]any{"metadata": map[string]any{"resolution": "4k"}}, nil, fast20 + " resolution must be one of 480p, 720p"},
 		{"2.5 rejects 4k", v25, map[string]any{"metadata": map[string]any{"resolution": "4K"}}, nil, v25 + " resolution must be one of 480p, 720p, 1080p"},
+		{"Dreamina 2.5 offers 4k", dreamina25, map[string]any{"metadata": map[string]any{"resolution": "4K"}},
+			map[string]any{"tokens": float64(972000), "resolution": "4k", "video_input": "none"}, ""},
+		{"Dreamina 2.5 flash rejects 1080p", dreaminaLite, map[string]any{"metadata": map[string]any{"resolution": "1080p"}}, nil, dreaminaLite + " resolution must be one of 480p, 720p"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			request := map[string]any{"model": tc.model, "prompt": "a cat", "seconds": float64(5)}
@@ -473,6 +483,7 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 			{mini20, "1080p", map[string]any{"tokens": float64(90000)}},
 			{v25, "4k", map[string]any{"tokens": float64(90000)}},
 			{v20, "4k", map[string]any{"tokens": float64(90000), "resolution": "4k"}},
+			{dreamina25, "4k", map[string]any{"tokens": float64(90000), "resolution": "4k"}},
 		} {
 			queryContext := map[string]any{"model": tc.model, "upstreamModel": tc.model, "action": "text_to_video"}
 			body := map[string]any{
@@ -484,6 +495,51 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 			require.NoError(t, err, tc.model)
 			assert.Equal(t, tc.want, alibabaObject(t, value), tc.model)
 		}
+	})
+
+	// Legacy ratio pricing sets the 720p price without reference video and
+	// bills the other tiers at their token price ratio: Volcengine's CNY
+	// prices, and BytePlus's USD prices per million tokens for its names.
+	t.Run("legacy ratios price each tier at its platform's token price", func(t *testing.T) {
+		withVideo := []any{map[string]any{"type": "text", "text": "a cat"}, map[string]any{"type": "video_url", "video_url": map[string]any{"url": "https://cdn.example/in.mp4"}}}
+		for _, tc := range []struct {
+			name       string
+			upstream   string
+			model      string
+			resolution string
+			video      bool
+			want       float64
+		}{
+			{"Volcengine 2.0 1080p", v20, v20, "1080p", false, 51.0 / 46},
+			{"Volcengine 2.0 4k with video", v20, v20, "4k", true, 16.0 / 46},
+			{"Volcengine 2.5 720p with video", v25, v25, "720p", true, 42.0 / 70},
+			{"Volcengine 2.0 fast with video", fast20, fast20, "480p", true, 22.0 / 37},
+			{"BytePlus 2.0 1080p with video", dreamina20, dreamina20, "1080p", true, 4.7 / 7.0},
+			{"BytePlus 2.0 4k", dreamina20, dreamina20, "4K", false, 4.0 / 7.0},
+			{"BytePlus 2.5 4k with video", dreamina25, dreamina25, "4k", true, 2.9 / 10.7},
+			{"BytePlus 2.5 480p with video", dreamina25, dreamina25, "480p", true, 6.4 / 10.7},
+			{"BytePlus 2.5 flash 720p with video", dreaminaLite, dreaminaLite, "720p", true, 4.3 / 7.0},
+			{"an endpoint ID takes the declared model's ratio", "ep-20261115000000-abcde", dreamina20, "1080p", false, 7.7 / 7.0},
+		} {
+			content := []any{map[string]any{"type": "text", "text": "a cat"}}
+			if tc.video {
+				content = withVideo
+			}
+			ctx := map[string]any{
+				"upstreamModel": tc.upstream, "model": tc.model, "usagePurpose": "billing_ratios",
+				"requestBody": map[string]any{"model": tc.model, "vendorBody": map[string]any{"model": tc.upstream, "resolution": tc.resolution, "content": content}},
+			}
+			value, err := plugin.Engine.Call(t.Context(), "extractUsage", ctx)
+			require.NoError(t, err, tc.name)
+			assert.InDelta(t, tc.want, alibabaObject(t, value)["video_input_ratio"], 1e-12, tc.name)
+		}
+		ctx := map[string]any{
+			"upstreamModel": dreaminaLite, "model": dreaminaLite, "usagePurpose": "billing_ratios",
+			"requestBody": map[string]any{"model": dreaminaLite, "vendorBody": map[string]any{"resolution": "720p", "content": []any{map[string]any{"type": "text", "text": "a cat"}}}},
+		}
+		value, err := plugin.Engine.Call(t.Context(), "extractUsage", ctx)
+		require.NoError(t, err)
+		assert.Nil(t, value, "the base tier adds no ratio")
 	})
 }
 
