@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -310,6 +311,44 @@ func TestGetModelRequestAssignsDeepSeekToolRoutingNames(t *testing.T) {
 		require.NoError(t, err, tc.body)
 		assert.True(t, shouldSelectChannel, tc.body)
 		assert.Equal(t, tc.want, modelRequest.Model, tc.body)
+	}
+}
+
+// /v1/images/generations routes by the model its JSON body names. A request
+// whose model the distributor cannot read is refused with a 400 that names the
+// expected body, not routed by a default model that has no channel.
+func TestGetModelRequestRequiresTheImageGenerationModel(t *testing.T) {
+	gin.SetMode(gin.TestMode)
+	var form bytes.Buffer
+	writer := multipart.NewWriter(&form)
+	require.NoError(t, writer.WriteField("model", "gpt-image-2"))
+	require.NoError(t, writer.WriteField("prompt", "a cat"))
+	require.NoError(t, writer.Close())
+
+	for _, tc := range []struct {
+		name, contentType, body, want string
+	}{
+		{name: "JSON naming the model", contentType: "application/json", body: `{"model":"gpt-image-2","prompt":"a cat"}`, want: "gpt-image-2"},
+		{name: "JSON without a model", contentType: "application/json", body: `{"prompt":"a cat"}`},
+		{name: "JSON with an empty model", contentType: "application/json", body: `{"model":"","prompt":"a cat"}`},
+		{name: "JSON without a Content-Type", body: `{"model":"gpt-image-2","prompt":"a cat"}`},
+		{name: "multipart form", contentType: writer.FormDataContentType(), body: form.String()},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			c, _ := gin.CreateTestContext(httptest.NewRecorder())
+			c.Request = httptest.NewRequest(http.MethodPost, "/v1/images/generations", strings.NewReader(tc.body))
+			if tc.contentType != "" {
+				c.Request.Header.Set("Content-Type", tc.contentType)
+			}
+			modelRequest, _, err := getModelRequest(c)
+			if tc.want == "" {
+				require.ErrorContains(t, err, "Content-Type: application/json")
+				assert.Equal(t, http.StatusBadRequest, invalidRequestStatus(err))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.want, modelRequest.Model)
+		})
 	}
 }
 

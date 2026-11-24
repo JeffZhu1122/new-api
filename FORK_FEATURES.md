@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
 | 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 74 个（含本文档相关提交） |
-| 变更规模 | 468 个文件，+48399 / −2969 行（不含本文档） |
+| fork 专有提交数 | 75 个（含本文档相关提交） |
+| 变更规模 | 469 个文件，+48445 / −2970 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -55,6 +55,7 @@
 38. [素材库管理（火山方舟私域素材库）](#38-素材库管理火山方舟私域素材库)
 39. [渠道级出站指纹与 HTTP/3](#39-渠道级出站指纹与-http3)
 40. [Gemini 原生响应省略 null 字段](#40-gemini-原生响应省略-null-字段)
+41. [生图请求读不到模型时返回 400](#41-生图请求读不到模型时返回-400)
 
 ---
 
@@ -97,6 +98,7 @@
 | 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 7 步） | 关闭（关闭时默认不拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`user_extend.asset_library`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库；管理员可在「编辑用户」里按用户覆盖每用户素材组 / 素材上限 |
 | 39 | 渠道级出站指纹与 HTTP/3 | 与本文档同一提交 | 关闭（渠道不选指纹配置、协议不选 HTTP/3、不填测试消息时与原来相同；全局总开关默认开，但没有渠道选用配置时不改变任何请求） | `fingerprint_setting.enabled` / `fingerprint_setting.profiles`；渠道 `setting` 的 `fingerprint_profile` / `http_protocol = "http3"` / `test_message` / `test_max_tokens` | 系统设置「出站指纹」一节；渠道编辑的「指纹配置」、`HTTP/3 (QUIC)`、「测试消息」「测试最大 Tokens」；`GET /api/channel/fingerprint_profiles`；选了配置的渠道的 HTTP 与 Realtime WebSocket 出站连接（TLS ClientHello、HTTP/2 参数、请求头顺序、默认 User-Agent）；新依赖 utls / req / quic-go |
 | 40 | Gemini 原生响应省略 null 字段 | 与本文档同一提交 | 关闭（渠道开关；转换路径的修正没有开关） | 渠道 `setting.gemini_omit_null_fields` | Gemini / Vertex AI 渠道的原生生成响应；其他格式转成 Gemini 格式的响应不再写出 `null` |
+| 41 | 生图请求读不到模型时返回 400 | 与本文档同一提交 | 始终生效 | 无 | `POST /v1/images/generations` 读不到模型时的错误：由「分组下模型 dall-e 无可用渠道」改为 400 并说明要发 JSON |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -964,7 +966,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/provider_plugin_scheduled.go` | §15 插件定时钩子的启用守卫（事务之前读） |
 | `pkg/jsplugin/routing.go` | §38 `reservedRouteNamespaces` 加 `/asset-library`、`/asset-library-verification`：上游测试要求每个控制台页面都在表里，否则插件路由能占用页面路径 |
 | `controller/provider_plugin_test.go` / `model/channel_plugin_credential_test.go` | 上游测试只迁移上游的表，补 `ChannelExtend`；直接调 `GetChannel` / `GetRandomSatisfiedChannel` 的地方补 `nil` |
-| `middleware/distributor.go` | 上游给插件渠道加了 provider 插件上下文（`ContextKeyProviderPlugin`），fork 的 `ContextKeyChannelExtendSetting` 放在它之前 |
+| `middleware/distributor.go` | 上游给插件渠道加了 provider 插件上下文（`ContextKeyProviderPlugin`），fork 的 `ContextKeyChannelExtendSetting` 放在它之前；§41 `getModelRequest` 里 `/v1/images/generations` 分支不再默认 `dall-e`，读不到模型时返回错误 |
 
 ### 19.3 上游签名变化的传染点
 
@@ -2586,3 +2588,27 @@ Gemini 自己从不发 `null`，客户端却可能在两处收到：
 - 前端 `channel-configuration.test.tsx` 新增 3 项：Gemini 渠道已保存的开关让「请求与响应」显示已配置，关掉后保存的 `setting` 不再带这个键；打开后保存为 `gemini_omit_null_fields: true`；OpenAI 渠道不显示开关，也不因为残留的设置显示已配置。实现之前前两项失败。
 - 已运行：`gofmt -l` 无输出；`go build ./...`；`go vet ./relay/channel/gemini`；根模块 `go test ./... -count=1` 通过；relaykit 里 `GOWORK=off go vet ./...`、`GOWORK=off go build ./...`、`GOWORK=off go test ./... -count=1` 通过；前端全量 249 个文件 2830 项通过，`tsgo -b`、`oxlint`、`oxfmt --check`（改动的文件）通过。
 - 没有覆盖：真实上游和 Java SDK、浏览器里的渠道编辑页。数据库没有改动（新键放在已有的渠道 `setting` JSON 里），没有跑 MySQL / PostgreSQL。
+
+---
+
+## 41. 生图请求读不到模型时返回 400
+
+### 动机
+
+客户用 `gpt-image-2.5-sunburst` 调 `POST /v1/images/generations`，收到的却是 `No available channel for model dall-e under group default (distributor)`，看不出问题在哪。原因是 `middleware/distributor.go` 的 `getModelRequest` 只在 `Content-Type` 为 JSON 或 `x-www-form-urlencoded` 时读请求体里的 `model`：`multipart/form-data` 不读，没有 `Content-Type` 时读出来是空的；读不到时上游把模型默认成 `dall-e` 去选渠道。站点没有 `dall-e` 渠道，就报上面那句话。
+
+这个默认值从来没让请求成功过：普通转发在 `controller/relay.go` 里先用 `GetAndValidOpenAIImageRequest` 解析请求体，生图请求只读 JSON，没有 `model` 就返回 `model is required`；插件的 `openai_image` 协议也只接受 JSON（`pkg/jsplugin/routing.go` 的 `generate` 操作 `BodyKinds: BodyJSON`）。
+
+### 行为
+
+- `POST /v1/images/generations` 读不到模型时（JSON 里没有或为空、没有 `Content-Type`、`multipart/form-data`），分发阶段直接返回 400，`message` 为 `model is required; send /v1/images/generations as a JSON body (Content-Type: application/json) that names the model`，前面带网关已有的 `Invalid request: ` / 「无效的请求，」前缀，不再去选 `dall-e` 的渠道。
+- 读得到模型的请求（JSON、`x-www-form-urlencoded`）不变。`/v1/images/edits` 不变，它本来就从 multipart 表单里读模型。
+- 原来能成功的请求不受影响，变的只是失败时的状态码和文案：原来是选渠道失败（`model_not_found`），现在是 400。
+
+### 实现
+
+`middleware/distributor.go` `getModelRequest`：`/v1/images/generations` 分支把 `common.GetStringIfEmpty(modelRequest.Model, "dall-e")` 换成模型为空时返回错误；`Distribute` 用已有的 `invalidRequestStatus` 把它变成 400。
+
+### 测试
+
+`middleware/distributor_test.go` `TestGetModelRequestRequiresTheImageGenerationModel` 5 项：JSON 带模型照常选到该模型；JSON 没有模型、模型为空、没有 `Content-Type`、multipart 表单 4 种都返回提示 `Content-Type: application/json` 的错误且状态码为 400。恢复成默认 `dall-e` 时这 4 项失败。

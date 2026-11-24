@@ -577,7 +577,13 @@ func getModelRequest(c *gin.Context) (*ModelRequest, bool, error) {
 		modelRequest.Model = constant.DeepSeekFetchModel
 	}
 	if strings.HasPrefix(c.Request.URL.Path, "/v1/images/generations") {
-		modelRequest.Model = common.GetStringIfEmpty(modelRequest.Model, "dall-e")
+		// Image generation reads only a JSON body, and the relay refuses one
+		// without a model. A form body or one without a Content-Type leaves the
+		// model unread; routing it by a default model would only answer that
+		// the default has no channel.
+		if modelRequest.Model == "" {
+			return nil, false, errors.New("model is required; send /v1/images/generations as a JSON body (Content-Type: application/json) that names the model")
+		}
 	} else if strings.HasPrefix(c.Request.URL.Path, "/v1/images/edits") {
 		//modelRequest.Model = common.GetStringIfEmpty(c.PostForm("model"), "gpt-image-1")
 		contentType := c.ContentType()
