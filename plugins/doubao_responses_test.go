@@ -292,12 +292,13 @@ func TestDoubaoImageSubmission(t *testing.T) {
 func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 	_, plugin := newDoubaoPlugin(t)
 	const (
-		pro10  = "doubao-seedance-1-0-pro-250528"
-		pro15  = "doubao-seedance-1-5-pro-251215"
-		v20    = "doubao-seedance-2-0-260128"
-		fast20 = "doubao-seedance-2-0-fast-260128"
-		mini20 = "doubao-seedance-2-0-mini-260615"
-		v25    = "doubao-seedance-2-5-260628"
+		pro10   = "doubao-seedance-1-0-pro-250528"
+		pro15   = "doubao-seedance-1-5-pro-251215"
+		v20     = "doubao-seedance-2-0-260128"
+		fast20  = "doubao-seedance-2-0-fast-260128"
+		mini20  = "doubao-seedance-2-0-mini-260615"
+		v25     = "doubao-seedance-2-5-260628"
+		flash25 = "doubao-seedance-2-5-flash-261115"
 		// BytePlus ModelArk's names for Seedance 2.x.
 		dreamina20   = "dreamina-seedance-2-0-260128"
 		dreamina25   = "dreamina-seedance-2-5-260628"
@@ -311,7 +312,7 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		{[]string{pro10, "doubao-seedance-1-0-lite-t2v", "doubao-seedance-1-0-lite-i2v"}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens"}},
 		{[]string{pro15}, []string{"480p", "720p", "1080p"}, []string{"generate_audio", "resolution", "tokens"}},
 		{[]string{v20, dreamina20, dreamina25}, []string{"480p", "720p", "1080p", "4k"}, []string{"resolution", "tokens", "video_input"}},
-		{[]string{fast20, mini20, "dreamina-seedance-2-0-fast-260128", "dreamina-seedance-2-0-mini-260615", dreaminaLite}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
+		{[]string{fast20, mini20, flash25, "dreamina-seedance-2-0-fast-260128", "dreamina-seedance-2-0-mini-260615", dreaminaLite}, []string{"480p", "720p"}, []string{"resolution", "tokens", "video_input"}},
 		{[]string{v25}, []string{"480p", "720p", "1080p"}, []string{"resolution", "tokens", "video_input"}},
 	}
 	profiled := make([]string, 0, len(plugin.Meta.Models))
@@ -373,6 +374,7 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 		{"2.5 rejects 4k", v25, map[string]any{"metadata": map[string]any{"resolution": "4K"}}, nil, v25 + " resolution must be one of 480p, 720p, 1080p"},
 		{"Dreamina 2.5 offers 4k", dreamina25, map[string]any{"metadata": map[string]any{"resolution": "4K"}},
 			map[string]any{"tokens": float64(972000), "resolution": "4k", "video_input": "none"}, ""},
+		{"2.5 flash rejects 1080p", flash25, map[string]any{"metadata": map[string]any{"resolution": "1080p"}}, nil, flash25 + " resolution must be one of 480p, 720p"},
 		{"Dreamina 2.5 flash rejects 1080p", dreaminaLite, map[string]any{"metadata": map[string]any{"resolution": "1080p"}}, nil, dreaminaLite + " resolution must be one of 480p, 720p"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -514,6 +516,7 @@ func TestDoubaoSeedanceUsageFacts(t *testing.T) {
 			{"Volcengine 2.0 4k with video", v20, v20, "4k", true, 16.0 / 46},
 			{"Volcengine 2.5 720p with video", v25, v25, "720p", true, 42.0 / 70},
 			{"Volcengine 2.0 fast with video", fast20, fast20, "480p", true, 22.0 / 37},
+			{"Volcengine 2.5 flash with video", flash25, flash25, "720p", true, 28.0 / 46},
 			{"BytePlus 2.0 1080p with video", dreamina20, dreamina20, "1080p", true, 4.7 / 7.0},
 			{"BytePlus 2.0 4k", dreamina20, dreamina20, "4K", false, 4.0 / 7.0},
 			{"BytePlus 2.5 4k with video", dreamina25, dreamina25, "4k", true, 2.9 / 10.7},

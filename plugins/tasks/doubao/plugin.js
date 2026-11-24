@@ -14,6 +14,7 @@ const VIDEO_MODELS = {
   "doubao-seedance-2-0-fast-260128": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
   "doubao-seedance-2-0-mini-260615": { resolutions: ["480p", "720p"], maxDuration: 15, videoInput: true },
   "doubao-seedance-2-5-260628": { resolutions: ["480p", "720p", "1080p"], maxDuration: 30, videoInput: true },
+  "doubao-seedance-2-5-flash-261115": { resolutions: ["480p", "720p"], maxDuration: 30, videoInput: true },
   // BytePlus ModelArk (https://ark.ap-southeast.bytepluses.com, the same API)
   // names Seedance 2.x Dreamina, from its own model list: Seedance 2.5 there
   // also outputs 4K, and 2.5 flash outputs 480p and 720p for up to 30 seconds.
@@ -37,6 +38,7 @@ const SEEDANCE_TIER_RATIOS = {
   "doubao-seedance-2-0-fast-260128": { "720p": [1, 22 / 37] },
   "doubao-seedance-2-0-mini-260615": { "720p": [1, 14 / 23] },
   "doubao-seedance-2-5-260628": { "720p": [1, 42 / 70], "1080p": [11.7 / 10.7, 7.0 / 10.7] },
+  "doubao-seedance-2-5-flash-261115": { "720p": [1, 28 / 46] },
   "dreamina-seedance-2-0-260128": { "720p": [1, 4.3 / 7.0], "1080p": [7.7 / 7.0, 4.7 / 7.0], "4k": [4.0 / 7.0, 2.4 / 7.0] },
   "dreamina-seedance-2-0-fast-260128": { "720p": [1, 3.3 / 5.6] },
   "dreamina-seedance-2-0-mini-260615": { "720p": [1, 2.1 / 3.5] },
@@ -353,7 +355,7 @@ export const meta = {
     en: "Volcengine Doubao Seedance video generation and Seedream image generation",
     zh: "火山引擎豆包 Seedance 视频生成与 Seedream 图片生成",
   },
-  version: "1.6.0",
+  version: "1.6.1",
   author: { name: "QuantumNous" },
   channelTypes: [54, 45], // VolcEngine-type channels serve Ark video models with the same wire format
   models: Object.keys(VIDEO_MODELS).concat(Object.keys(IMAGE_MODELS)),

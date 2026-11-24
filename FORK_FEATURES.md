@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
 | 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 81 个（含本文档相关提交） |
-| 变更规模 | 477 个文件，+49970 / −3007 行（不含本文档） |
+| fork 专有提交数 | 82 个（含本文档相关提交） |
+| 变更规模 | 477 个文件，+49981 / −3013 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -105,7 +105,7 @@
 | 41 | 生图接口接受表单与缺 Content-Type 的请求体 | 与本文档同一提交（分 2 步） | 始终生效 | 无 | `POST /v1/images/generations`：multipart / urlencoded 表单与没有 `Content-Type` 的 JSON 按 JSON 请求处理；上传文件的表单与仍读不到模型的请求返回 400，不再报「分组下模型 dall-e 无可用渠道」 |
 | 42 | Kling 插件：路径式模型、4K 与 HDR 计费 | 与本文档同一提交（1.3.0、1.3.1 两步） | 始终生效 | 无 | 内置 `kling` 插件：路径式接口的 2.5 Turbo 到 4.0 Flash 共 7 个模型；kling-4.0 的 4K 与 HDR 按官方价格预扣和结算，不支持的分辨率 / 动态范围在提交前拒绝；Base URL 已以 `/kling` 结尾时不再重复追加 |
 | 43 | 使用日志：按响应模型与响应模型不一致筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.response_model`、`logs.response_model_mismatch`（新列） | 消费 / 错误日志写入、日志表迁移（含 ClickHouse）、使用日志列表、统计与导出接口、日志页筛选框 |
-| 44 | 豆包插件：BytePlus 的 Dreamina Seedance 模型名 | 与本文档同一提交 | 始终生效 | 无 | 内置 `doubao` 插件 1.6.0：声明 BytePlus ModelArk 的 5 个 `dreamina-seedance-*` 模型，可以直接定价和调用；按旧版倍率计价时，各档位用 BytePlus 的 token 单价比例，渠道映射到 ep 时也按声明的模型取比例 |
+| 44 | 豆包插件：BytePlus 的 Dreamina Seedance 模型名 | 与本文档同一提交 | 始终生效 | 无 | 内置 `doubao` 插件 1.6.0 / 1.6.1：声明 BytePlus ModelArk 的 5 个 `dreamina-seedance-*` 模型和火山方舟的 `doubao-seedance-2-5-flash-261115`，可以直接定价和调用；按旧版倍率计价时，各档位用 BytePlus 的 token 单价比例，渠道映射到 ep 时也按声明的模型取比例 |
 | 45 | 缓存大于输入：识别、记录与用量校正 | 与本文档同一提交 | 识别与记录始终生效；用量校正为渠道开关，默认关闭 | `channel_extend.usage_correction`（新列） | 文本结算：输入包含缓存的口径下缓存读写超过输入时记 `admin_info.usage_anomaly`，汇总行加 `usage_semantic` / `cache_overflow_tokens` / `usage_anomaly`；开了用量校正的渠道把缓存压到输入以内计费 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
@@ -2805,6 +2805,7 @@ BytePlus ModelArk（火山方舟的海外版，`https://ark.ap-southeast.byteplu
 
   与火山方舟同型号的区别：BytePlus 的 Seedance 2.5 支持 4K（火山方舟的 `doubao-seedance-2-5-260628` 不支持）；2.5 flash 是新模型，火山方舟这边没有对应的 `doubao-` 名字。
 - 价格表字段与对应的 `doubao-` 模型一样（`tokens`、`resolution`、`video_input`），可以直接保存带 `u()` 的表达式；价格要管理员自己设，没有内置价格。
+- **1.6.1（2026-11-25）**：火山方舟的 `doubao-seedance-2-5-flash-261115` 也加进了声明：480p、720p，4–30 秒或 -1，支持参考视频。官方价格（火山方舟模型价格页，2026-11-25 核对）480p / 720p 相同：不含视频 46 元、含视频 28 元（每百万 token）。旧版倍率计价的含视频比例按 28 / 46。按人民币数字直接定价（1 美元额度当 1 元）时的表达式：`u("video_input") == "video" ? tier("video", u("tokens") * 28 / 1000000) : tier("base", u("tokens") * 46 / 1000000)`。
 - 客户端直接用 `dreamina-…` 调用；渠道选火山引擎类型，Base URL 填 `https://ark.ap-southeast.bytepluses.com`（不带 `/api/v3`），模型列表加上这些名字，发给上游的就是 `dreamina-…`。`/v1/videos`、`/v1/responses` 和原生的 `…/contents/generations/tasks` 都可以用。
 - **旧版倍率计价的档位比例**（只在模型用按次 / 倍率计价、不用表达式时起作用）：价格设的是 720p 无参考视频的价，其他档位按 token 单价的比例乘上去。
   - BytePlus 的比例按官方价格页（Pricing，2026-11-25 核对）每条 5 秒 16:9 视频的美元价格除以公式 token 数算出，得到的每百万 token 单价代回去与官方列的每条价格逐一吻合：2.0 无参考视频 7.0、有参考视频 4.3（1080p 7.7 / 4.7，4K 4.0 / 2.4）；2.0 fast 5.6 / 3.3；2.0 mini 3.5 / 2.1；2.5 10.7 / 6.4（1080p 11.7 / 7.0，4K 4.7 / 2.9）；2.5 flash 7.0 / 4.3。
@@ -2827,6 +2828,7 @@ BytePlus ModelArk（火山方舟的海外版，`https://ark.ap-southeast.byteplu
 - `plugins/doubao_responses_test.go`：
   - `TestDoubaoSeedanceUsageFacts`：5 个 `dreamina-` 模型都有价格字段分组（2.0、2.5 与 `doubao-seedance-2-0-260128` 同组，含 4K；fast、mini、2.5 flash 与 2.0 fast 同组）；Dreamina 2.5 的 4K 请求预扣 972000 token，2.5 flash 的 1080p 请求在提交前被拒绝；完成后 Dreamina 2.5 的 4K 结果按 4K 记录；旧版倍率计价的档位比例：火山方舟的原有比例不变，BytePlus 各档位比例，映射到 `ep-…` 时用声明模型的比例，720p 无参考视频不返回比例。
   - `TestDoubaoImageSubmission` 的协议检查：`dreamina-seedance-2-5-flash-261115` 走 `/v1/videos` 的 `openai_video` 协议。
+  - 1.6.1：`doubao-seedance-2-5-flash-261115` 与 2.0 fast 同一价格字段分组，1080p 请求在提交前被拒绝，旧版倍率计价带视频按 28 / 46。临时 Go 测试（未提交）：上面的人民币表达式在 1.6.0 下保存报「没有任务插件用量字段」，1.6.1 下可以保存；720p 5 秒不带视频（108000 token）算出 4.968，带 4 秒参考视频（194400 token）算出 5.4432。
 - 临时 Go 测试（未提交）：用改动前的插件，给 `dreamina-seedance-2-0-260128` 和 `dreamina-seedance-2-5-flash-261115` 保存带 `u("resolution")`、`u("tokens")`、`u("video_input")` 的表达式，得到与线上相同的报错；换成新插件后两个都能保存。
 - `go test` 的 plugins、pkg/jsplugin、relay/channel/task、model、controller、service、router 全部通过；插件 oxlint 没有新增问题，oxfmt 格式检查通过。
 
