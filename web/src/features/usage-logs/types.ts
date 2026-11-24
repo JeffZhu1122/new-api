@@ -68,6 +68,10 @@ export interface CommonLogFilters extends CommonFilters {
   ttftMax?: string
   statusCodes?: string[]
   stream?: LogStreamMode
+  /** The model the upstream declared in its response, matched like `model` */
+  responseModel?: string
+  /** Only the logs whose response model differs from the requested model */
+  responseModelMismatch?: boolean
 }
 
 /** A request's stream mode, as the usage-log filter offers it */
@@ -573,6 +577,10 @@ export interface GetLogsParams {
   status_codes?: string
   /** 'true' or 'false'; only consume and error logs */
   is_stream?: string
+  /** A model name, or a pattern with % */
+  response_model?: string
+  /** 'true' keeps the logs whose response model differs from the request */
+  response_model_mismatch?: string
 }
 
 export interface GetLogsResponse {
@@ -614,6 +622,10 @@ export interface GetLogStatsParams {
   status_codes?: string
   /** 'true' or 'false'; only consume and error logs */
   is_stream?: string
+  /** A model name, or a pattern with % */
+  response_model?: string
+  /** 'true' keeps the logs whose response model differs from the request */
+  response_model_mismatch?: string
 }
 
 export interface GetLogStatsResponse {

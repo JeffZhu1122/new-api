@@ -10,6 +10,8 @@ import (
 
 	"github.com/QuantumNous/new-api/common"
 	"github.com/QuantumNous/new-api/model"
+	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -386,6 +388,105 @@ func TestUsageLogsFilterByStreamMode(t *testing.T) {
 		response := logFilterRequest(t, handler, url.Values{"is_stream": {"sometimes"}})
 		assert.False(t, response.Success)
 		assert.Equal(t, "Stream mode must be true or false", response.MessageKey)
+	}
+}
+
+// The response model filters read the model the upstream declared, as the
+// relay records it on consume and error logs: by name or % pattern, including
+// a declaration equal to the requested model, and the mismatches the usage
+// logs flag with a warning.
+func TestUsageLogsFilterByResponseModel(t *testing.T) {
+	setupLogFilterTest(t)
+	previousConsume := common.LogConsumeEnabled
+	common.LogConsumeEnabled = true
+	t.Cleanup(func() { common.LogConsumeEnabled = previousConsume })
+	c, _ := gin.CreateTestContext(httptest.NewRecorder())
+	c.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+	c.Set("username", "alice")
+	observed := func(requested, returned string) *model.LogOther {
+		info := &relaycommon.RelayInfo{OriginModelName: requested}
+		info.ObserveResponseModel(returned)
+		other := model.NewLogOther()
+		service.AppendResponseModelLogInfo(info, other)
+		return other
+	}
+	longName := strings.Repeat("x", 300)
+	for _, consume := range []struct{ requested, returned string }{
+		{"gemini-3.1-pro-preview", "3.1-flash-lite-05-2026"},
+		// A dated name extends the requested one: recorded, not a mismatch.
+		{"gpt-4.1", "gpt-4.1-2025-04-14"},
+		{"deepseek-v4", "deepseek-v4"},
+		{"long-declaration", longName},
+	} {
+		model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{ChannelId: 1, ModelName: consume.requested, Quota: 300, Group: "default", Other: observed(consume.requested, consume.returned)})
+	}
+	model.RecordErrorLog(c, 1, 2, "claude-sonnet-4.5", "", "upstream failed", 0, 3, false, "default", observed("claude-sonnet-4.5", "glm-5.3"))
+
+	var written []model.Log
+	require.NoError(t, model.LOG_DB.Where("response_model <> ?", "").Order("id").Find(&written).Error)
+	require.Len(t, written, 5)
+	assert.Equal(t, "3.1-flash-lite-05-2026", written[0].ResponseModel)
+	assert.True(t, written[0].ResponseModelMismatch)
+	assert.False(t, written[1].ResponseModelMismatch, "a dated variant is not a mismatch")
+	assert.Equal(t, "deepseek-v4", written[2].ResponseModel, "a declaration equal to the request is kept")
+	assert.Equal(t, longName[:191], written[3].ResponseModel, "a declaration longer than the column is cut, and the log still written")
+	assert.True(t, written[4].ResponseModelMismatch, "error logs record the declaration too")
+
+	for _, test := range []struct {
+		name   string
+		query  url.Values
+		models []string
+		quota  int
+	}{
+		{"mismatches", url.Values{"response_model_mismatch": {"true"}}, []string{"gemini-3.1-pro-preview", "long-declaration", "claude-sonnet-4.5"}, 600},
+		{"exact response model", url.Values{"response_model": {"3.1-flash-lite-05-2026"}}, []string{"gemini-3.1-pro-preview"}, 300},
+		{"response model pattern", url.Values{"response_model": {"%flash-lite%"}}, []string{"gemini-3.1-pro-preview"}, 300},
+		{"response model equal to the request", url.Values{"response_model": {"deepseek-v4"}}, []string{"deepseek-v4"}, 300},
+		{"response model of an error", url.Values{"response_model": {"glm-5.3"}}, []string{"claude-sonnet-4.5"}, 0},
+		{"pattern and mismatch together", url.Values{"response_model": {"%gpt-4.1%"}, "response_model_mismatch": {"true"}}, []string{}, 0},
+		{"with the model name filter", url.Values{"model_name": {"%gemini%"}, "response_model_mismatch": {"true"}}, []string{"gemini-3.1-pro-preview"}, 300},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for name, handlers := range map[string][2]gin.HandlerFunc{
+				"all logs": {GetAllLogs, GetLogsStat},
+				"own logs": {GetUserLogs, GetLogsSelfStat},
+			} {
+				logs := logFilterRequest(t, handlers[0], test.query)
+				require.True(t, logs.Success, logs.MessageKey)
+				models := make([]string, 0, len(logs.Data.Items))
+				for _, item := range logs.Data.Items {
+					models = append(models, item.ModelName)
+				}
+				assert.ElementsMatch(t, test.models, models, name)
+
+				stat := logFilterRequest(t, handlers[1], test.query)
+				require.True(t, stat.Success, stat.MessageKey)
+				assert.Equal(t, test.quota, stat.Data.Quota, name)
+				assert.Equal(t, "filter_unsupported", stat.Data.RateSource, name)
+			}
+		})
+	}
+
+	unfiltered := logFilterRequest(t, GetAllLogs, url.Values{})
+	notFiltered := logFilterRequest(t, GetAllLogs, url.Values{"response_model_mismatch": {"false"}})
+	require.True(t, notFiltered.Success, notFiltered.MessageKey)
+	assert.Equal(t, unfiltered.Data.Total, notFiltered.Data.Total, "false does not filter")
+
+	for _, test := range []struct {
+		name       string
+		query      url.Values
+		messageKey string
+	}{
+		{"mismatch not a boolean", url.Values{"response_model_mismatch": {"sometimes"}}, "Response model mismatch must be true or false"},
+		{"pattern too short", url.Values{"response_model": {"%a%"}}, "Fuzzy search keywords must be at least 2 characters long"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, handler := range []gin.HandlerFunc{GetAllLogs, GetLogsStat, GetUserLogs, GetLogsSelfStat} {
+				response := logFilterRequest(t, handler, test.query)
+				assert.False(t, response.Success)
+				assert.Equal(t, test.messageKey, response.MessageKey)
+			}
+		})
 	}
 }
 

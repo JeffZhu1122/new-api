@@ -443,6 +443,8 @@ func migrateClickHouseLogDB() error {
 // was first created, so ClickHouse inserts of the full Log keep working.
 var clickHouseLogAddedColumns = []string{
 	"ALTER TABLE logs ADD COLUMN IF NOT EXISTS first_response_ms Int32 DEFAULT 0",
+	"ALTER TABLE logs ADD COLUMN IF NOT EXISTS response_model String DEFAULT ''",
+	"ALTER TABLE logs ADD COLUMN IF NOT EXISTS response_model_mismatch UInt8 DEFAULT 0",
 }
 
 func clickHouseLogTTLDays() int {
@@ -491,7 +493,9 @@ CREATE TABLE IF NOT EXISTS logs (
 	request_id String DEFAULT '',
 	upstream_request_id String DEFAULT '',
 	other String DEFAULT '',
-	first_response_ms Int32 DEFAULT 0
+	first_response_ms Int32 DEFAULT 0,
+	response_model String DEFAULT '',
+	response_model_mismatch UInt8 DEFAULT 0
 )
 ENGINE = MergeTree()
 PARTITION BY toYYYYMM(toDateTime(created_at))

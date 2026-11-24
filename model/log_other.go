@@ -5,6 +5,7 @@ import (
 	"maps"
 	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/QuantumNous/new-api/common"
 )
@@ -41,10 +42,40 @@ type LogOther struct {
 	adminInfo map[string]any
 	rootInfo  map[string]any
 	auditInfo map[string]any
+
+	// responseModel and responseModelMismatch fill the logs columns of the
+	// same names; they are not part of the other JSON.
+	responseModel         string
+	responseModelMismatch bool
 }
 
 func NewLogOther() *LogOther {
 	return &LogOther{}
+}
+
+// maxLogResponseModelLength is the size of logs.response_model. A longer
+// declaration is cut to fit, so the log is still written.
+const maxLogResponseModelLength = 191
+
+// SetResponseModel records the model the upstream declared in its response,
+// and whether it disagrees with the requested model, for the usage-log
+// filters by response model.
+func (o *LogOther) SetResponseModel(model string, mismatch bool) {
+	if o == nil {
+		return
+	}
+	if utf8.RuneCountInString(model) > maxLogResponseModelLength {
+		model = string([]rune(model)[:maxLogResponseModelLength])
+	}
+	o.responseModel = model
+	o.responseModelMismatch = mismatch
+}
+
+func (o *LogOther) responseModelColumns() (string, bool) {
+	if o == nil {
+		return "", false
+	}
+	return o.responseModel, o.responseModelMismatch
 }
 
 func isReservedLogOtherKey(key string) bool {

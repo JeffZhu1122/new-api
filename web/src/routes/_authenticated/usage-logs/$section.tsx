@@ -55,6 +55,8 @@ const usageLogsSearchSchema = z.object({
   ttftMax: z.number().optional().catch(undefined),
   statusCodes: z.array(z.number()).optional().catch(undefined),
   stream: z.enum(['stream', 'non_stream']).optional().catch(undefined),
+  responseModel: z.string().optional().catch(''),
+  responseModelMismatch: z.boolean().optional().catch(undefined),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
 })

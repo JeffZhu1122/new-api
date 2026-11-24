@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
 | 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 77 个（含本文档相关提交） |
-| 变更规模 | 473 个文件，+48927 / −2977 行（不含本文档） |
+| fork 专有提交数 | 78 个（含本文档相关提交） |
+| 变更规模 | 474 个文件，+49346 / −2984 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -57,6 +57,7 @@
 40. [Gemini 原生响应省略 null 字段](#40-gemini-原生响应省略-null-字段)
 41. [生图接口接受表单与缺 Content-Type 的请求体](#41-生图接口接受表单与缺-content-type-的请求体)
 42. [Kling 插件：路径式模型、4K 与 HDR 计费](#42-kling-插件路径式模型4k-与-hdr-计费)
+43. [使用日志：按响应模型与响应模型不一致筛选](#43-使用日志按响应模型与响应模型不一致筛选)
 
 ---
 
@@ -101,6 +102,7 @@
 | 40 | Gemini 原生响应省略 null 字段 | 与本文档同一提交 | 关闭（渠道开关；转换路径的修正没有开关） | 渠道 `setting.gemini_omit_null_fields` | Gemini / Vertex AI 渠道的原生生成响应；其他格式转成 Gemini 格式的响应不再写出 `null` |
 | 41 | 生图接口接受表单与缺 Content-Type 的请求体 | 与本文档同一提交（分 2 步） | 始终生效 | 无 | `POST /v1/images/generations`：multipart / urlencoded 表单与没有 `Content-Type` 的 JSON 按 JSON 请求处理；上传文件的表单与仍读不到模型的请求返回 400，不再报「分组下模型 dall-e 无可用渠道」 |
 | 42 | Kling 插件：路径式模型、4K 与 HDR 计费 | 与本文档同一提交（1.3.0、1.3.1 两步） | 始终生效 | 无 | 内置 `kling` 插件：路径式接口的 2.5 Turbo 到 4.0 Flash 共 7 个模型；kling-4.0 的 4K 与 HDR 按官方价格预扣和结算，不支持的分辨率 / 动态范围在提交前拒绝；Base URL 已以 `/kling` 结尾时不再重复追加 |
+| 43 | 使用日志：按响应模型与响应模型不一致筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.response_model`、`logs.response_model_mismatch`（新列） | 消费 / 错误日志写入、日志表迁移（含 ClickHouse）、使用日志列表、统计与导出接口、日志页筛选框 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -869,9 +871,10 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支；§34 / §35 / §37 `ProcessChannelError` 的报错行带上游请求 ID、渠道名、分组与模型（模型必须在括号内最后） |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
-| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary` |
+| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary`；§43 给 `Log` 加了 `response_model` / `response_model_mismatch` 列（`RecordConsumeLog` 与 `RecordErrorLog` 都写），`LogMetricsFilter` 加 `ResponseModel` / `ResponseModelMismatch`，`applyTo` 改为返回 error |
 | `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数 |
-| `model/main.go` | §30 ClickHouse 日志表建表语句加 `first_response_ms`，`clickHouseLogAddedColumns` 给已有表补列；§38 `migrateDB` 的 AutoMigrate 列表末尾加素材库的四张表（`AssetLibraryAccount`、`AssetLibraryGroup`、`AssetLibraryAsset`、`AssetLibraryVerification`） |
+| `service/log_info_generate.go` / `model/log_other.go` | §43 上游的 `AppendResponseModelLogInfo` 开头加一行 `other.SetResponseModel(...)`（在上游「与请求相同就不记」的提前返回之前）；`LogOther` 末尾加两个不进 JSON 的私有字段和 `SetResponseModel` |
+| `model/main.go` | §30 / §43 ClickHouse 日志表建表语句加 `first_response_ms`、`response_model`、`response_model_mismatch`，`clickHouseLogAddedColumns` 给已有表补列；§38 `migrateDB` 的 AutoMigrate 列表末尾加素材库的四张表（`AssetLibraryAccount`、`AssetLibraryGroup`、`AssetLibraryAsset`、`AssetLibraryVerification`） |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | §27 新建抽屉接受 `initialValues`（粘贴的配置） |
 | `web/src/features/keys/*` | §26 的归属用户上下文（API、表格、抽屉、行操作、provider 都按 owner 分支） |
@@ -2700,3 +2703,57 @@ Gemini 自己从不发 `null`，客户端却可能在两处收到：
   - HTML 回复的报错写明 `HTTP 200 text/html`。
 
 把价格表改回 1.3.0 时 14 个子测试失败，把 `apiRoot` 改回时 Base URL 用例失败。
+
+---
+
+## 43. 使用日志：按响应模型与响应模型不一致筛选
+
+上游会记录上游在响应里声明的模型（`other.response_model`），和请求的模型对不上时，日志的模型名下面显示黄色的「响应模型：xxx」。但日志页没法按它筛选，要找「实际模型和日志记录模型不一样」的记录只能一页页翻。
+
+### 行为
+
+- 日志页「展开」后的高级筛选新增两项，管理员视图、用户自己的视图和手机筛选抽屉里都有：
+  - **响应模型（模糊）**：输入框，和模型名一样按包含匹配；带 `%` 时按输入的通配符匹配。
+  - **响应模型：全部 / 响应模型与请求不一致**：下拉框，默认「全部」即不筛选；选「不一致」只看显示黄色警告的那些记录。
+  - 两项各计入「收起」角标。
+- 「不一致」的判定和日志页的黄色警告是同一条规则（上游 `relay/common/response_model.go` 的 `Mismatch`）：响应模型既不以请求模型或上游模型开头、也不以它们结尾（不区分大小写）才算不一致。带日期的版本名（`gpt-4.1` → `gpt-4.1-2025-04-14`）、大小写不同、带厂商前缀（`deepseek/deepseek-v4`）都不算。
+- 接口参数：`response_model`（模型名或 `%` 通配，规则和 `model_name` 相同）、`response_model_mismatch=true|false`（`false` 等于不筛选；其他值返回「Response model mismatch must be true or false」）。作用于 `GET /api/log/`、`/api/log/self`、`/api/log/stat`、`/api/log/self/stat` 与两个导出接口。
+- 普通用户也能用：响应模型本来就写在用户可见的 `other` 里。
+- 额度统计按筛选计算；实时 RPM / TPM 不支持这两个筛选，与 §29 / §30 / §33 一样返回 `filter_unsupported`，说明文字改为「实时 RPM / TPM 无法按 token 数量、消耗时长、TTFT、状态码、流式模式或响应模型过滤」。
+
+### 实现
+
+- **新增两列**（`model.Log`）：
+  - `response_model`（`varchar(191)`，默认 `''`）：上游声明的模型。上游只在响应模型和请求不同时才写 `other.response_model`；这一列只要上游声明了模型就写，包括和请求相同的情况，所以按响应模型搜得到全部记录。超过 191 个字符时截断，保证 MySQL 严格模式下日志照常写入。
+  - `response_model_mismatch`（布尔，无默认值）：写日志时按上面的规则判定。
+  - 写入路径：上游的 `service.AppendResponseModelLogInfo`（文本消费日志和错误日志都经过它）开头调用新加的 `LogOther.SetResponseModel`，值存在 `LogOther` 的私有字段里，不进 `other` JSON；`RecordConsumeLog` / `RecordErrorLog` 写日志时取出来填入两列。
+  - 迁移：SQLite / MySQL / PostgreSQL 由 `LOG_DB.AutoMigrate(&Log{})` 自动加列。ClickHouse 建表语句加了两列，已有的表由 `clickHouseLogAddedColumns` 执行 `ADD COLUMN IF NOT EXISTS`（`String DEFAULT ''`、`UInt8 DEFAULT 0`）。
+- **筛选**：`model.LogMetricsFilter` 加 `ResponseModel` / `ResponseModelMismatch`。`applyTo` 用与模型名相同的 `applyExplicitLogTextFilter`，非法通配会报错，所以 `applyTo` 改为返回 error；`IsZero` 把两项计入。列表、导出（经 `LogFilter.Metrics`）和额度统计（`SumUsedQuota`）都经过它。`controller/log.go` 的 `parseLogMetricsFilter` 解析两个参数。
+- **为什么存判定结果，而不是查询时再算**：上游有意不存这个标志（`972aed197`），好让规则改了以后旧日志也按新规则显示。但这条规则是「前缀 / 后缀、不区分大小写」的比较，在 SQL 里要拼接字符串，SQLite / MySQL / PostgreSQL / ClickHouse 写法各不相同，模型名里的 `_` 还是 LIKE 通配符；放到查询后再过滤又会让分页和总数不准。所以写日志时判定一次存下来。
+- **前端**：
+  - URL 参数 `responseModel`、`responseModelMismatch`（`routes/_authenticated/usage-logs/$section.tsx`），由 `buildApiParams` 转成 `response_model`（包含匹配，同 `toModelNameSearch`）和 `response_model_mismatch=true`。
+  - 筛选框在 `common-logs-filter-bar.tsx`：输入框复用 `LogsFilterInput`，下拉框复用与「流式模式」相同的 `Select` 写法，选项在 `constants.ts` 的 `LOG_RESPONSE_MODEL_MODE_FILTERS`。下拉框的无障碍名称复用已有的「响应模型不一致」文案。
+
+### 已知限制
+
+- **只对上线之后的新日志生效。** 历史日志这两列为空，按响应模型或「不一致」都查不到；历史日志的详情里照样能看到响应模型。没有回填：要回填得逐行解析 `other` JSON，日志表很大时不适合放在启动迁移里。
+- 「不一致」是写日志那一刻的规则。上游以后改了规则，旧日志的标志不会跟着变；日志页的黄色警告是实时计算的，两者可能不一致。
+- 只覆盖上游会记录响应模型的路径：文本类请求（OpenAI Chat / Responses、Claude、Gemini 等，见上游 `ObserveResponseModel` 的调用处）的消费日志与错误日志。图片、音频、异步任务等不记录响应模型，这两列始终为空。
+- 两列都没有索引，依赖时间范围收窄扫描。普通用户的查询有最长时间范围限制，管理员没有，管理员不填时间范围按「不一致」查会扫全表。
+- MySQL 5.7 加列会重建日志表，日志表很大时这次启动会变慢（MySQL 8.0 / PostgreSQL 11 起为即时加列）。
+
+### 测试
+
+- `controller/log_filter_test.go` `TestUsageLogsFilterByResponseModel`：
+  - 经上游的 `ObserveResponseModel` 和 `AppendResponseModelLogInfo`，用网关自己的 `RecordConsumeLog` / `RecordErrorLog` 写入：不一致（`gemini-3.1-pro-preview` → `3.1-flash-lite-05-2026`）、带日期的版本、与请求相同、300 个字符的声明、错误日志里的不一致。
+  - 检查写入的两列：相同的声明也写入、带日期的版本不算不一致、超长的截到 191 个字符且日志写入成功、错误日志也写。
+  - 在管理员与用户自己两个视图下检查：只看不一致、精确响应模型、`%` 通配、与请求相同的响应模型、错误日志的响应模型、通配 + 不一致、与模型名组合；额度统计按筛选计算，实时统计为 `filter_unsupported`；`false` 不筛选；非法布尔值与过短的通配在 4 个接口上都被拒绝。
+  - 去掉 `SetResponseModel` 那一行时这个测试失败。
+- `model/clickhouse_log_test.go` `TestClickHouseLogTableCoversEveryLogColumn`：建表语句包含两个新列，`clickHouseLogAddedColumns` 有对应的 `ALTER`。
+- `web/src/features/usage-logs/lib/__tests__/log-filter-params.test.ts`：响应模型按包含匹配发送、带 `%` 原样发送；只有选中「不一致」时才发 `response_model_mismatch=true`；两项写入 URL，空白输入不写。
+- `web/src/features/usage-logs/components/__tests__/range-filters.test.tsx`：输入响应模型并选「不一致」后搜索，URL 正确、「收起」角标为 2；URL 里的两项回填到筛选框，选回「全部」后 URL 不再带 `responseModelMismatch`。
+- 数据库（Docker，SQLite 3.50.4、MySQL 5.7.44 严格模式、PostgreSQL 9.6.24）：
+  - 升级：用当前上线版本（`b30ca9dd5`）的二进制建库并写入一条带 `other.response_model` 的旧日志，再用新版启动两次。新版第一次启动只给 `logs` 加了这两列（MySQL `varchar(191) DEFAULT ''` + `tinyint(1)`，PostgreSQL `character varying(191) DEFAULT ''` + `boolean`），没有改动其他表、索引或约束；第二次启动表结构完全不变；旧日志保留，两列为空。
+  - 全新库：`TestUsageLogsFilterBy*` 全部 7 个日志筛选测试在 MySQL 与 PostgreSQL 上通过（`TEST_LOG_FILTER_DIALECT`），包括 300 个字符的声明在 MySQL 严格模式下照常写入。
+  - ClickHouse 没有实机验证（本机没有镜像），只有上面的建表语句测试。
+- 真实转发链路（`router` 测试里的转发环境，临时用例，未提交）：OpenAI 渠道的上游分别返回 `3.1-flash-lite-05-2026`、`gpt-4o-mini-2026-01-01`、`gpt-4o-mini`，消费日志的两列分别为（该名称，不一致）、（该名称，一致）、（该名称，一致）。

@@ -142,6 +142,12 @@ export function buildSearchParams(
           statusCodes: commonFilters.statusCodes.map(Number),
         }),
         ...(commonFilters.stream && { stream: commonFilters.stream }),
+        ...(commonFilters.responseModel?.trim() && {
+          responseModel: commonFilters.responseModel.trim(),
+        }),
+        ...(commonFilters.responseModelMismatch && {
+          responseModelMismatch: true,
+        }),
       }
     }
     case 'drawing': {

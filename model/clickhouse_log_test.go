@@ -171,5 +171,11 @@ func TestClickHouseLogTableCoversEveryLogColumn(t *testing.T) {
 		}
 		assert.Contains(t, createSQL, "\t"+column+" ", "CREATE TABLE lacks %s", field.DBName)
 	}
-	assert.Contains(t, clickHouseLogAddedColumns, "ALTER TABLE logs ADD COLUMN IF NOT EXISTS first_response_ms Int32 DEFAULT 0")
+	for _, statement := range []string{
+		"ALTER TABLE logs ADD COLUMN IF NOT EXISTS first_response_ms Int32 DEFAULT 0",
+		"ALTER TABLE logs ADD COLUMN IF NOT EXISTS response_model String DEFAULT ''",
+		"ALTER TABLE logs ADD COLUMN IF NOT EXISTS response_model_mismatch UInt8 DEFAULT 0",
+	} {
+		assert.Contains(t, clickHouseLogAddedColumns, statement)
+	}
 }

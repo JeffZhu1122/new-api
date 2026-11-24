@@ -216,6 +216,67 @@ it('shows the stream mode of the URL as chosen', async () => {
   )
 })
 
+it('searches by response model and mismatch, counting each as an expanded filter', async () => {
+  const router = await renderFilter()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  await user.type(
+    screen.getByRole('textbox', { name: 'Response model (fuzzy)' }),
+    'flash-lite'
+  )
+  await user.click(
+    screen.getByRole('combobox', { name: 'Response model mismatch' })
+  )
+  await user.click(
+    await screen.findByRole('option', {
+      name: 'Response model differs from the request',
+    })
+  )
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).toMatchObject({
+      page: 1,
+      responseModel: 'flash-lite',
+      responseModelMismatch: true,
+    })
+  )
+  expect(screen.getByRole('button', { name: /Collapse/ })).toHaveTextContent(
+    '2'
+  )
+})
+
+it('shows the response model filters of the URL and clears the mismatch', async () => {
+  const router = await renderFilter(
+    '/usage-logs/common?responseModel=glm&responseModelMismatch=true'
+  )
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  expect(
+    screen.getByRole('textbox', { name: 'Response model (fuzzy)' })
+  ).toHaveValue('glm')
+  expect(
+    screen.getByRole('combobox', { name: 'Response model mismatch' })
+  ).toHaveTextContent('Response model differs from the request')
+
+  await user.click(
+    screen.getByRole('combobox', { name: 'Response model mismatch' })
+  )
+  await user.click(
+    await screen.findByRole('option', { name: 'Response model: All' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).not.toHaveProperty(
+      'responseModelMismatch'
+    )
+  )
+  expect(router.state.location.search).toMatchObject({ responseModel: 'glm' })
+})
+
 it('searches every log again after choosing all stream modes', async () => {
   const router = await renderFilter('/usage-logs/common?stream=non_stream')
   const user = userEvent.setup()

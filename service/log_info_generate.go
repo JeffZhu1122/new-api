@@ -143,6 +143,9 @@ func AppendResponseModelLogInfo(relayInfo *relaycommon.RelayInfo, other *model.L
 		return
 	}
 	observation := relayInfo.ResponseModel
+	// The logs columns keep every declaration so the usage logs can be
+	// searched by it, including one equal to the requested model.
+	other.SetResponseModel(observation.ReturnedModel, observation.Mismatch())
 	if observation.ReturnedModel == observation.RequestedModel &&
 		(observation.UpstreamModel == "" || observation.UpstreamModel == observation.RequestedModel) &&
 		(relayInfo.ChannelMeta == nil || !relayInfo.IsModelMapped) {

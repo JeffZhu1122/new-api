@@ -81,6 +81,13 @@ type Log struct {
 	// FirstResponseMs is the time to first token of a consume log, copied
 	// from other.frt so it can be filtered; 0 means not recorded.
 	FirstResponseMs int `json:"first_response_ms" gorm:"default:0"`
+	// ResponseModel is the model the upstream declared in its response, empty
+	// when it declared none. ResponseModelMismatch is that model disagreeing
+	// with the requested and upstream models by the rule of the usage-log
+	// warning, judged when the log is written. Both are kept for filtering;
+	// other.response_model holds the full observation.
+	ResponseModel         string `json:"response_model,omitempty" gorm:"type:varchar(191);default:''"`
+	ResponseModelMismatch bool   `json:"response_model_mismatch,omitempty"`
 }
 
 // don't use iota, avoid change log type value
@@ -287,6 +294,7 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 	requestId := c.GetString(common.RequestIdKey)
 	upstreamRequestId := c.GetString(common.UpstreamRequestIdKey)
 	otherStr := other.JSONString()
+	responseModel, responseModelMismatch := other.responseModelColumns()
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -316,9 +324,11 @@ func RecordErrorLog(c *gin.Context, userId int, channelId int, modelName string,
 			}
 			return ""
 		}(),
-		RequestId:         requestId,
-		UpstreamRequestId: upstreamRequestId,
-		Other:             otherStr,
+		RequestId:             requestId,
+		UpstreamRequestId:     upstreamRequestId,
+		Other:                 otherStr,
+		ResponseModel:         responseModel,
+		ResponseModelMismatch: responseModelMismatch,
 	}
 	err := createLog(log)
 	if err != nil {
@@ -362,6 +372,7 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 	if frt, ok := other.Snapshot()["frt"].(float64); ok && frt > 0 {
 		firstResponseMs = int(frt)
 	}
+	responseModel, responseModelMismatch := other.responseModelColumns()
 	// 判断是否需要记录 IP
 	needRecordIp := false
 	if settingMap, err := GetUserSetting(userId, false); err == nil {
@@ -391,10 +402,12 @@ func RecordConsumeLog(c *gin.Context, userId int, params RecordConsumeLogParams)
 			}
 			return ""
 		}(),
-		RequestId:         requestId,
-		UpstreamRequestId: upstreamRequestId,
-		Other:             otherStr,
-		FirstResponseMs:   firstResponseMs,
+		RequestId:             requestId,
+		UpstreamRequestId:     upstreamRequestId,
+		Other:                 otherStr,
+		FirstResponseMs:       firstResponseMs,
+		ResponseModel:         responseModel,
+		ResponseModelMismatch: responseModelMismatch,
 	}
 	err := createLog(log)
 	if err != nil {
@@ -553,6 +566,12 @@ type LogMetricsFilter struct {
 	// consume and error logs record a request's stream mode, so it also
 	// leaves out top-up, management and other logs.
 	Stream *bool
+	// ResponseModel matches the model the upstream declared in its response,
+	// like the model name filter: exactly, or as a LIKE pattern with %.
+	ResponseModel string
+	// ResponseModelMismatch keeps the logs whose response model disagrees
+	// with the requested model.
+	ResponseModelMismatch bool
 }
 
 func (f LogMetricsFilter) IsZero() bool {
@@ -561,7 +580,7 @@ func (f LogMetricsFilter) IsZero() bool {
 			return false
 		}
 	}
-	return len(f.StatusCodes) == 0 && f.Stream == nil
+	return len(f.StatusCodes) == 0 && f.Stream == nil && f.ResponseModel == "" && !f.ResponseModelMismatch
 }
 
 type logMetricBound struct {
@@ -583,8 +602,8 @@ func (f LogMetricsFilter) bounds() []logMetricBound {
 }
 
 // applyTo adds the filter to a logs query whose columns carry prefix ("logs."
-// or "").
-func (f LogMetricsFilter) applyTo(tx *gorm.DB, prefix string) *gorm.DB {
+// or ""). It fails on a response model pattern the log searches refuse.
+func (f LogMetricsFilter) applyTo(tx *gorm.DB, prefix string) (*gorm.DB, error) {
 	for _, bound := range f.bounds() {
 		if bound.value != nil {
 			tx = tx.Where(prefix+bound.condition, *bound.value)
@@ -608,7 +627,14 @@ func (f LogMetricsFilter) applyTo(tx *gorm.DB, prefix string) *gorm.DB {
 	if f.Stream != nil {
 		tx = tx.Where(prefix+"is_stream = ? AND "+prefix+"type IN ?", *f.Stream, []int{LogTypeConsume, LogTypeError})
 	}
-	return tx
+	tx, err := applyExplicitLogTextFilter(tx, prefix+"response_model", f.ResponseModel)
+	if err != nil {
+		return nil, err
+	}
+	if f.ResponseModelMismatch {
+		tx = tx.Where(prefix+"response_model_mismatch = ?", true)
+	}
+	return tx, nil
 }
 
 // LogFilter is the usage-log search shared by the log list and the log export.
@@ -661,8 +687,7 @@ func (f LogFilter) apply(tx *gorm.DB) (*gorm.DB, error) {
 	if f.Group != "" {
 		tx = tx.Where("logs."+logGroupCol+" = ?", f.Group)
 	}
-	tx = f.Metrics.applyTo(tx, "logs.")
-	return tx, nil
+	return f.Metrics.applyTo(tx, "logs.")
 }
 
 func GetAllLogs(filter LogFilter, startIdx int, num int) (logs []*Log, total int64, err error) {
@@ -861,7 +886,9 @@ func SumUsedQuota(logType int, startTimestamp int64, endTimestamp int64, modelNa
 	if group != "" {
 		tx = tx.Where(logGroupCol+" = ?", group)
 	}
-	tx = metrics.applyTo(tx, "")
+	if tx, err = metrics.applyTo(tx, ""); err != nil {
+		return stat, err
+	}
 
 	tx = tx.Where("type = ?", LogTypeConsume)
 

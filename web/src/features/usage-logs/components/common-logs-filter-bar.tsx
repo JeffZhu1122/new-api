@@ -47,6 +47,9 @@ import { getUserGroups } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import {
+  LOG_RESPONSE_MODEL_MODE_ALL_VALUE,
+  LOG_RESPONSE_MODEL_MODE_FILTERS,
+  LOG_RESPONSE_MODEL_MODE_MISMATCH_VALUE,
   LOG_STATUS_CODE_OPTIONS,
   LOG_STREAM_MODE_ALL_VALUE,
   LOG_STREAM_MODE_FILTERS,
@@ -113,6 +116,8 @@ function buildSearchSourceKey(values: {
   ttftMax?: unknown
   statusCodes?: unknown
   stream?: unknown
+  responseModel?: unknown
+  responseModelMismatch?: unknown
   type?: unknown
 }) {
   return [
@@ -137,6 +142,8 @@ function buildSearchSourceKey(values: {
       ? values.statusCodes.join(',')
       : values.statusCodes,
     values.stream,
+    values.responseModel,
+    values.responseModelMismatch,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -199,6 +206,8 @@ export function CommonLogsFilterBar<TData>(
       ttftMax: searchParams.ttftMax,
       statusCodes: searchParams.statusCodes,
       stream: searchParams.stream,
+      responseModel: searchParams.responseModel,
+      responseModelMismatch: searchParams.responseModelMismatch,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -223,6 +232,8 @@ export function CommonLogsFilterBar<TData>(
       ttftMax: searchParams.ttftMax?.toString(),
       statusCodes: searchParams.statusCodes?.map(String),
       stream: searchParams.stream,
+      responseModel: searchParams.responseModel || undefined,
+      responseModelMismatch: searchParams.responseModelMismatch || undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -249,6 +260,8 @@ export function CommonLogsFilterBar<TData>(
     searchParams.ttftMax,
     searchParams.statusCodes,
     searchParams.stream,
+    searchParams.responseModel,
+    searchParams.responseModelMismatch,
     searchParams.type,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
@@ -260,7 +273,7 @@ export function CommonLogsFilterBar<TData>(
   const handleChange = useCallback(
     (
       field: keyof CommonLogFilters,
-      value: Date | string | string[] | undefined
+      value: Date | string | string[] | boolean | undefined
     ) => {
       setDraft((current) => {
         const base =
@@ -339,6 +352,8 @@ export function CommonLogsFilterBar<TData>(
   const hasTtftRange = !!filters.ttftMin || !!filters.ttftMax
   const hasStatusCodes = (filters.statusCodes?.length ?? 0) > 0
   const hasStreamMode = !!filters.stream
+  const hasResponseModel = !!filters.responseModel?.trim()
+  const hasResponseModelMismatch = !!filters.responseModelMismatch
   const hasExpandedFilters =
     !!filters.token ||
     !!filters.username ||
@@ -350,7 +365,9 @@ export function CommonLogsFilterBar<TData>(
     hasUseTimeRange ||
     hasTtftRange ||
     hasStatusCodes ||
-    hasStreamMode
+    hasStreamMode ||
+    hasResponseModel ||
+    hasResponseModelMismatch
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -368,6 +385,8 @@ export function CommonLogsFilterBar<TData>(
     hasTtftRange,
     hasStatusCodes,
     hasStreamMode,
+    hasResponseModel,
+    hasResponseModelMismatch,
   ].filter(Boolean).length
   const sensitiveInputClass = sensitiveVisible
     ? undefined
@@ -385,6 +404,14 @@ export function CommonLogsFilterBar<TData>(
   const streamModeItems = useMemo(
     () =>
       LOG_STREAM_MODE_FILTERS.map((mode) => ({
+        value: mode.value,
+        label: t(mode.label),
+      })),
+    [t]
+  )
+  const responseModelModeItems = useMemo(
+    () =>
+      LOG_RESPONSE_MODEL_MODE_FILTERS.map((mode) => ({
         value: mode.value,
         label: t(mode.label),
       })),
@@ -650,6 +677,44 @@ export function CommonLogsFilterBar<TData>(
           <SelectContent alignItemWithTrigger={false}>
             <SelectGroup>
               {streamModeItems.map((mode) => (
+                <SelectItem key={mode.value} value={mode.value}>
+                  {mode.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </LogsFilterField>
+      <LogsFilterField>
+        <LogsFilterInput
+          placeholder={t('Response model (fuzzy)')}
+          aria-label={t('Response model (fuzzy)')}
+          value={filters.responseModel || ''}
+          onChange={(e) => handleChange('responseModel', e.target.value)}
+          onKeyDown={handleKeyDown}
+        />
+      </LogsFilterField>
+      <LogsFilterField>
+        <Select
+          items={responseModelModeItems}
+          value={
+            filters.responseModelMismatch
+              ? LOG_RESPONSE_MODEL_MODE_MISMATCH_VALUE
+              : LOG_RESPONSE_MODEL_MODE_ALL_VALUE
+          }
+          onValueChange={(value) =>
+            handleChange(
+              'responseModelMismatch',
+              value === LOG_RESPONSE_MODEL_MODE_MISMATCH_VALUE || undefined
+            )
+          }
+        >
+          <SelectTrigger aria-label={t('Response model mismatch')}>
+            <SelectValue className='min-w-0' />
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {responseModelModeItems.map((mode) => (
                 <SelectItem key={mode.value} value={mode.value}>
                   {mode.label}
                 </SelectItem>

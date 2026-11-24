@@ -206,4 +206,38 @@ describe('usage log filter params', () => {
       stream: 'non_stream',
     })
   })
+
+  it('sends the response model box as a contains match and a pattern unchanged', () => {
+    expect(params({ responseModel: 'flash-lite' }).response_model).toBe(
+      '%flash-lite%'
+    )
+    expect(params({ responseModel: 'gemini-3%' }).response_model).toBe(
+      'gemini-3%'
+    )
+  })
+
+  it('sends the mismatch filter only when it is chosen', () => {
+    expect(params({ responseModelMismatch: true })).toMatchObject({
+      response_model_mismatch: 'true',
+    })
+    expect(params({ responseModelMismatch: false })).not.toHaveProperty(
+      'response_model_mismatch'
+    )
+    expect(params({})).not.toHaveProperty('response_model_mismatch')
+  })
+
+  it('keeps the response model filters in the URL and drops a blank box', () => {
+    expect(
+      buildSearchParams(
+        { responseModel: ' flash-lite ', responseModelMismatch: true },
+        'common'
+      )
+    ).toEqual({ responseModel: 'flash-lite', responseModelMismatch: true })
+    expect(
+      buildSearchParams(
+        { responseModel: '   ', responseModelMismatch: false },
+        'common'
+      )
+    ).toEqual({})
+  })
 })

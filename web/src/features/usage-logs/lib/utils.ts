@@ -243,6 +243,12 @@ export function buildApiParams(config: {
     ...(searchParams.stream === 'stream' || searchParams.stream === 'non_stream'
       ? { is_stream: String(searchParams.stream === 'stream') }
       : {}),
+    ...(searchParams.responseModel
+      ? { response_model: toModelNameSearch(String(searchParams.responseModel)) }
+      : {}),
+    ...(searchParams.responseModelMismatch === true
+      ? { response_model_mismatch: 'true' }
+      : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 

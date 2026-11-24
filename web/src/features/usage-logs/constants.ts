@@ -375,6 +375,21 @@ export const LOG_STREAM_MODE_FILTERS = [
   { value: 'non_stream', label: 'Non-stream requests' },
 ] as const
 
+/** No response model mismatch filter */
+export const LOG_RESPONSE_MODEL_MODE_ALL_VALUE = 'all'
+
+/** The mismatch choice of the response model filter */
+export const LOG_RESPONSE_MODEL_MODE_MISMATCH_VALUE = 'mismatch'
+
+/** Response model choices of the usage-log filter (labels are i18n keys) */
+export const LOG_RESPONSE_MODEL_MODE_FILTERS = [
+  { value: LOG_RESPONSE_MODEL_MODE_ALL_VALUE, label: 'Response model: All' },
+  {
+    value: LOG_RESPONSE_MODEL_MODE_MISMATCH_VALUE,
+    label: 'Response model differs from the request',
+  },
+] as const
+
 /**
  * HTTP status codes offered by the usage-log status code filter; others can
  * be typed in. They carry no hint: MultiSelect marks hinted chips with an
