@@ -4,12 +4,12 @@
 
 | 项目 | 值 |
 |---|---|
-| 上游基线（merge-base） | `bd6bb5301` — 2026-11-09 `feat: support HOST env to set the listen address (#8269)` |
-| 最近一次同步 | 2026-11-10，rebase 到 `bd6bb5301`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 66 个（含本文档相关提交） |
-| 变更规模 | 397 个文件，+40022 / −2239 行（不含本文档） |
+| 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
+| 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
+| fork 专有提交数 | 74 个（含本文档相关提交） |
+| 变更规模 | 468 个文件，+48399 / −2969 行（不含本文档） |
 
-同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log bd6bb5301..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
+同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
 ---
 
@@ -314,7 +314,7 @@ Claude Code / Anthropic SDK 在发送前用 `/v1/messages/count_tokens` 估算�
 
 ### 计费
 
-- `relay/request_billing.go` `PrepareRequestBilling`：`isCountTokens` 为真时，敏感词检查后直接 `return nil`，跳过 `EstimateRequestToken`、`ModelPriceHelper`、`PreConsumeBilling`。**不预扣**，`info.Billing` 为 nil，模型无价格配置也能用。`controller/relay.go` 中 `!isCountTokens` 才执行 `PrepareTieredBillingForSelectedGroup`。
+- `relay/request_billing.go` `PrepareRequestBilling`：relay mode 为 count_tokens / input_tokens 时一开始就 `return nil`，跳过 `EstimateRequestToken`、`ModelPriceHelper`、`PreConsumeBilling`。**不预扣**，`info.Billing` 为 nil，模型无价格配置也能用。`controller/relay.go` 中 `!isCountTokens` 才执行 `PrepareTieredBillingForSelectedGroup`。
 - 日志：`service/text_quota.go` `PostCountTokensLog(ctx, info, inputTokens, endpoint)` 仅在上游 200 时写 `RecordConsumeLog`：`Quota: 0`、`PromptTokens` = 上游响应的 `input_tokens`、`Content: "<endpoint> 调用，不计费"`、`Other.endpoint = "count_tokens" | "input_tokens"`。不触碰用户 / 令牌 / 渠道额度。
 
 ### 请求校验与透传
@@ -334,7 +334,7 @@ Claude Code / Anthropic SDK 在发送前用 `/v1/messages/count_tokens` 估算�
 ### 注意事项
 
 - 上游遗留的 `controller.CountClaudeTokens` 及其测试仍在但未路由。
-- 敏感词检查仍生效。
+- 敏感词检查仍生效：上游从 2026-11 起把敏感词改为「请求过滤」请求插件，在 `controller/relay.go` 入口（`requestplugin.Ingress`）对所有请求执行，计数请求同样经过；`PrepareRequestBilling` 里不再有敏感词检查。
 - 计数请求会占用 §8 渠道 RPM/TPM 槽位；上游非 200 会走 `processChannelError`，可能触发渠道自动禁用。
 - Claude 校验沿用 `/v1/messages` 规则，`max_tokens` 越界会 400，尽管该字段对 count_tokens 无意义。
 
@@ -565,7 +565,7 @@ Anthropic 组织 OAuth access token（`sk-ant-oat…`）必须用 `Authorization
 
 - 状态值（`common/constants.go`）：`ChannelStatusEnabled = 1`、`ChannelStatusManuallyDisabled = 2`、`ChannelStatusAutoDisabled = 3`。
 - **新建**：后端 `AddChannel` 不强制状态，沿用请求体 `status`。默认来自前端 `channel-form.ts` `CHANNEL_FORM_DEFAULT_VALUES.status = CHANNEL_STATUS.MANUAL_DISABLED`（上游为 ENABLED）；管理员可在保存前把开关切回启用。直接调 API 的客户端仍可传 `status = 1`。
-- **复制**：后端 `CopyChannel`（`controller/channel.go`）无条件 `clone.Status = ChannelStatusManuallyDisabled`（上游沿用源渠道状态），无参数可关闭。
+- **复制**：后端 `CopyChannel`（`controller/channel.go`）无条件 `clone.Status = ChannelStatusManuallyDisabled`（上游沿用源渠道状态），无参数可关闭。上游从 2026-11 起复制插件渠道时丢弃登录凭据（`service.DropPluginCredentials`）：凭据全被丢掉的副本改为自动禁用、原因为需要登录，登录后自动恢复；还留有静态 Key 的副本保持手动禁用。上游测试 `TestCopyChannelDropsCredentials` 的最后一个断言按此改为手动禁用。
 - **ability 跟随**：`model/ability.go` `AddAbilities` 写入 `Enabled: channel.Status == ChannelStatusEnabled`，因此禁用渠道的 ability 行全部 `enabled = false`，选路不会命中。后续启用走 `UpdateChannelStatus` / `BatchUpdateChannelStatus`。
 - **新建后直接启用（修复）**：开了内存缓存时（例如配置了 Redis），`AddChannel` 只写库、不刷新渠道缓存，而 `model.UpdateChannelStatus` 原来发现渠道不在缓存里就直接返回「未改变」：接口回 `success: true, data: false`，前端提示已启用，渠道却还是禁用，要进渠道点一次保存（`UpdateChannel` 会刷新缓存）才能启用。现在渠道不在缓存里时跳过缓存那一步，照常改数据库和 ability，接口随后刷新缓存。多节点部署中，其他节点的缓存在下一次同步前同样没有这个渠道，也由此修复。上游从 2026-11 起不让请求失败把手动禁用改成自动禁用（`ada15c050`）：缓存命中时这个判断在缓存分支里做，缓存里没有这个渠道时由数据库那一步的同一判断兜底。
 
@@ -691,7 +691,7 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 
 ### 防止被重新启用
 
-已耗尽渠道在管理员调高上限前不得回到启用状态，四条启用路径全部加了守卫：
+已耗尽渠道在管理员调高上限前不得回到启用状态，五条启用路径全部加了守卫：
 
 | 路径 | 行为 |
 |---|---|
@@ -699,6 +699,7 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 | 单个启用（`controller.UpdateChannelStatus`） | 目标为启用且渠道已耗尽 → `success:false`，消息 `channel.quota_limit_reached`（"该渠道已达额度上限，请先调高额度上限再启用"） |
 | 批量启用（`controller.BatchUpdateChannelStatus`） | 跳过已耗尽渠道，不计入 `data`；有跳过时 `message` 为 `channel.quota_limit_skipped`（"N 个渠道已达额度上限，保持禁用"） |
 | 标签启用（`model.EnableChannelByTag` → `controller.EnableTagChannels`） | 返回值改为 `([]int, error)`，已耗尽渠道不更新状态并把其 abilities 重新置为禁用；控制器在有跳过时返回同一条消息 |
+| 插件定时任务（上游 2026-11 的 provider 插件 `scheduled` 钩子，`service/provider_plugin_scheduled.go` `runScheduledPlugin`） | 钩子返回 `keyStatus: "enabled"` 时，在 `UpdateScheduledChannelLocked` 事务**之前**读一次 `QuotaLimitReached()`，已耗尽则不改 Key / 渠道状态（凭据、余额等其他结果照常写入）。不能放进事务里的 `SetScheduledChannelKeyStatus`：SQLite 单连接下事务内再查 `channel_extend` 会互相等待 |
 
 `restoreMultiKeyChannelIfAvailable` 只恢复原因为 `All keys are disabled` 的渠道，不会误恢复。多 Key 渠道以整渠道维度禁用（`usingKey` 为空即写渠道级状态与原因）。后端 i18n 新增 `channel.quota_limit_reached` / `channel.quota_limit_skipped`（en / zh-CN / zh-TW）。
 
@@ -715,7 +716,7 @@ SQLite（glebarez/sqlite v1.11.0，modernc.org/sqlite v1.40.1，GORM v1.25.12）
 
 ### 测试
 
-`relaykit/dto/channel_extend_settings_test.go`（Validate 新增 8 例、IsZero、`TestChannelExtendSettingsQuotaLimitReached`）、`model/channel_extend_test.go`（`TestUpsertChannelExtendPersistsQuotaLimit` 含二次 AutoMigrate 与 `GetChannelExtendsByIds`；`TestUpdateChannelUsedQuotaDisablesChannelAtQuotaLimit` 覆盖未达 / 恰好达到 / 禁用后继续结算不重复通知 / 无上限渠道不受影响；`TestUpdateChannelUsedQuotaRefundNeverDisables`；`TestEnableChannelByTagKeepsExhaustedChannelsDisabled` 含 abilities 断言）、前端 `lib/__tests__/channel-quota-limit.test.ts`（倍率与上限校验、显示货币 → quota 单位换算、编辑回填）。
+`relaykit/dto/channel_extend_settings_test.go`（Validate 新增 8 例、IsZero、`TestChannelExtendSettingsQuotaLimitReached`）、`model/channel_extend_test.go`（`TestUpsertChannelExtendPersistsQuotaLimit` 含二次 AutoMigrate 与 `GetChannelExtendsByIds`；`TestUpdateChannelUsedQuotaDisablesChannelAtQuotaLimit` 覆盖未达 / 恰好达到 / 禁用后继续结算不重复通知 / 无上限渠道不受影响；`TestUpdateChannelUsedQuotaRefundNeverDisables`；`TestEnableChannelByTagKeepsExhaustedChannelsDisabled` 含 abilities 断言）、`service/provider_plugin_test.go` `TestScheduledKeepsChannelAtQuotaLimitDisabled`（定时钩子报告 Key 可用：已用等于上限的渠道保持自动禁用，低于上限的恢复启用；去掉守卫时失败）、前端 `lib/__tests__/channel-quota-limit.test.ts`（倍率与上限校验、显示货币 → quota 单位换算、编辑回填）。
 
 ### 数据库验证
 
@@ -955,16 +956,58 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/features/channels/{api.ts,types.ts,constants.ts,lib/channel-form*.ts,lib/channel-configuration.ts,lib/channel-actions.ts,components/drawers/channel-mutate-drawer.tsx}` | §39 渠道的「指纹配置」选择、HTTP 协议的 `HTTP/3 (QUIC)` 选项与它的组合校验、「测试消息」「测试最大 Tokens」（`setting` JSON 的读写、表单、抽屉字段、查询键） |
 | `web/src/features/system-settings/operations/{index,section-registry}.tsx` / `types.ts` | §39 「出站指纹」一节（`fingerprint`）的默认值、传参与类型 |
 | `web/src/i18n/locales/*.json` | §39 出站指纹、HTTP/3、测试请求的文案（7 个语言文件，按行插入） |
+| `model/option.go` / `model/request_policy.go` / `web/src/features/system-settings/{types.ts,security/index.tsx}` | 上游 2026-11 删掉了 5 个敏感词 / 流缓存 option（迁移到请求插件），fork 的新 key 紧挨着它们，每个改到这几处的提交都会冲突：保留 fork 的 key，去掉敏感词那几行 |
+| `relay/request_billing.go` | §6 免费路径：relay mode 为计数时一开始就返回；上游删掉了这里的敏感词检查，fork 不要再加回 |
+| `service/task_billing.go` | 上游在消费日志前加了 `request_plugins` 管理员字段与 `appendRequestPluginRecord`，放在 fork 的 `logParams` 之前 |
+| `model/task.go` | 上游去掉了 `progress != 100%` 条件（进度 100% 但未结束的任务继续轮询），§38 的 `platform <> asset_library` 照常追加 |
+| `model/channel.go` / `service/channel.go` | 上游把渠道状态写入改为 `UpdateChannelOtherInfo`（删掉了 `saveStatusState` 与 `Save`），`shouldCloseActiveWebSocketsAfterDisable` 改为返回 `(bool, *Channel)`；§15 的 `QuotaLimitReached` 放在 `ErrChannelOtherInfoBusy` 之前，`EnableChannelByTag` 在状态更新成功后 `defer BumpSyncTopic` |
+| `service/provider_plugin_scheduled.go` | §15 插件定时钩子的启用守卫（事务之前读） |
+| `pkg/jsplugin/routing.go` | §38 `reservedRouteNamespaces` 加 `/asset-library`、`/asset-library-verification`：上游测试要求每个控制台页面都在表里，否则插件路由能占用页面路径 |
+| `controller/provider_plugin_test.go` / `model/channel_plugin_credential_test.go` | 上游测试只迁移上游的表，补 `ChannelExtend`；直接调 `GetChannel` / `GetRandomSatisfiedChannel` 的地方补 `nil` |
+| `middleware/distributor.go` | 上游给插件渠道加了 provider 插件上下文（`ContextKeyProviderPlugin`），fork 的 `ContextKeyChannelExtendSetting` 放在它之前 |
 
 ### 19.3 上游签名变化的传染点
 
-- `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`。
+- `model.GetRandomSatisfiedChannel(group, model, retry, filters, excludeChannelIds)` 与 `model.GetChannel(..., excludeChannelIds)`：上游新增调用点需补传 `nil`（2026-11-24 同步时上游新测试 `model/channel_plugin_credential_test.go` 有 7 处）。
+- 上游 2026-11 把 `service.PreWssConsumeQuota` 改为返回 `(int, error)`（扣了多少额度），fork 的 `service/wss_quota_test.go` 随之改为同时断言返回值。
 - `relaykit/` 必须独立可编译：改动 `relaykit/dto/*` 后运行 `cd relaykit && GOWORK=off go build ./...`。
 - 日志查询（上游 rc.44 起）：`model.GetAllLogs` / `GetUserLogs` / `StreamAllLogs` / `StreamUserLogs` 都接收 `model.LogFilter`；fork 的渠道列表与指标筛选是它的字段，新增调用点用 `logFilterFromQuery` 构造。
 - 通知（上游 rc.45 起）：`NotifyRootUser` 已删除，渠道类通知用 `NotifyChannelWatchers(notifyType, func(lang) (subject, content))`。
 - 访问令牌按接口授权（上游 2026-09 起）：新增管理接口时，经 `channelPermissionRoutes` 等 `handlePermissionRoute` 注册的会自动声明；其余（如 `adminRoute.GET(...)`）要在 `accessTokenRouteRules` 里补规则，`router/access_token_scope_test.go` 会检查。
 
 ### 19.4 同步记录
+
+- **2026-11-24，rebase 到 `cb074d31e`**（上游 42 个提交，2026-11-10 至 11-24：
+  - 插件（#8271 及后续）：provider 插件（渠道类型 61 上按模型名选插件、插件登录凭据、`scheduled` 定时钩子可自动禁用 / 恢复 Key）、请求插件（6 个内置：请求过滤、参数覆盖、请求脱敏、内容审核、图片压缩、自动推理；可声明作用范围，管理员确认一次后自动覆盖）、社区插件市场与 newapi.pro 镜像、批量更新已安装的市场插件；多节点改用 `system_tasks` 里的 `sync_*` 任务同步配置。
+  - 敏感词：5 个旧 option（`CheckSensitiveEnabled`、`CheckSensitiveOnPromptEnabled`、`StopOnSensitiveEnabled`、`SensitiveWords`、`StreamCacheQueueLength`）在首次启动时删除，词表迁到一个全局「请求过滤」实例，两个检查开关都开着时才启用；不检查回复（旧的 `StopOnSensitiveEnabled` 在旧代码里本来就没有生效）。
+  - 依赖：JSON 改用 `MoeForge/moego/json`，正则统一为 `moego/regexp`（moego v0.1.0-alpha.5，alpha.3 修复了无 AVX 的 x86-64 CPU 上的 SIGILL），moejs 迁到 `MoeForge/moejs` v0.1.0，请求体按需流式读取；前端依赖批量升级（motion 13、nanoid 6、jsdom 30 等）。
+  - 修复：请求本身导致的错误不再禁用渠道；已删除用户的 Key 返回 401；进度 100% 但未结束的任务继续轮询；私有渠道的任务媒体下载；模型广场按访问者分组过滤（不再显示私有分组）；DeepSeek developer 角色与端点元数据；Gemini 4 思考级别；GPT-6.2 参数规则；批量改标签在事务内读取。
+  - 其他：易支付 RSA 签名（默认仍是 MD5）与 RSA 回调的商户号校验；Kling 4.0 的 4:3 / 3:4；doubao-seedream-5-5；vertex-ai 1.3.1；密码强度提示。
+  - 冲突（43 个文件，在各自的提交里解决）：
+    - 7 个语言文件：按 §19.1 的 key 级合并（merge driver 重写，仍未放进仓库）。合并后 7 种语言各 8260 个 key（上游 7796 个），fork 新增与修改的 key 都在，上游 key 的顺序没变；上游有 5 个 key 不在：是 fork 的安全修复删掉的重置密码提示，代码里已没有引用。两边都新增的 key 只有俄语 `Off`，用 fork 的「Выкл.」。
+    - `.github/workflows/` 2 个：保持删除。
+    - 敏感词相关 4 个文件（`model/option.go`、`model/request_policy.go`、前端 `types.ts`、`security/index.tsx`）：见 §19.2，fork 的 key 保留，敏感词行跟上游删除。
+    - `relay/request_billing.go`（计费入口）：§6 免费路径改为一开始返回，不再带敏感词检查。
+    - `service/task_billing.go`、`model/log.go`：上游的请求插件记录与 fork 的 `logParams` / `logRequestSummary` 并存。
+    - `model/channel.go`（5 处）、`service/channel.go`、`model/channel_cache.go`（每个改到 `InitChannelCache` 开头的提交各冲突一次）、`middleware/distributor.go`、`relay/channel/api_request.go`（fork 的 `cancelTimeout` + 上游不再打印带凭据的 URL）、`model/task.go`、`router/api-router.go`、`controller/relay.go`：两边都保留，细节见 §19.2。
+    - `relaykit/dto/channel_settings.go`（含测试）、`go.mod`、`THIRD-PARTY-LICENSES.md`：两边的字段都保留；`klauspost/compress` 取 fork 的 v1.19.2，加上上游新增的 `ledongthuc/pdf`；测试的正则改用 `moego/regexp`。
+    - 前端：`package.json` / `bun.lock` 取上游的版本号再加回 Geist 字体；`routeTree.gen.ts` 用路由生成器重新生成；`channel-mutate-drawer.tsx`、`channels-columns.tsx`、`channels/api.ts`、日志维护与运营设置几个文件两边都保留。
+    - 支付：`controller/payment_webhook_availability_test.go` 上游的 RSA 测试与 fork 的「支付完成必须对应订单」测试都保留；`common/log_text.zh-CN.json` 保留上游新增的商户号不匹配文案，收到请求那一行用 fork 不带参数的版本。
+    - Kling：fork 的 1.3.0 与上游的 4:3 / 3:4 自动合并。
+  - 没有文本冲突、但需要适配的地方（已并入对应的原提交）：§15 插件定时钩子的启用守卫与其测试；§12 复制插件渠道的测试断言；§38 插件保留路径；上游新测试补 `ChannelExtend` 与 `nil` 参数；`PreWssConsumeQuota` 新签名；日志维护测试补上游新增的 `system_task_setting.retention_days`。
+  - 保留检查：对比 rebase 前的备份分支 `backup/main-before-upstream-cb074d31e`，fork 改过的 464 个文件中，上游没改过的 363 个除两个测试的签名适配外与备份逐字节相同；两边都改过的 101 个保留了 fork 新增的每一行，只有 6 处是上面列出的有意改写（敏感词行删除、免费路径改为提前返回、新签名、依赖数组换行）；只有上游改过的 423 个文件除上面 5 处适配外与上游相同。
+  - 验证：
+    - Go：`go build ./...`、`go vet ./...`、`gofmt -l` 无输出、`go test ./...` 全部通过（52 个包）；relaykit、tokenkit 用 `GOWORK=off` 独立构建、vet 与测试通过。
+    - 前端（本机没有 Bun，用 npm 在临时副本里按 `bun.lock` 的版本安装）：`tsgo -b` 无类型错误；`rsbuild build` 通过；Vitest 281 个文件 3239 个用例全部通过；fork 改过的 227 个前端文件 oxlint 0 error（4 个 warning）；oxfmt 只有 2 个文件不过，不过的行都是上游自己写的，未改动。
+    - 数据库：SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24：
+      - `model`、`controller`、`service` 三个包带 `TEST_MYSQL_DSN` / `TEST_POSTGRES_DSN` 运行：只有 `TestDeleteRedemptionBatch` 的 mysql / postgres 子测试失败，纯上游代码在同样条件下失败得一样（这个测试单独运行时在上游、同步前的 fork 上也都失败，依赖别的测试留下的全局状态），其余全部通过。
+      - 全新库连续启动两次，第二次没有任何 DDL；同步前的 fork 建的库（预置渠道、`channel_extend`、`user_extend` 各一行和 5 个敏感词 option）用新版本启动两次：第一次只建了上游新的组合索引 `idx_system_tasks_type_id`，第二次没有任何 DDL（MySQL 查 general log，PostgreSQL 开 `log_statement=ddl`，SQLite 比对 schema）；敏感词 option 全部删除，迁成一个启用的全局请求过滤实例，词表完整；预置数据原样保留；行数只有 `options`、`system_tasks` 变化。升级库与全新库唯一的差别是 `system_tasks` 上遗留的旧索引 `idx_system_tasks_type`：上游把它换成了组合索引但不删旧的，三种库一样，不影响功能。
+  - 部署注意：
+    - 升级前备份数据库（至少 `options` 表）：敏感词 option 在首次启动时删除，退回旧版本后敏感词检查会失效。
+    - 用过敏感词且需要检查模型回复的站点，升级后到请求插件里打开该实例的「检查回复」。
+    - 没有新表；`system_tasks` 自动加一个索引。
+    - JSON / 正则换了实现（moego alpha 版），x86-64 服务器的 CPU 不带 AVX 时也能运行（alpha.3 起）；上线前建议先在预发环境跑一轮真实流量。
+    - 前端按 `bun.lock` 构建（Docker 构建会自动安装）；本地开发需要 Bun 1.4.4。
 
 - **2026-11-10，rebase 到 `bd6bb5301`**（上游 33 个提交，2026-10-30 至 11-09：
   - 任务插件（#8117 及后续）：插件按厂商官方路径提供服务，每条路由另有 `/{插件 key}` 副本；原生路径的请求体原样发给厂商，回复格式与状态码跟厂商一致；Ark、Kling、Vidu、MiniMax 拒绝 `callback_url`；即梦改用官方 Bearer API，删除 `/jimeng/` 与 MiniMax 的 `GET /v1/files/{id}` 占位；Seedream / Wan 原生流式，推流后不再退款；Kling 4.0；Vertex AI 上的 Gemini Omni 视频（按 token 计费，含 1.2 flash）；上传安装的插件恢复顶层 `/v1` 路径；插件冲突时 `force` 不再跳过检查；9 个内置插件升小版本（doubao 1.4.0、kling 1.2.0 等）。
