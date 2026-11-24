@@ -4,6 +4,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
@@ -345,6 +346,17 @@ func TestKlingModelPath(t *testing.T) {
 			{"4.0 omni with an element", omniVideo, "kling-4.0",
 				map[string]any{"contents": []any{map[string]any{"type": "prompt", "text": "<<<element_1>>> waves"}, map[string]any{"type": "element", "element_id": "123", "id": "element_1"}},
 					"settings": map[string]any{"resolution": "720p", "duration": 30}}, 36},
+			{"4.0 text in 4K for 3 seconds", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "4k", "duration": 3}}, 10.5},
+			{"4.0 text in 4K at Kling's length", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "4k"}}, 105},
+			{"4.0 omni in 4K with a reference video", omniVideo, "kling-4.0",
+				map[string]any{"contents": []any{map[string]any{"type": "prompt", "text": "like <<<video_1>>>"}, map[string]any{"type": "feature_video", "url": "https://cdn.example/a.mp4", "id": "video_1"}},
+					"settings": map[string]any{"resolution": "4k", "duration": 3}}, 69.3},
+			{"4.0 HDR at 1080p for 3 seconds", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"dynamic_range": "hdr", "duration": 3}}, 5.4},
+			{"4.0 HDR in 4K for 3 seconds", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "4k", "dynamic_range": "hdr", "duration": 3}}, 12},
+			{"4.0 HDR in 4K with a reference video, HDR on the output alone", omniVideo, "kling-4.0",
+				map[string]any{"contents": []any{map[string]any{"type": "prompt", "text": "like <<<video_1>>>"}, map[string]any{"type": "feature_video", "url": "https://cdn.example/a.mp4", "id": "video_1"}},
+					"settings": map[string]any{"resolution": "4k", "dynamic_range": "hdr", "duration": 3}}, 70.8},
+			{"4.0 SDR named", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"dynamic_range": "sdr", "duration": 3}}, 4.5},
 			{"4.0 Flash text at Kling's defaults", textToVideo, "kling-4.0-flash", map[string]any{"prompt": "a cat"}, 12},
 			{"4.0 Flash omni with a reference video", omniVideo, "kling-4.0-flash",
 				map[string]any{"contents": []any{map[string]any{"type": "prompt", "text": "like @video_1"}, map[string]any{"type": "feature_video", "url": "https://cdn.example/a.mp4", "id": "video_1"}},
@@ -362,7 +374,6 @@ func TestKlingModelPath(t *testing.T) {
 				map[string]any{"contents": []any{map[string]any{"type": "prompt", "text": "@image_1 walks"}, map[string]any{"type": "refer_image", "url": "https://cdn.example/a.png", "id": "image_1"}},
 					"settings": map[string]any{"audio": "native"}}, 4},
 			{"3.0 Turbo at 1080p", textToVideo, "kling-3.0-turbo", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "1080p"}}, 5},
-			{"3.0 Turbo at a resolution it does not list", textToVideo, "kling-3.0-turbo", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "4k"}}, 5},
 			{"2.6 image with audio and a reference voice", imageToVideo, "kling-2.6",
 				map[string]any{"contents": []any{map[string]any{"type": "prompt", "text": "a cat"}, map[string]any{"type": "first_frame", "url": "https://cdn.example/a.png"}, map[string]any{"type": "voice", "voice_id": "v1", "id": "voice_1"}},
 					"settings": map[string]any{"audio": "native", "resolution": "1080p", "duration": 10}}, 12},
@@ -392,6 +403,12 @@ func TestKlingModelPath(t *testing.T) {
 			{"a duration above Kling 4.0 Flash's 20 seconds", textToVideo, "kling-4.0-flash", map[string]any{"prompt": "a cat", "settings": map[string]any{"duration": 21}}, "duration must be an integer from 3 to 20"},
 			{"a duration above Kling 3.0's 15 seconds", imageToVideo, "kling-3.0", map[string]any{"contents": []any{}, "settings": map[string]any{"duration": 16}}, "duration must be an integer from 3 to 15"},
 			{"a duration Kling 2.6 does not make", textToVideo, "kling-2.6", map[string]any{"prompt": "a cat", "settings": map[string]any{"duration": 7}}, "duration must be one of 5, 10"},
+			{"a resolution 3.0 Turbo does not make", textToVideo, "kling-3.0-turbo", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "4k"}}, "settings.resolution must be one of 720p, 1080p"},
+			{"a resolution 4.0 does not make", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "2k"}}, "settings.resolution must be one of 1080p, 720p, 4k"},
+			{"a resolution 4.0 Flash does not make", textToVideo, "kling-4.0-flash", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "1080p"}}, "settings.resolution must be one of 720p"},
+			{"HDR at 720p", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"resolution": "720p", "dynamic_range": "hdr"}}, "settings.dynamic_range hdr needs settings.resolution 1080p or 4k"},
+			{"HDR on 4.0 Flash", textToVideo, "kling-4.0-flash", map[string]any{"prompt": "a cat", "settings": map[string]any{"dynamic_range": "hdr"}}, "settings.dynamic_range hdr is not available for this model"},
+			{"a dynamic range Kling does not make", textToVideo, "kling-4.0", map[string]any{"prompt": "a cat", "settings": map[string]any{"dynamic_range": "dolby"}}, "settings.dynamic_range must be sdr or hdr"},
 			{"a model the endpoint does not serve", textToVideo, "kling-3.0-omni", map[string]any{"prompt": "a cat"}, "Kling does not serve kling-3.0-omni at /text-to-video"},
 			{"an earlier API model name", omniVideo, "kling-v3", map[string]any{"contents": []any{}}, "Kling does not serve kling-v3 at /omni-video"},
 		} {
@@ -427,6 +444,26 @@ func TestKlingModelPath(t *testing.T) {
 		assert.Equal(t, "https://gateway.example/kling/tasks?task_ids=task_x", query["url"], "another gateway serves Kling under /kling")
 		query = call(t, "buildQueryRequest", map[string]any{"taskId": "old_1", "action": "text_to_video", "baseUrl": "https://api-singapore.klingai.com", "apiKey": "ak|sk"})
 		assert.Equal(t, "https://api-singapore.klingai.com/v1/videos/text2video/old_1", query["url"], "earlier models keep their query path")
+
+		// A gateway Base URL that already ends with /kling gets no second one.
+		for _, baseURL := range []string{"https://api.ephone.ai/kling", "https://api.ephone.ai/kling/", "https://api.ephone.ai/KLING"} {
+			query = call(t, "buildQueryRequest", map[string]any{"taskId": "task_x", "baseUrl": baseURL, "apiKey": "sk-ep-relay", "state": map[string]any{"resolution": "1080p"}})
+			assert.Equal(t, strings.TrimSuffix(baseURL, "/")+"/tasks?task_ids=task_x", query["url"], baseURL)
+			submitted := call(t, "buildSubmitRequest", map[string]any{"baseUrl": baseURL, "apiKey": "sk-ep-relay", "model": "kling-4.0",
+				"requestBody": map[string]any{"model": "kling-4.0", "endpoint": "text-to-video", "vendorBody": map[string]any{"prompt": "a cat"}}})
+			assert.Equal(t, strings.TrimSuffix(baseURL, "/")+"/text-to-video/kling-4.0", submitted["url"], baseURL)
+			legacy := call(t, "buildQueryRequest", map[string]any{"taskId": "old_1", "action": "text_to_video", "baseUrl": baseURL, "apiKey": "sk-ep-relay"})
+			assert.Equal(t, strings.TrimSuffix(baseURL, "/")+"/v1/videos/text2video/old_1", legacy["url"], baseURL)
+		}
+		submitted := call(t, "buildSubmitRequest", map[string]any{"baseUrl": "https://api.ephone.ai/", "apiKey": "sk-ep-relay", "model": "kling-4.0",
+			"requestBody": map[string]any{"model": "kling-4.0", "endpoint": "text-to-video", "vendorBody": map[string]any{"prompt": "a cat"}}})
+		assert.Equal(t, "https://api.ephone.ai/kling/text-to-video/kling-4.0", submitted["url"], "a gateway root still gets /kling")
+
+		// A page instead of Kling's JSON, as a Base URL off Kling's API
+		// answers, names what came back.
+		_, err := plugin.Engine.Call(t.Context(), "parseSubmitResponse", map[string]any{"model": "kling-4.0"},
+			map[string]any{"statusCode": 200, "headers": map[string]any{"Content-Type": []any{"text/html; charset=utf-8"}}, "body": "<!doctype html><html></html>"})
+		assert.ErrorContains(t, err, "the upstream answered HTTP 200 text/html; charset=utf-8 instead of Kling's JSON; check the channel Base URL")
 
 		ctx := map[string]any{"taskId": "kling_4", "model": "kling-4.0", "state": map[string]any{"resolution": "1080p"}}
 		reply := func(entry map[string]any) map[string]any {
@@ -467,47 +504,63 @@ func TestKlingModelPath(t *testing.T) {
 	// converts, Kling 4.0 and 4.0 Flash settle on the durations Kling bills and
 	// the other models keep their reservation.
 	t.Run("settlement", func(t *testing.T) {
+		// usdBalance is how Kling reports a USD account's deduction, measured on
+		// a 3-second 4K task; it has no rate to units, and the reply names
+		// neither the resolution nor the dynamic range.
+		usdBalance := []any{map[string]any{"charge_type": "cash", "cash_type": "balance", "currency": "USD", "amount": "1.647", "list_price": "1.647"}}
 		for _, tc := range []struct {
 			name       string
 			model      string
 			resolution string
 			entry      map[string]any
 			wantUnits  any
+			// hdr marks a task submitted with settings.dynamic_range "hdr".
+			hdr bool
 		}{
 			{"resource package units", "kling-4.0", "1080p", map[string]any{"billing": []any{
 				map[string]any{"charge_type": "unit", "amount": "6", "package_type": "video"},
 				map[string]any{"charge_type": "unit", "amount": "4.5", "package_type": "video"},
-			}}, 10.5},
-			{"cash without an input video", "kling-4.0", "720p", map[string]any{"billing": []any{map[string]any{"charge_type": "cash", "amount": "10", "currency": "CNY"}}}, 10.0},
-			{"no billing at 1080p", "kling-4.0", "1080p", map[string]any{}, 15.0},
+			}}, 10.5, false},
+			{"cash without an input video", "kling-4.0", "720p", map[string]any{"billing": []any{map[string]any{"charge_type": "cash", "amount": "10", "currency": "CNY"}}}, 10.0, false},
+			{"no billing at 1080p", "kling-4.0", "1080p", map[string]any{}, 15.0, false},
 			{"part cash, input shorter than the output", "kling-4.0", "1080p", map[string]any{"usage": map[string]any{"input_duration": "4"}, "billing": []any{
 				map[string]any{"charge_type": "unit", "amount": "3", "package_type": "video"},
 				map[string]any{"charge_type": "cash", "amount": "15", "currency": "CNY"},
-			}}, 18.0},
-			{"cash, input longer than the output", "kling-4.0", "1080p", map[string]any{"usage": map[string]any{"input_duration": 25}, "billing": []any{map[string]any{"charge_type": "cash", "amount": "31.5", "currency": "CNY"}}}, 31.5},
-			{"cash at 720p with an input video", "kling-4.0", "720p", map[string]any{"usage": map[string]any{"input_duration": "10"}}, 12.0},
+			}}, 18.0, false},
+			{"cash, input longer than the output", "kling-4.0", "1080p", map[string]any{"usage": map[string]any{"input_duration": 25}, "billing": []any{map[string]any{"charge_type": "cash", "amount": "31.5", "currency": "CNY"}}}, 31.5, false},
+			{"cash at 720p with an input video", "kling-4.0", "720p", map[string]any{"usage": map[string]any{"input_duration": "10"}}, 12.0, false},
 			{"balance at its list price, not the reported duration", "kling-4.0", "720p", map[string]any{
 				"outputs": []any{map[string]any{"type": "video", "url": "https://cdn.example/out.mp4", "duration": "3.041"}},
 				"billing": []any{map[string]any{"charge_type": "cash", "cash_type": "balance", "amount": "2.55", "list_price": "3", "currency": "CNY"}},
-			}, 3.0},
+			}, 3.0, false},
 			{"a USD list price has no rate to units", "kling-4.0", "720p", map[string]any{
 				"usage":   map[string]any{"output_duration": "5"},
 				"billing": []any{map[string]any{"charge_type": "cash", "cash_type": "balance", "amount": "0.70", "list_price": "0.785", "currency": "USD"}},
-			}, 5.0},
+			}, 5.0, false},
 			{"the billed duration, not the video's own", "kling-4.0", "1080p", map[string]any{
 				"usage":   map[string]any{"output_duration": "10"},
 				"outputs": []any{map[string]any{"type": "video", "url": "https://cdn.example/out.mp4", "duration": "10.041"}},
-			}, 15.0},
-			{"4.0 Flash on its billed duration", "kling-4.0-flash", "720p", map[string]any{"usage": map[string]any{"output_duration": "10"}}, 6.0},
-			{"3.0 on its package units", "kling-3.0", "1080p", map[string]any{"billing": []any{map[string]any{"charge_type": "unit", "amount": "4", "package_type": "video"}}}, 4.0},
-			{"3.0 without a deduction keeps its reservation", "kling-3.0", "1080p", map[string]any{}, nil},
+			}, 15.0, false},
+			{"4.0 Flash on its billed duration", "kling-4.0-flash", "720p", map[string]any{"usage": map[string]any{"output_duration": "10"}}, 6.0, false},
+			{"4K on its billed duration", "kling-4.0", "4k", map[string]any{"usage": map[string]any{"output_duration": "3"}, "billing": usdBalance}, 10.5, false},
+			{"4K with a shorter input video", "kling-4.0", "4k", map[string]any{"usage": map[string]any{"output_duration": "3", "input_duration": "3"}, "billing": usdBalance}, 12.6, false},
+			{"HDR at 1080p on its billed duration", "kling-4.0", "1080p", map[string]any{"usage": map[string]any{"output_duration": "3"}, "billing": usdBalance}, 5.4, true},
+			{"HDR in 4K on its billed duration", "kling-4.0", "4k", map[string]any{"usage": map[string]any{"output_duration": "3"}, "billing": usdBalance}, 12.0, true},
+			{"HDR in 4K with a longer input video, HDR on the output alone", "kling-4.0", "4k", map[string]any{"usage": map[string]any{"output_duration": "5", "input_duration": "6"}}, 25.6, true},
+			{"HDR in package units as deducted", "kling-4.0", "4k", map[string]any{"billing": []any{map[string]any{"charge_type": "unit", "amount": "12", "package_type": "video"}}}, 12.0, true},
+			{"3.0 on its package units", "kling-3.0", "1080p", map[string]any{"billing": []any{map[string]any{"charge_type": "unit", "amount": "4", "package_type": "video"}}}, 4.0, false},
+			{"3.0 without a deduction keeps its reservation", "kling-3.0", "1080p", map[string]any{}, nil, false},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
 				entry := map[string]any{"id": "kling_4", "status": "succeeded", "outputs": []any{map[string]any{"type": "video", "url": "https://cdn.example/out.mp4", "duration": "10"}}}
 				for key, value := range tc.entry {
 					entry[key] = value
 				}
-				facts := call(t, "extractUsageOnComplete", map[string]any{"taskId": "kling_4", "model": tc.model, "state": map[string]any{"resolution": tc.resolution}}, map[string]any{"status": "SUCCESS"},
+				state := map[string]any{"resolution": tc.resolution}
+				if tc.hdr {
+					state["dynamicRange"] = "hdr"
+				}
+				facts := call(t, "extractUsageOnComplete", map[string]any{"taskId": "kling_4", "model": tc.model, "state": state}, map[string]any{"status": "SUCCESS"},
 					map[string]any{"code": 0, "data": []any{entry}})
 				if tc.wantUnits == nil {
 					assert.Nil(t, facts)
@@ -563,6 +616,24 @@ func TestKlingModelPath(t *testing.T) {
 			sent = submit(t, openaiVideo, "kling-4.0", body)
 			assert.Equal(t, tc.settings, sent.body["settings"], tc.size)
 		}
+
+		// A 4K size asks Kling 4.0 for 4K. HDR has no host-protocol field, so it
+		// comes in metadata.settings, which replaces the computed settings and
+		// is billed and checked like a native body.
+		sent = submit(t, openaiVideo, "kling-4.0", map[string]any{"model": "kling-4.0", "prompt": "a cat", "size": "3840x2160", "seconds": 5})
+		assert.Equal(t, map[string]any{"resolution": "4k", "aspect_ratio": "16:9", "duration": float64(5)}, sent.body["settings"])
+		assert.InDelta(t, 17.5, sent.units, 1e-9)
+		assert.Equal(t, map[string]any{"resolution": "4k"}, sent.state)
+		sent = submit(t, openaiVideo, "kling-4.0", map[string]any{"model": "kling-4.0", "prompt": "a cat",
+			"metadata": map[string]any{"settings": map[string]any{"resolution": "4k", "dynamic_range": "hdr", "duration": 3}}})
+		assert.Equal(t, map[string]any{"resolution": "4k", "dynamic_range": "hdr", "duration": float64(3)}, sent.body["settings"])
+		assert.InDelta(t, 12.0, sent.units, 1e-9)
+		assert.Equal(t, map[string]any{"resolution": "4k", "dynamicRange": "hdr"}, sent.state, "settlement needs the HDR the reply does not report")
+		_, _, _, _, hdrErr := validate(t, openaiVideo, "kling-4.0", map[string]any{"model": "kling-4.0", "prompt": "a cat", "size": "1280x720",
+			"metadata": map[string]any{"settings": map[string]any{"resolution": "720p", "dynamic_range": "hdr"}}})
+		require.NotNil(t, hdrErr)
+		assert.Equal(t, http.StatusBadRequest, hdrErr.StatusCode)
+		assert.ErrorContains(t, hdrErr.Error, "settings.dynamic_range hdr needs settings.resolution 1080p or 4k")
 
 		// Kling 4.0 makes 3 to 30 seconds; another duration is refused before
 		// anything is reserved.

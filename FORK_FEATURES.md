@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
 | 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 76 个（含本文档相关提交） |
-| 变更规模 | 473 个文件，+48809 / −2971 行（不含本文档） |
+| fork 专有提交数 | 77 个（含本文档相关提交） |
+| 变更规模 | 473 个文件，+48927 / −2977 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -56,6 +56,7 @@
 39. [渠道级出站指纹与 HTTP/3](#39-渠道级出站指纹与-http3)
 40. [Gemini 原生响应省略 null 字段](#40-gemini-原生响应省略-null-字段)
 41. [生图接口接受表单与缺 Content-Type 的请求体](#41-生图接口接受表单与缺-content-type-的请求体)
+42. [Kling 插件：路径式模型、4K 与 HDR 计费](#42-kling-插件路径式模型4k-与-hdr-计费)
 
 ---
 
@@ -99,6 +100,7 @@
 | 39 | 渠道级出站指纹与 HTTP/3 | 与本文档同一提交 | 关闭（渠道不选指纹配置、协议不选 HTTP/3、不填测试消息时与原来相同；全局总开关默认开，但没有渠道选用配置时不改变任何请求） | `fingerprint_setting.enabled` / `fingerprint_setting.profiles`；渠道 `setting` 的 `fingerprint_profile` / `http_protocol = "http3"` / `test_message` / `test_max_tokens` | 系统设置「出站指纹」一节；渠道编辑的「指纹配置」、`HTTP/3 (QUIC)`、「测试消息」「测试最大 Tokens」；`GET /api/channel/fingerprint_profiles`；选了配置的渠道的 HTTP 与 Realtime WebSocket 出站连接（TLS ClientHello、HTTP/2 参数、请求头顺序、默认 User-Agent）；新依赖 utls / req / quic-go |
 | 40 | Gemini 原生响应省略 null 字段 | 与本文档同一提交 | 关闭（渠道开关；转换路径的修正没有开关） | 渠道 `setting.gemini_omit_null_fields` | Gemini / Vertex AI 渠道的原生生成响应；其他格式转成 Gemini 格式的响应不再写出 `null` |
 | 41 | 生图接口接受表单与缺 Content-Type 的请求体 | 与本文档同一提交（分 2 步） | 始终生效 | 无 | `POST /v1/images/generations`：multipart / urlencoded 表单与没有 `Content-Type` 的 JSON 按 JSON 请求处理；上传文件的表单与仍读不到模型的请求返回 400，不再报「分组下模型 dall-e 无可用渠道」 |
+| 42 | Kling 插件：路径式模型、4K 与 HDR 计费 | 与本文档同一提交（1.3.0、1.3.1 两步） | 始终生效 | 无 | 内置 `kling` 插件：路径式接口的 2.5 Turbo 到 4.0 Flash 共 7 个模型；kling-4.0 的 4K 与 HDR 按官方价格预扣和结算，不支持的分辨率 / 动态范围在提交前拒绝；Base URL 已以 `/kling` 结尾时不再重复追加 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -2622,3 +2624,79 @@ Gemini 自己从不发 `null`，客户端却可能在两处收到：
 - `middleware/image_generation_body_test.go` `TestNormalizeImageGenerationBody` 8 项：multipart 表单（含整数、布尔、JSON 字段）与 urlencoded 表单转成期望的 JSON，模型查找与转发前的解析都读到模型，计费张数为表单里的 `n`；没有 `Content-Type` 的 JSON 标为 JSON、请求体不变；带 `Content-Type` 的 JSON 不变；含文件的表单、`n` 不是整数的表单返回 400；没有 `Content-Type` 且不是 JSON 的请求体由模型查找返回 400；`/v1/images/edits` 的上传不变。去掉中间件时其中 5 项失败。
 - `middleware/distributor_test.go` `TestGetModelRequestRequiresTheImageGenerationModel` 5 项：JSON 带模型照常；JSON 没有模型、模型为空、没有 `Content-Type`、multipart 表单直接到模型查找时都返回提示 `Content-Type: application/json` 的 400。恢复成默认 `dall-e` 时 4 项失败。
 - `router/provider_plugin_relay_test.go` `TestImageGenerationFormReachesTheUpstreamAsJSON`：经完整网关（鉴权、路由、分发、转发、计费）发 multipart 表单，上游收到 `Content-Type: application/json`、`model` / `prompt` / `n: 2` 的 JSON，按该模型计费；含文件的表单返回 400 且没有发往上游。路由里去掉中间件时失败。
+
+---
+
+## 42. Kling 插件：路径式模型、4K 与 HDR 计费
+
+### 动机
+
+- 1.3.0：可灵的路径式接口（`/text-to-video/{model}` 等，模型写在路径最后一段，只认 API Key）上线了 2.5 Turbo、2.6、3.0、3.0 Turbo、3.0 Omni、4.0 Flash，上游插件只接了 kling-4.0。
+- 1.3.1：tester 读代码发现两处问题（2026-11-24）。
+  - kling-4.0 的价格表只有 720p 和 1080p：请求 4K 时按 1080p 预扣和结算，HDR 附加费完全不算。少收的比例：4K 57%、带参考视频的 4K 57%、HDR 1080p 17%、HDR 4K 63%。
+  - 渠道 Base URL 写成 `https://api.ephone.ai/kling` 时，插件又追加一次 `/kling`，请求发到 `…/kling/kling/…`，拿到的是该网关首页的 HTML，每次提交都失败。
+
+### 行为
+
+- 价格（可灵资源包单位 / 秒，来源 kling.ai/document-api/pricing/base/video，2026-11-24 核对）：
+  - kling-4.0：
+    - 无参考视频：720p 1.0、1080p 1.5、4K 3.5；
+    - 有参考视频：720p 0.6、1080p 0.9、4K 2.1。有参考视频时按总时长计费：输入不长于输出时为输出 × 2，否则为输入 + 输出。
+    - HDR（`settings.dynamic_range: "hdr"`，只有 1080p 与 4K）另加 1080p 0.3、4K 0.5，只按输出时长计，不乘参考视频的系数。
+  - kling-4.0-flash：只有 720p、没有 HDR，价格不变。其余模型不变。
+- 预扣：没有时长时按最长时长（4.0 为 30 秒）预扣，有参考视频时按最长输入预扣，HDR 按同一输出时长加收。
+- 结算：可灵回复里有资源包单位或人民币现金扣费时，按它扣的结算（已包含 HDR）。没有时，按 `usage.output_duration` 和提交时记下的分辨率、动态范围计算。可灵的回复里没有分辨率和 HDR 字段，所以提交时把 HDR 记进任务 state（`dynamicRange: "hdr"`）。美元现金扣费换算不到单位，按时长计算。
+- 校验（提交前，返回 400）：
+  - `settings.resolution` 必须是该模型支持的分辨率。原来不支持的分辨率会按表里最贵的价格预扣，再交给可灵去拒绝；
+  - `settings.dynamic_range` 只能是 `sdr` / `hdr`；
+  - `hdr` 只能用于有 HDR 价格的模型和分辨率（720p、4.0 Flash、其他模型都拒绝）。
+- OpenAI 格式（`/v1/videos`、`/v1/responses`）：
+  - `size` 最接近 4K（如 `3840x2160`）时，kling-4.0 发 4K；
+  - HDR 没有对应字段，通过 `metadata.settings` 传，计费和校验与原生请求相同。
+- Base URL：走另一个网关时（New API 渠道或 `sk-` Key），Base URL 已以 `/kling` 结尾（不区分大小写，允许末尾斜杠）就不再追加。末尾斜杠一律去掉。
+- 提交回复不是 JSON（例如网关首页）时，报错写明 HTTP 状态和 `Content-Type`，并提示检查渠道 Base URL，原来只有 `kling submit failed`。
+
+### 实现
+
+`plugins/tasks/kling/plugin.js`：
+- `PATH_MODELS["kling-4.0"]` 加入 `4k` 与 `hdr` 价格表；
+- `billedDynamicRange`；
+- `checkPathBody` 检查分辨率和动态范围；
+- `pathReservedUnits` / `pathCompletedUnits` 加 HDR；
+- `parseSubmitResponse` 记 `dynamicRange`，并对非 JSON 回复给出说明；
+- `apiRoot` 判断已有的 `/kling`；
+- 版本 1.3.1，`usageExamples` 加一条「4.0 4K 5s · HDR」。
+
+### 已知限制
+
+- 4K 与 HDR 的计费只按代码和官方文档核对，没有在线上实测：实测要真实扣费。tester 通过 ephone 实测过 4K 和 HDR 1080p 的请求能成功，以及回复里的扣费格式。
+- 美元扣费的账号（如 ephone）结算时按时长和价格表计算，不读可灵的美元金额。
+
+### 测试
+
+`plugins/kling_responses_test.go` `TestKlingModelPath`：
+- 预扣：
+  - 4K 3 秒 10.5；
+  - 4K 不传时长 105；
+  - 4K 带参考视频 69.3；
+  - HDR 1080p 3 秒 5.4；
+  - HDR 4K 3 秒 12；
+  - HDR 4K 带参考视频 70.8（HDR 不乘系数）；
+  - 显式 SDR 不加价。
+- 拒绝：
+  - 3.0 Turbo 的 4K、4.0 的 2k、4.0 Flash 的 1080p；
+  - 720p HDR、4.0 Flash 的 HDR、未知动态范围。
+- 结算，用 tester 实测的美元扣费格式：
+  - 4K 10.5；
+  - 4K 带较短参考视频 12.6；
+  - HDR 1080p 5.4；
+  - HDR 4K 12；
+  - HDR 4K 带较长参考视频 25.6，与官方例子一致；
+  - 资源包扣费照实结算。
+- OpenAI 格式：`3840x2160` 发 4K 并预扣 17.5；`metadata.settings` 的 HDR 预扣 12，并记入 state；720p HDR 返回 400。
+- Base URL：
+  - `…/kling`、`…/kling/`、`…/KLING` 的提交、路径式查询、旧接口查询都只有一个 `/kling`；
+  - 网关根地址仍追加 `/kling`；
+  - HTML 回复的报错写明 `HTTP 200 text/html`。
+
+把价格表改回 1.3.0 时 14 个子测试失败，把 `apiRoot` 改回时 Base URL 用例失败。

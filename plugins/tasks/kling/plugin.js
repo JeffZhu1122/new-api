@@ -7,7 +7,7 @@ export const meta = {
     en: "Kuaishou Kling video generation (text-to-video, image-to-video and omni reference)",
     zh: "快手可灵视频生成（文生视频、图生视频、全能参考生视频）",
   },
-  version: "1.3.0",
+  version: "1.3.1",
   author: { name: "QuantumNous" },
   channelTypes: [50],
   models: [
@@ -39,6 +39,7 @@ export const meta = {
     { label: "v3 4k 5s", facts: { units: 15 } },
     { label: "4.0 1080p 10s", facts: { units: 15 } },
     { label: "4.0 1080p 10s · video input", facts: { units: 18 } },
+    { label: "4.0 4K 5s · HDR", facts: { units: 20 } },
     { label: "4.0 Flash 720p 10s", facts: { units: 6 } },
     { label: "3.0 1080p 5s · audio", facts: { units: 6 } },
     { label: "3.0 Omni 1080p 5s · reference video", facts: { units: 6 } },
@@ -101,6 +102,8 @@ const PATH_ACTIONS = { "text-to-video": "text_to_video", "image-to-video": "imag
 // or, with an input video, twice the output, or input plus output when the
 // input is longer. Their input videos are at most as long as their longest
 // output, and without a duration Kling follows the prompt or the base_video.
+// Kling 4.0 also makes HDR at 1080p and 4K (settings.dynamic_range "hdr"),
+// which adds `hdr` units per second of the output alone, on top of the total.
 //
 // The other models bill the output at the rate of what they make (`units`):
 // `base`, with native audio (`audio`), with a reference voice (`voice`), or,
@@ -110,10 +113,11 @@ const PATH_ACTIONS = { "text-to-video": "text_to_video", "image-to-video": "imag
 const PATH_MODELS = {
   "kling-4.0": {
     endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO, OMNI_VIDEO],
-    resolutions: ["1080p", "720p"],
+    resolutions: ["1080p", "720p", "4k"],
     seconds: { min: 3, max: 30 },
     aspectRatios: KLING4_ASPECT_RATIOS,
-    total: { units: { "720p": 1.0, "1080p": 1.5 }, videoInput: { "720p": 0.6, "1080p": 0.9 } },
+    total: { units: { "720p": 1.0, "1080p": 1.5, "4k": 3.5 }, videoInput: { "720p": 0.6, "1080p": 0.9, "4k": 2.1 } },
+    hdr: { "1080p": 0.3, "4k": 0.5 },
   },
   "kling-4.0-flash": {
     endpoints: [TEXT_TO_VIDEO, IMAGE_TO_VIDEO, OMNI_VIDEO],
@@ -256,8 +260,12 @@ function pathFor(action) {
   return action === "image_to_video" ? "/v1/videos/image2video" : "/v1/videos/text2video";
 }
 
+// Another gateway serves Kling under /kling. A Base URL that already ends with
+// /kling is that address, so it is not added twice.
 function apiRoot(ctx) {
-  return ctx.baseUrl + (viaGateway(ctx) ? "/kling" : "");
+  const base = trimmed(ctx.baseUrl).replace(/\/+$/, "");
+  if (!viaGateway(ctx) || /\/kling$/i.test(base)) return base;
+  return base + "/kling";
 }
 
 function urlFor(ctx, action) {
@@ -396,6 +404,11 @@ function billedResolution(spec, settings) {
   return trimmed(settings.resolution).toLowerCase() || spec.resolutions[0];
 }
 
+// The dynamic range billed: Kling's default, SDR, without one.
+function billedDynamicRange(settings) {
+  return trimmed(settings.dynamic_range).toLowerCase() || "sdr";
+}
+
 function rateFor(table, resolution) {
   if (Object.prototype.hasOwnProperty.call(table, resolution)) return table[resolution];
   return Object.keys(table).reduce((dearest, key) => Math.max(dearest, table[key]), 0);
@@ -424,7 +437,8 @@ function hasVideoInput(contents) {
 }
 
 // Kling would call back, or look tasks up, by ids the gateway does not hand
-// out. The duration is billed, so it is kept within the model's durations.
+// out. The duration, resolution and dynamic range are billed, so they are kept
+// to what the model makes and has a price for.
 function checkPathBody(spec, body) {
   const options = plainObject(body.options);
   for (const name of UNSUPPORTED_FIELDS) {
@@ -433,6 +447,14 @@ function checkPathBody(spec, body) {
   }
   const settings = plainObject(body.settings);
   if (hasValue(settings.duration)) pathDuration(spec, settings.duration);
+  const resolution = billedResolution(spec, settings);
+  if (!spec.resolutions.includes(resolution)) throw new Error("settings.resolution must be one of " + spec.resolutions.join(", "));
+  const dynamicRange = billedDynamicRange(settings);
+  if (dynamicRange !== "sdr" && dynamicRange !== "hdr") throw new Error("settings.dynamic_range must be sdr or hdr");
+  if (dynamicRange === "hdr" && !(spec.hdr && spec.hdr[resolution])) {
+    if (!spec.hdr) throw new Error("settings.dynamic_range hdr is not available for this model");
+    throw new Error("settings.dynamic_range hdr needs settings.resolution " + Object.keys(spec.hdr).join(" or "));
+  }
 }
 
 // The model-in-path request: a native body as the client wrote it, for the
@@ -500,8 +522,9 @@ function pathReservedUnits(spec, body) {
   const videoInput = hasVideoInput(contents);
   if (spec.total) {
     const seconds = hasValue(settings.duration) ? pathDuration(spec, settings.duration) : spec.seconds.max;
-    if (!videoInput) return rateFor(spec.total.units, resolution) * seconds;
-    return rateFor(spec.total.videoInput, resolution) * Math.max(seconds * 2, spec.seconds.max + seconds);
+    const hdr = billedDynamicRange(settings) === "hdr" ? spec.hdr[resolution] * seconds : 0;
+    if (!videoInput) return rateFor(spec.total.units, resolution) * seconds + hdr;
+    return rateFor(spec.total.videoInput, resolution) * Math.max(seconds * 2, spec.seconds.max + seconds) + hdr;
   }
   const seconds = hasValue(settings.duration) ? pathDuration(spec, settings.duration) : spec.seconds.default;
   const units = spec.units;
@@ -552,8 +575,9 @@ function reportedSeconds(value) {
 // one yuan, so only a deduction in CNY converts; one in another currency has
 // no fixed rate to units. Without a deduction that converts, Kling 4.0 and 4.0
 // Flash settle on the durations Kling bills (usage.output_duration; the
-// video's own duration runs slightly longer), and the other models keep their
-// reservation, which their request fixes.
+// video's own duration runs slightly longer) at the resolution and dynamic
+// range saved at submission, which the reply does not report, and the other
+// models keep their reservation, which their request fixes.
 function pathCompletedUnits(ctx, body) {
   const entry = pathEntry(body, ctx && ctx.taskId);
   if (entry.status !== "succeeded") return null;
@@ -576,9 +600,11 @@ function pathCompletedUnits(ctx, body) {
   }
   if (!output) return null;
   const input = reportedSeconds(usage.input_duration);
-  const resolution = billedResolution(spec, plainObject(ctx && ctx.state));
-  if (!input) return { units: rateFor(spec.total.units, resolution) * output };
-  return { units: rateFor(spec.total.videoInput, resolution) * (input <= output ? output * 2 : input + output) };
+  const state = plainObject(ctx && ctx.state);
+  const resolution = billedResolution(spec, state);
+  const hdr = state.dynamicRange === "hdr" ? ((spec.hdr && spec.hdr[resolution]) || 0) * output : 0;
+  if (!input) return { units: rateFor(spec.total.units, resolution) * output + hdr };
+  return { units: rateFor(spec.total.videoInput, resolution) * (input <= output ? output * 2 : input + output) + hdr };
 }
 
 // A model-in-path route names the model in its last segment.
@@ -732,20 +758,35 @@ export function buildSubmitRequest(ctx) {
   };
 }
 
-// A model-in-path task keeps the resolution it was billed at, for a settlement
-// without a unit deduction; the state also marks the task as one.
+// A model-in-path task keeps the resolution and, when HDR, the dynamic range it
+// was billed at, for a settlement without a unit deduction; the state also
+// marks the task as one.
 function isPathTask(ctx) {
   return Boolean(plainObject(ctx && ctx.state).resolution);
 }
 
 export function parseSubmitResponse(ctx, resp) {
-  const result = resp.body || {};
+  const result = resp.body;
+  if (!result || typeof result !== "object" || Array.isArray(result)) {
+    // A page instead of Kling's JSON is usually a Base URL that does not reach
+    // Kling's API.
+    const header = plainObject(resp.headers)["Content-Type"];
+    const contentType = trimmed(Array.isArray(header) ? header[0] : header);
+    throw new Error(
+      "kling submit failed: the upstream answered HTTP " +
+        resp.statusCode +
+        (contentType ? " " + contentType : "") +
+        " instead of Kling's JSON; check the channel Base URL"
+    );
+  }
   if (result.code !== 0) throw new Error(result.message || "kling submit failed");
   const req = (ctx && ctx.requestBody) || {};
   if (usesModelPath(ctx, req)) {
     if (!result.data || !result.data.id) throw new Error("missing task id");
     const settings = plainObject(pathSubmission(ctx).body.settings);
-    return { taskId: result.data.id, taskData: result, state: { resolution: billedResolution(pathSpec(submitModel(ctx, req)), settings) } };
+    const state = { resolution: billedResolution(pathSpec(submitModel(ctx, req)), settings) };
+    if (billedDynamicRange(settings) === "hdr") state.dynamicRange = "hdr";
+    return { taskId: result.data.id, taskData: result, state: state };
   }
   if (!result.data || !result.data.task_id) throw new Error("missing task_id");
   return { taskId: result.data.task_id, taskData: result };
