@@ -26,7 +26,7 @@ import {
   transformFormDataToCreatePayload,
 } from '../channel-form'
 
-type ExtendSwitch = 'force_retry' | 'empty_output_error'
+type ExtendSwitch = 'force_retry' | 'empty_output_error' | 'usage_correction'
 
 function switchForm(name: ExtendSwitch, enabled: boolean) {
   return {
@@ -57,45 +57,44 @@ function storedChannel(extendConfig: Record<string, unknown> | undefined) {
   })
 }
 
-// "Always Retry on Errors" and "Error on Empty Output" are boolean
-// channel_extend switches with the same round trip.
-describe.each<ExtendSwitch>(['force_retry', 'empty_output_error'])(
-  'channel extend switch %s',
-  (name) => {
-    test('an enabled switch is sent in extend_config', () => {
-      const { channel } = transformFormDataToCreatePayload(
-        switchForm(name, true)
-      )
-      expect(channel.extend_config?.[name]).toBe(true)
-    })
+// "Always Retry on Errors", "Error on Empty Output" and "Cap Cache Usage at
+// the Input" are boolean channel_extend switches with the same round trip.
+describe.each<ExtendSwitch>([
+  'force_retry',
+  'empty_output_error',
+  'usage_correction',
+])('channel extend switch %s', (name) => {
+  test('an enabled switch is sent in extend_config', () => {
+    const { channel } = transformFormDataToCreatePayload(switchForm(name, true))
+    expect(channel.extend_config?.[name]).toBe(true)
+  })
 
-    test('a disabled switch is sent as false so the backend clears it', () => {
-      const { channel } = transformFormDataToCreatePayload(
-        switchForm(name, false)
-      )
-      expect(channel.extend_config?.[name]).toBe(false)
-    })
+  test('a disabled switch is sent as false so the backend clears it', () => {
+    const { channel } = transformFormDataToCreatePayload(
+      switchForm(name, false)
+    )
+    expect(channel.extend_config?.[name]).toBe(false)
+  })
 
-    test('a stored switch is restored as enabled', () => {
-      const defaults = transformChannelToFormDefaults(
-        storedChannel({ [name]: true })
-      )
-      expect(defaults[name]).toBe(true)
-    })
+  test('a stored switch is restored as enabled', () => {
+    const defaults = transformChannelToFormDefaults(
+      storedChannel({ [name]: true })
+    )
+    expect(defaults[name]).toBe(true)
+  })
 
-    test('a channel without extend_config restores the switch as disabled', () => {
-      const defaults = transformChannelToFormDefaults(storedChannel(undefined))
-      expect(defaults[name]).toBe(false)
-    })
+  test('a channel without extend_config restores the switch as disabled', () => {
+    const defaults = transformChannelToFormDefaults(storedChannel(undefined))
+    expect(defaults[name]).toBe(false)
+  })
 
-    test('an enabled switch marks the extra settings block as configured', () => {
-      expect(
-        getChannelConfigurationState(switchForm(name, true), {}, true).blocks
-          .extraSettings
-      ).toBe('configured')
-    })
-  }
-)
+  test('an enabled switch marks the extra settings block as configured', () => {
+    expect(
+      getChannelConfigurationState(switchForm(name, true), {}, true).blocks
+        .extraSettings
+    ).toBe('configured')
+  })
+})
 
 // The asset library binding is a channel_extend account id; 0 means unbound.
 describe('asset library account binding', () => {

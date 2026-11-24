@@ -2665,6 +2665,8 @@
     "Error Message (required)": "错误消息（必填）",
     "Error message when all channels failed": "所有渠道失败时的错误信息",
     "Error on Empty Output": "零输出时报错",
+    "Cap Cache Usage at the Input": "缓存用量不超过输入",
+    "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.": "上游的输入本身包含缓存，却报出比输入还多的缓存读取和写入时：缓存读取最多按输入计费，缓存写入最多按剩下的部分计费。关闭时按上游报的缓存计费。无论开关如何，这类请求都会在日志里标记为用量异常。",
     "Error parsing response data": "解析响应数据失败",
     "Error Type (optional)": "错误类型（可选）",
     "Estimated cost": "预计成本",

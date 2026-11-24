@@ -111,6 +111,7 @@ const CONFIGURATION_BLOCKS = {
       'quota_limit_amount',
       'force_retry',
       'empty_output_error',
+      'usage_correction',
       'asset_library_account_id',
       'schedule_enabled',
       'schedule_timezone',
@@ -237,6 +238,7 @@ export function getChannelConfigurationState(
       (values.quota_limit_amount ?? 0) > 0 ||
       Boolean(values.force_retry) ||
       Boolean(values.empty_output_error) ||
+      Boolean(values.usage_correction) ||
       (values.asset_library_account_id ?? 0) > 0 ||
       Boolean(values.schedule_enabled)
     ),

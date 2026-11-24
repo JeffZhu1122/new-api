@@ -2665,6 +2665,8 @@
     "Error Message (required)": "錯誤訊息（必填）",
     "Error message when all channels failed": "所有渠道失敗時的錯誤訊息",
     "Error on Empty Output": "零輸出時報錯",
+    "Cap Cache Usage at the Input": "快取用量不超過輸入",
+    "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.": "上游的輸入本身包含快取，卻回報比輸入還多的快取讀取和寫入時：快取讀取最多按輸入計費，快取寫入最多按剩下的部分計費。關閉時按上游回報的快取計費。無論開關如何，這類請求都會在日誌中標記為用量異常。",
     "Error parsing response data": "解析回應數據失敗",
     "Error Type (optional)": "錯誤類型（可選）",
     "Estimated cost": "預計成本",

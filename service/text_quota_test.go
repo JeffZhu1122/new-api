@@ -974,6 +974,80 @@ func TestPostTextConsumeQuotaBillsOpenAI12hCacheWrites(t *testing.T) {
 	}
 }
 
+// Kimi on channel #52 reported more cache than input, which an input that
+// includes the cache cannot hold. Every such settlement records the upstream's
+// numbers under admin_info.usage_anomaly. Off, the cache is billed as
+// reported; with usage_correction the reads are cut to the input and the
+// writes to what is left. Claude usage, whose input excludes the cache, is
+// not an anomaly.
+func TestPostTextConsumeQuotaRecordsAndCorrectsCacheOverflow(t *testing.T) {
+	truncate(t)
+	const userID, channelID = 64, 64
+	seedUser(t, userID, 10_000_000)
+	seedChannel(t, channelID)
+	gin.SetMode(gin.TestMode)
+	price := hosttypes.PriceData{ModelRatio: 1, CompletionRatio: 1, CacheRatio: 0.1, CacheCreationRatio: 1.25, GroupRatioInfo: hosttypes.GroupRatioInfo{GroupRatio: 1}}
+	sumOver := dto.Usage{PromptTokens: 25538, TotalTokens: 25538, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 20736, CacheWriteTokens: 5632}}
+	readOver := dto.Usage{PromptTokens: 142808, TotalTokens: 142808, PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 144896, CacheWriteTokens: 1792}}
+	claude := dto.Usage{PromptTokens: 50, TotalTokens: 50, UsageSemantic: "anthropic", PromptTokensDetails: dto.InputTokenDetails{CachedTokens: 16000}}
+	for _, tc := range []struct {
+		name      string
+		usage     dto.Usage
+		format    types.RelayFormat
+		expr      string
+		correct   bool
+		wantQuota int
+		// wantAnomaly is admin_info.usage_anomaly; nil when there is none.
+		wantAnomaly map[string]any
+	}{
+		// 20736 × 0.1 + 5632 × 1.25 = 9113.6: the 830 tokens beyond the input are billed.
+		{"reads and writes over the input, billed as reported", sumOver, types.RelayFormatOpenAI, "", false, 9114,
+			map[string]any{"kind": "cache_sum_over_input", "input": float64(25538), "cache_read": float64(20736), "cache_write": float64(5632), "overflow": float64(830), "corrected": false}},
+		// The writes are cut to 25538 − 20736 = 4802: 2073.6 + 6002.5.
+		{"reads and writes over the input, corrected", sumOver, types.RelayFormatOpenAI, "", true, 8076,
+			map[string]any{"kind": "cache_sum_over_input", "input": float64(25538), "cache_read": float64(20736), "cache_write": float64(5632), "overflow": float64(830), "corrected": true}},
+		{"corrected with an expression", sumOver, types.RelayFormatOpenAI, `tier("base", p * 2 + c * 2 + cr * 0.2 + cc * 2.5)`, true, 8076,
+			map[string]any{"kind": "cache_sum_over_input", "input": float64(25538), "cache_read": float64(20736), "cache_write": float64(5632), "overflow": float64(830), "corrected": true}},
+		// Reads alone over the input: 142808 × 0.1 and no writes once corrected.
+		{"reads over the input, corrected", readOver, types.RelayFormatOpenAI, "", true, 14281,
+			map[string]any{"kind": "cache_read_over_input", "input": float64(142808), "cache_read": float64(144896), "cache_write": float64(1792), "overflow": float64(3880), "corrected": true}},
+		{"Claude usage excludes the cache", claude, types.RelayFormatClaude, "", true, 1650, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, _ := gin.CreateTestContext(httptest.NewRecorder())
+			ctx.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+			info := &relaycommon.RelayInfo{
+				UserId:          userID,
+				OriginModelName: "kimi-k3.1-pro",
+				UsingGroup:      "default",
+				StartTime:       time.Now(),
+				RelayFormat:     tc.format,
+				ChannelMeta:     &relaycommon.ChannelMeta{ChannelId: channelID, ChannelExtendSetting: dto.ChannelExtendSettings{UsageCorrection: tc.correct}},
+				PriceData:       price,
+			}
+			if tc.expr != "" {
+				info.TieredBillingSnapshot = makeSnapshot(tc.expr, 1, 0, 0)
+			}
+			usage := tc.usage
+
+			PostTextConsumeQuota(ctx, info, &usage, nil)
+
+			log := getLastLog(t)
+			require.NotNil(t, log)
+			assert.Equal(t, tc.wantQuota, log.Quota)
+			var other map[string]any
+			require.NoError(t, common.UnmarshalJsonStr(log.Other, &other))
+			adminInfo, _ := other["admin_info"].(map[string]any)
+			if tc.wantAnomaly == nil {
+				assert.NotContains(t, adminInfo, "usage_anomaly")
+				return
+			}
+			assert.Equal(t, tc.wantAnomaly, adminInfo["usage_anomaly"])
+			assert.Equal(t, tc.usage, usage, "the caller's usage is left as the upstream reported it")
+		})
+	}
+}
+
 func TestCalculateTextQuotaSummarySeparatesOpenRouterCacheReadFromPromptBilling(t *testing.T) {
 	gin.SetMode(gin.TestMode)
 	w := httptest.NewRecorder()

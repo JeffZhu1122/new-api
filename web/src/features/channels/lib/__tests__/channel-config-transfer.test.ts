@@ -69,6 +69,7 @@ function sourceChannel(overrides: Partial<Channel> = {}): Channel {
     extend_config: {
       force_retry: true,
       empty_output_error: true,
+      usage_correction: true,
       rpm_limit: 60,
     },
     ...overrides,
@@ -99,6 +100,7 @@ describe('channel configuration transfer', () => {
       proxy: 'http://proxy.internal:8080',
       force_retry: true,
       empty_output_error: true,
+      usage_correction: true,
       rpm_limit: 60,
       status: CHANNEL_STATUS.MANUAL_DISABLED,
       multi_key_mode: 'single',

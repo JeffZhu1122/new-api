@@ -2665,6 +2665,8 @@
     "Error Message (required)": "Сообщение об ошибке (обязательно)",
     "Error message when all channels failed": "Сообщение об ошибке, когда все каналы завершились ошибкой",
     "Error on Empty Output": "Ошибка при пустом ответе",
+    "Cap Cache Usage at the Input": "Ограничить кэш объёмом ввода",
+    "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.": "Если провайдер, у которого ввод включает кэш, сообщает о чтении и записи кэша больше объёма ввода, чтение тарифицируется не более чем на объём ввода, а запись — не более чем на остаток. Если выключено, кэш тарифицируется как сообщено. В обоих случаях запрос отмечается в журнале как аномалия использования.",
     "Error parsing response data": "Ошибка при разборе данных ответа",
     "Error Type (optional)": "Тип ошибки (необязательно)",
     "Estimated cost": "Примерная стоимость",

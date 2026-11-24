@@ -392,6 +392,7 @@ const SENSITIVE_FORM_FIELDS = [
   'quota_limit_amount',
   'force_retry',
   'empty_output_error',
+  'usage_correction',
   'asset_library_account_id',
   'schedule_enabled',
   'schedule_timezone',
@@ -2834,6 +2835,29 @@ export function ChannelMutateDrawer({
               <FormDescription>
                 {t(
                   'Treat a chat, Claude, Gemini or Responses reply with no output at all (no text, reasoning, tool call or refusal) as an error, so it is retried on another channel and not billed. Streams are held back until their first output. Once a keepalive ping has reached the client, an empty stream ends with an error event instead of a retry.'
+                )}
+              </FormDescription>
+            </div>
+            <FormControl>
+              <Switch
+                disabled={sensitiveLocked}
+                checked={field.value ?? false}
+                onCheckedChange={field.onChange}
+              />
+            </FormControl>
+          </FormItem>
+        )}
+      />
+      <FormField
+        control={form.control}
+        name='usage_correction'
+        render={({ field }) => (
+          <FormItem className='flex items-center justify-between gap-3'>
+            <div className='space-y-0.5'>
+              <FormLabel>{t('Cap Cache Usage at the Input')}</FormLabel>
+              <FormDescription>
+                {t(
+                  'When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.'
                 )}
               </FormDescription>
             </div>

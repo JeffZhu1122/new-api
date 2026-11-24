@@ -2665,6 +2665,8 @@
     "Error Message (required)": "Message d'erreur (requis)",
     "Error message when all channels failed": "Message d'erreur lorsque tous les canaux ont échoué",
     "Error on Empty Output": "Erreur en cas de sortie vide",
+    "Cap Cache Usage at the Input": "Limiter le cache à l'entrée",
+    "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.": "Quand un fournisseur dont l'entrée inclut le cache déclare plus de lectures et d'écritures de cache que d'entrée, facturer les lectures au plus l'entrée et les écritures au plus le reste. Désactivé, le cache est facturé tel que déclaré. Dans les deux cas, la requête est signalée comme anomalie d'usage dans son journal.",
     "Error parsing response data": "Erreur lors de l’analyse des données de réponse",
     "Error Type (optional)": "Type d'erreur (optionnel)",
     "Estimated cost": "Coût estimé",

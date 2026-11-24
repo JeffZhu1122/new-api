@@ -2665,6 +2665,8 @@
     "Error Message (required)": "エラーメッセージ（必須）",
     "Error message when all channels failed": "全チャネル失敗時のエラーメッセージ",
     "Error on Empty Output": "出力が空ならエラー",
+    "Cap Cache Usage at the Input": "キャッシュ使用量を入力以内に抑える",
+    "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.": "入力にキャッシュを含む上流が、入力より多いキャッシュ読み取りと書き込みを報告した場合、読み取りは最大で入力分、書き込みは最大で残りの分として課金します。オフの場合は報告どおりに課金します。どちらの場合も、そのリクエストはログに使用量の異常として記録されます。",
     "Error parsing response data": "レスポンスデータの解析に失敗しました",
     "Error Type (optional)": "エラータイプ（任意）",
     "Estimated cost": "推定コスト",

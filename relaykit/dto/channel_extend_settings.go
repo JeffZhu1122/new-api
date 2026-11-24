@@ -294,6 +294,10 @@ type ChannelExtendSettings struct {
 	// that account's assets (asset://...) only route to bound channels.
 	// 0 = not bound.
 	AssetLibraryAccountId int `json:"asset_library_account_id,omitempty"`
+	// UsageCorrection bills cache reads and writes as at most the input when
+	// an upstream whose input includes them reports more, reads first. Off,
+	// the cache is billed as reported. Either way the response is recorded.
+	UsageCorrection bool `json:"usage_correction,omitempty"`
 }
 
 func (s *ChannelExtendSettings) Validate() error {
@@ -384,7 +388,7 @@ func (s *ChannelExtendSettings) IsZero() bool {
 		(s.ClaudeAuthMode == "" || s.ClaudeAuthMode == ClaudeAuthModeApiKey) &&
 		s.ResponseHeaderMode == "" && len(s.ResponseHeaders) == 0 &&
 		s.CostRatio == 0 && s.QuotaLimit == 0 && s.Schedule == nil && !s.ForceRetry &&
-		!s.EmptyOutputError && s.AssetLibraryAccountId == 0)
+		!s.EmptyOutputError && s.AssetLibraryAccountId == 0 && !s.UsageCorrection)
 }
 
 // AvailableAt reports whether the channel may be selected at the given

@@ -273,7 +273,9 @@ func TestConsumeLogWritesARequestSummaryLine(t *testing.T) {
 		consumeLogged bool
 		params        RecordConsumeLogParams
 		other         map[string]any
-		want          string
+		// audit is the settlement's usage audit, set when non-empty.
+		audit []any
+		want  string
 	}{
 		{
 			name:          "a Claude stream with cache reads and writes",
@@ -304,6 +306,23 @@ func TestConsumeLogWritesARequestSummaryLine(t *testing.T) {
 			other:         map[string]any{"frt": float64(-1760000000000), "cache_tokens": 0},
 			want:          `request completed: user_id=1 model="gpt-4o" channel_id=3 channel_name="Claude main" group="default" stream=false input_tokens=12 output_tokens=5 cache_read_tokens=0 cache_write_tokens=0 quota=17 ttft_ms=0 `,
 		},
+		{
+			// The audit fields come last; a log without a text settlement has
+			// none to report.
+			name:          "a log without a usage audit",
+			consumeLogged: true,
+			params:        RecordConsumeLogParams{ChannelId: 3, ModelName: "gpt-4o", PromptTokens: 12, CompletionTokens: 5, Quota: 17, Group: "default"},
+			other:         map[string]any{"cache_tokens": 0},
+			want:          `upstream_request_id="req_up_9" usage_semantic="" cache_overflow_tokens=0 usage_anomaly=""`,
+		},
+		{
+			name:          "cache reads and writes beyond the input",
+			consumeLogged: false,
+			params:        RecordConsumeLogParams{ChannelId: 52, ModelName: "kimi-k3.1-pro", PromptTokens: 25538, CompletionTokens: 10, Quota: 9000, Group: "default"},
+			other:         map[string]any{"cache_tokens": 20736, "cache_write_tokens": 5632},
+			audit:         []any{"openai", 830, "cache_sum_over_input"},
+			want:          `input_tokens=25538 output_tokens=10 cache_read_tokens=20736 cache_write_tokens=5632 quota=9000 ttft_ms=0 `,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			previous := common.LogConsumeEnabled
@@ -317,12 +336,18 @@ func TestConsumeLogWritesARequestSummaryLine(t *testing.T) {
 			c.Set(common.UpstreamRequestIdKey, "req_up_9")
 			other := NewLogOther()
 			other.MergePublic(tc.other)
+			if len(tc.audit) == 3 {
+				other.SetUsageAudit(tc.audit[0].(string), tc.audit[1].(int), tc.audit[2].(string))
+			}
 			tc.params.Other = other
 
 			RecordConsumeLog(c, 1, tc.params)
 
 			assert.Contains(t, serverLog.String(), tc.want)
 			assert.Contains(t, serverLog.String(), `upstream_request_id="req_up_9"`)
+			if len(tc.audit) == 3 {
+				assert.Contains(t, serverLog.String(), `upstream_request_id="req_up_9" usage_semantic="openai" cache_overflow_tokens=830 usage_anomaly="cache_sum_over_input"`)
+			}
 			// duration_ms covers the whole request and tps is output tokens per second of it.
 			match := regexp.MustCompile(`duration_ms=(\d+) tps=([\d.]+) `).FindStringSubmatch(serverLog.String())
 			require.Len(t, match, 3, serverLog.String())

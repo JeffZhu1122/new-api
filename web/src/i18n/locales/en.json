@@ -2665,6 +2665,8 @@
     "Error Message (required)": "Error Message (required)",
     "Error message when all channels failed": "Error message when all channels failed",
     "Error on Empty Output": "Error on Empty Output",
+    "Cap Cache Usage at the Input": "Cap Cache Usage at the Input",
+    "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.": "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.",
     "Error parsing response data": "Error parsing response data",
     "Error Type (optional)": "Error Type (optional)",
     "Estimated cost": "Estimated cost",

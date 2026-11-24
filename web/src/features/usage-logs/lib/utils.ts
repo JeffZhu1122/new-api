@@ -244,7 +244,9 @@ export function buildApiParams(config: {
       ? { is_stream: String(searchParams.stream === 'stream') }
       : {}),
     ...(searchParams.responseModel
-      ? { response_model: toModelNameSearch(String(searchParams.responseModel)) }
+      ? {
+          response_model: toModelNameSearch(String(searchParams.responseModel)),
+        }
       : {}),
     ...(searchParams.responseModelMismatch === true
       ? { response_model_mismatch: 'true' }

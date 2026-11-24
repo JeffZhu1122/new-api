@@ -406,6 +406,14 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 	if originUsage != nil {
 		ObserveChannelAffinityUsageCacheByRelayFormat(ctx, billingUsage, relayInfo.GetFinalRequestRelayFormat())
 	}
+	// Cache reads and writes beyond an input that includes them are recorded,
+	// and billed as at most the input where the channel asks for it.
+	usageSemantic := usageCacheSemantic(relayInfo, billingUsage)
+	cacheOverflow := detectUsageCacheOverflow(billingUsage, usageSemantic)
+	usageCorrected := cacheOverflow != nil && relayInfo.ChannelMeta != nil && relayInfo.ChannelExtendSetting.UsageCorrection
+	if usageCorrected {
+		billingUsage = cacheOverflow.correctedUsage(billingUsage)
+	}
 
 	adminRejectReason := common.GetContextKeyString(ctx, constant.ContextKeyAdminRejectReason)
 	summary := calculateTextQuotaSummary(ctx, relayInfo, billingUsage)
@@ -497,6 +505,7 @@ func PostTextConsumeQuota(ctx *gin.Context, relayInfo *relaycommon.RelayInfo, us
 		other = GenerateTextOtherInfo(ctx, relayInfo, summary.ModelRatio, summary.GroupRatio, summary.CompletionRatio, summary.CacheTokens, summary.CacheRatio, summary.ModelPrice, relayInfo.PriceData.GroupRatioInfo.GroupSpecialRatio)
 	}
 	appendUsageBillingPathForLog(other, common.GetContextKeyBool(ctx, constant.ContextKeyLocalCountTokens), originUsage)
+	recordUsageCacheOverflow(other, usageSemantic, cacheOverflow, usageCorrected)
 	if adminRejectReason != "" {
 		other.SetAdmin("reject_reason", adminRejectReason)
 	}

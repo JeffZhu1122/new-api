@@ -92,6 +92,16 @@ func TestUpsertChannelExtendPersistsForceRetry(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, both, settings)
 
+	// 用量校正单独开启时同样完整往返，关闭后整行删除
+	correction := dto.ChannelExtendSettings{UsageCorrection: true}
+	require.NoError(t, UpsertChannelExtend(nil, 9, correction))
+	settings, err = GetChannelExtend(9)
+	require.NoError(t, err)
+	assert.Equal(t, correction, settings)
+	require.NoError(t, UpsertChannelExtend(nil, 9, dto.ChannelExtendSettings{}))
+	require.NoError(t, DB.Model(&ChannelExtend{}).Where("channel_id = ?", 9).Count(&count).Error)
+	assert.Equal(t, int64(0), count)
+
 	// 迁移重复执行不得报错（新增列幂等）
 	require.NoError(t, DB.AutoMigrate(&ChannelExtend{}))
 }

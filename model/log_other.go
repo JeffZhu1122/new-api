@@ -47,6 +47,12 @@ type LogOther struct {
 	// same names; they are not part of the other JSON.
 	responseModel         string
 	responseModelMismatch bool
+
+	// usageSemantic, cacheOverflowTokens and usageAnomaly go to the request
+	// summary line; they are not part of the other JSON.
+	usageSemantic       string
+	cacheOverflowTokens int
+	usageAnomaly        string
 }
 
 func NewLogOther() *LogOther {
@@ -69,6 +75,23 @@ func (o *LogOther) SetResponseModel(model string, mismatch bool) {
 	}
 	o.responseModel = model
 	o.responseModelMismatch = mismatch
+}
+
+// SetUsageAudit records, for the request summary line, the usage semantic
+// ("anthropic" when the input excludes the cache), the cache tokens the
+// upstream reported beyond its input and the kind of that anomaly.
+func (o *LogOther) SetUsageAudit(semantic string, cacheOverflowTokens int, anomaly string) {
+	if o == nil {
+		return
+	}
+	o.usageSemantic, o.cacheOverflowTokens, o.usageAnomaly = semantic, cacheOverflowTokens, anomaly
+}
+
+func (o *LogOther) usageAudit() (string, int, string) {
+	if o == nil {
+		return "", 0, ""
+	}
+	return o.usageSemantic, o.cacheOverflowTokens, o.usageAnomaly
 }
 
 func (o *LogOther) responseModelColumns() (string, bool) {

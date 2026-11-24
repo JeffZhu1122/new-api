@@ -464,10 +464,13 @@ func logRequestSummary(c *gin.Context, userId int, params RecordConsumeLogParams
 	if durationMs > 0 && params.CompletionTokens > 0 {
 		tps = float64(params.CompletionTokens) / (float64(durationMs) / 1000)
 	}
-	logger.LogInfo(c, common.LogText("request completed: user_id=%d model=%q channel_id=%d channel_name=%q group=%q stream=%t input_tokens=%d output_tokens=%d cache_read_tokens=%d cache_write_tokens=%d quota=%d ttft_ms=%d duration_ms=%d tps=%.2f upstream_request_id=%q",
+	// The usage audit fields, appended last so existing parsers keep working,
+	// report the upstream's own usage even where billing corrected it.
+	usageSemantic, cacheOverflowTokens, usageAnomaly := params.Other.usageAudit()
+	logger.LogInfo(c, common.LogText("request completed: user_id=%d model=%q channel_id=%d channel_name=%q group=%q stream=%t input_tokens=%d output_tokens=%d cache_read_tokens=%d cache_write_tokens=%d quota=%d ttft_ms=%d duration_ms=%d tps=%.2f upstream_request_id=%q usage_semantic=%q cache_overflow_tokens=%d usage_anomaly=%q",
 		userId, params.ModelName, params.ChannelId, common.GetContextKeyString(c, constant.ContextKeyChannelName), params.Group, params.IsStream,
 		params.PromptTokens, params.CompletionTokens, int(logOtherNumber(other, "cache_tokens")), int(cacheWriteTokens),
-		params.Quota, ttftMs, durationMs, tps, c.GetString(common.UpstreamRequestIdKey)))
+		params.Quota, ttftMs, durationMs, tps, c.GetString(common.UpstreamRequestIdKey), usageSemantic, cacheOverflowTokens, usageAnomaly))
 }
 
 // logOtherNumber reads a numeric log field that was set as an int or a float.

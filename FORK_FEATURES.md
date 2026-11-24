@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
 | 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 80 个（含本文档相关提交） |
-| 变更规模 | 475 个文件，+49661 / −3007 行（不含本文档） |
+| fork 专有提交数 | 81 个（含本文档相关提交） |
+| 变更规模 | 477 个文件，+49970 / −3007 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -59,6 +59,7 @@
 42. [Kling 插件：路径式模型、4K 与 HDR 计费](#42-kling-插件路径式模型4k-与-hdr-计费)
 43. [使用日志：按响应模型与响应模型不一致筛选](#43-使用日志按响应模型与响应模型不一致筛选)
 44. [豆包插件：BytePlus 的 Dreamina Seedance 模型名](#44-豆包插件byteplus-的-dreamina-seedance-模型名)
+45. [缓存大于输入：识别、记录与用量校正](#45-缓存大于输入识别记录与用量校正)
 
 ---
 
@@ -105,6 +106,7 @@
 | 42 | Kling 插件：路径式模型、4K 与 HDR 计费 | 与本文档同一提交（1.3.0、1.3.1 两步） | 始终生效 | 无 | 内置 `kling` 插件：路径式接口的 2.5 Turbo 到 4.0 Flash 共 7 个模型；kling-4.0 的 4K 与 HDR 按官方价格预扣和结算，不支持的分辨率 / 动态范围在提交前拒绝；Base URL 已以 `/kling` 结尾时不再重复追加 |
 | 43 | 使用日志：按响应模型与响应模型不一致筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.response_model`、`logs.response_model_mismatch`（新列） | 消费 / 错误日志写入、日志表迁移（含 ClickHouse）、使用日志列表、统计与导出接口、日志页筛选框 |
 | 44 | 豆包插件：BytePlus 的 Dreamina Seedance 模型名 | 与本文档同一提交 | 始终生效 | 无 | 内置 `doubao` 插件 1.6.0：声明 BytePlus ModelArk 的 5 个 `dreamina-seedance-*` 模型，可以直接定价和调用；按旧版倍率计价时，各档位用 BytePlus 的 token 单价比例，渠道映射到 ep 时也按声明的模型取比例 |
+| 45 | 缓存大于输入：识别、记录与用量校正 | 与本文档同一提交 | 识别与记录始终生效；用量校正为渠道开关，默认关闭 | `channel_extend.usage_correction`（新列） | 文本结算：输入包含缓存的口径下缓存读写超过输入时记 `admin_info.usage_anomaly`，汇总行加 `usage_semantic` / `cache_overflow_tokens` / `usage_anomaly`；开了用量校正的渠道把缓存压到输入以内计费 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -137,6 +139,7 @@ fork 的原则是**不修改上游 `channels` / `users` 表结构**，所有 for
 | `schedule` | text | 无 | JSON `dto.ChannelSchedule`，每周可用时段规则；空 = 全天可用 | §16 |
 | `force_retry` | bool | 无（NULL 视为关） | 此渠道的任何报错都重试，跳过状态码 / 错误码 / 关键词规则 | §24 |
 | `empty_output_error` | bool | 无（NULL 视为关） | 文本生成回复完全没有输出时视为 `empty_response` 错误 | §31 |
+| `usage_correction` | bool | 无（NULL 视为关） | 上游缓存读写超过输入（输入包含缓存的口径）时，缓存最多按输入计费 | §45 |
 
 关键方法与行为：
 
@@ -902,6 +905,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `web/src/features/channels/components/drawers/channel-mutate-drawer.tsx` | 大量新增字段 |
 | `web/src/features/channels/lib/channel-form.ts` | extend_config 与 count_tokens 映射 |
 | `service/request_policy.go` | `BeginAttempt` 中的实时 RPM 计数、`userID` 字段 |
+| `service/text_quota.go` | §45 `PostTextConsumeQuota` 在 `effectiveBillingUsage` 和渠道亲和记录之后识别缓存超出、按渠道开关替换 `billingUsage`，生成 `other` 之后调用 `recordUsageCacheOverflow` |
 | `service/text_quota.go` / `service/quota.go` / `service/task_billing.go` / `relay/mjproxy_handler.go` | 消费日志参数改为先赋给 `logParams`，再调用 `RecordSettledUsage` 与 `RecordConsumeLog` |
 | `model/log.go` / `controller/log.go` | `SumUsedQuota` 只算额度、`ValidateLogTextPattern`；日志统计接口改读 `service.LogRate` |
 | `web/src/features/channels/components/channels-table.tsx` / `web/src/features/users/components/users-table.tsx` | RPM 轮询与 `LiveRpmContext` 包裹（渠道表包在上游 rc.45 拖拽排序的 `ChannelPriorityContext` 外层）；§32 去掉渠道表 `initialColumnVisibility` 中的 `models: false` |
@@ -2015,6 +2019,9 @@ Key 不属于该用户时返回失败。两条规则都在 `middleware/access_to
   | `duration_ms` | 从收到请求到结算的总耗时（毫秒） |
   | `tps` | 输出 token ÷ 总耗时（秒），保留两位小数；与日志页的算法相同，但用的是毫秒精度的耗时。只看生成速度可用 `output_tokens / (duration_ms - ttft_ms)` 自行计算 |
   | `upstream_request_id` | §34 的上游请求 ID，没有时为空字符串 |
+  | `usage_semantic` | §45 用量口径：输入不含缓存时为 `anthropic`（含旧版 Claude 转 OpenAI 用量），否则为用量自身的口径（`openai`、`gemini` 等）；不是文本结算的日志为空字符串 |
+  | `cache_overflow_tokens` | §45 上游报的缓存读取 + 缓存写入超出输入的 token 数，只在输入包含缓存的口径下计算，没有超出为 0 |
+  | `usage_anomaly` | §45 `cache_read_over_input`（光缓存读取就超过输入）、`cache_sum_over_input`（读写合计才超过）或空字符串 |
 
 - 这一行不受「记录消费日志」开关影响；关掉开关时数据库不写消费日志，但这一行照常输出。原有的 `record consume log` 行不变（只在开关打开时输出）。
 - 失败的请求没有这一行；它们的 `channel error` 与最终的 `relay error` 行带上渠道名与分组（格式见 §34），没有可用渠道时最终一行保持 `relay error: …`。
@@ -2822,3 +2829,55 @@ BytePlus ModelArk（火山方舟的海外版，`https://ark.ap-southeast.byteplu
   - `TestDoubaoImageSubmission` 的协议检查：`dreamina-seedance-2-5-flash-261115` 走 `/v1/videos` 的 `openai_video` 协议。
 - 临时 Go 测试（未提交）：用改动前的插件，给 `dreamina-seedance-2-0-260128` 和 `dreamina-seedance-2-5-flash-261115` 保存带 `u("resolution")`、`u("tokens")`、`u("video_input")` 的表达式，得到与线上相同的报错；换成新插件后两个都能保存。
 - `go test` 的 plugins、pkg/jsplugin、relay/channel/task、model、controller、service、router 全部通过；插件 oxlint 没有新增问题，oxfmt 格式检查通过。
+
+---
+
+## 45. 缓存大于输入：识别、记录与用量校正
+
+### 动机
+
+- 11-15 到 11-17，#52 oinone-kimi 的 kimi-k3.1-pro 上游报的缓存读取 + 缓存写入大于输入，11-16 一天 17.8 万次，超出合计约 47 亿 token。这种口径（OpenAI、Gemini）下输入本来就包含缓存，这组数不可能成立。
+  - 小幅超出（2–6%）：供应商这段时间用参考分词器重新数了输入，比引擎按 128 token 一块报的缓存少。
+  - 大幅超出（30–120%）：同一段内容既算了缓存读取又算了缓存写入。
+- 网关计费遇到这种情况会把不含缓存的输入截到 0，不写日志也不做标记，告警程序也没有这一类，是供应商先发现的。
+- GLM 那次（10-20 到 10-22）是口径问题：Messages 接口的 `input_tokens` 不含缓存，缓存比它大是正常的。所以检测必须先看口径，不能对 Anthropic 口径报警。
+
+整个方案分四步：本节是第 1 步（识别与记录）和第 3 步（渠道级用量校正）；第 2 步的告警在 newapi-error-router 仓库，由 aws-pp 会话实现；第 4 步把 channel-inspector 的「usage 算术不成立」检查扩展到所有模型，由 channel-inspector 会话实现。
+
+### 行为
+
+- **识别**（始终生效）：每次文本结算（`PostTextConsumeQuota`，覆盖 Chat、Responses、Claude、Gemini 等文本入口），在输入包含缓存的口径下计算「缓存读取 + 缓存写入 − 输入」。缓存写入取上游报的写入总数（`cache_write_tokens`、`cached_creation_tokens`、`cache_creation_input_tokens` 中最大的）。
+  - 光缓存读取就超过输入：`cache_read_over_input`，一定是上游报错。
+  - 读写合计才超过：`cache_sum_over_input`。OpenAI 的缓存写入数可能与读取重叠，少量出现是正常的。
+  - Anthropic 口径（含旧版 Claude 转 OpenAI 的用量）不判断。
+- **记录**：
+  - 消费日志的 `other.admin_info.usage_anomaly`：`{kind, input, cache_read, cache_write, overflow, corrected}`，都是上游原始的数，只有管理员能看到。
+  - 服务器日志的 `request completed` 汇总行末尾加三个字段：`usage_semantic`、`cache_overflow_tokens`、`usage_anomaly`（含义见 §35 的字段表）。追加在行末，已有的解析规则不受影响。不是文本结算的日志三个字段为空。
+- **用量校正**（渠道开关，默认关）：渠道编辑 →「渠道额外设置」→「缓存用量不超过输入」（`channel_extend.usage_correction`）。
+  - 打开后，出现超出时先把缓存读取压到不超过输入，再把缓存写入压到不超过剩下的部分，再计费。客户最多按输入总量付费。
+  - 关闭时按上游报的缓存计费（与以前相同：不含缓存的输入截到 0，缓存读写全额收）。
+  - 两种情况都会记录，`corrected` 标明这次有没有校正。
+  - 倍率计费和表达式计费都按校正后的用量算；日志里的 `cache_tokens` 等也是校正后的值，原始值看 `usage_anomaly`。
+  - 例（#52 真实数据，输入 25,538、读取 20,736、写入 5,632，缓存读 0.1 倍、写 1.25 倍）：关闭时按 9,113.6 收，打开后写入按 4,802 算，收 8,076.1。
+
+### 实现
+
+- `service/usage_cache_overflow.go`：`usageCacheSemantic`（汇总行用的口径）、`detectUsageCacheOverflow`、`correctedUsage`（复制一份，不改上游原始用量；读取被压低时去掉读取的模态拆分 `cached_tokens_details`，因为它已经对不上）、`recordUsageCacheOverflow`。
+- `service/text_quota.go` `PostTextConsumeQuota`：在取得 `billingUsage` 和渠道亲和记录之后识别，渠道开了校正就换成校正后的用量，后面的倍率计费、表达式计费、TPM 统计都用它；生成 `other` 之后记录。
+- `model.LogOther` 加 `SetUsageAudit`（不进 `other` JSON），`logRequestSummary` 读出来写进汇总行。
+- 渠道开关：`dto.ChannelExtendSettings.UsageCorrection`、`channel_extend.usage_correction`（新列，bool，无默认值，NULL 视为关）、`IsZero` 与 upsert 都加了这一项；前端开关与「零输出时报错」同一写法，7 种语言的翻译都补了。
+
+### 已知限制
+
+- 只覆盖文本结算。实时语音、音频、图片、任务的结算不识别。
+- `cache_sum_over_input` 里包含 OpenAI 官方正常的读写重叠，告警要按比例和次数判断，不要见一条报一条。
+- 用量校正后，我们向客户收的会少于供应商按原始用量向我们收的，差额要靠对账向供应商追回（第 2 步的每日对账表）。
+- 识别只对上线后的新请求生效；历史日志没有 `usage_anomaly`，汇总行也没有新字段。
+
+### 测试
+
+- `service/text_quota_test.go` `TestPostTextConsumeQuotaRecordsAndCorrectsCacheOverflow`（#52 的真实数字）：读写合计超出时关闭校正按上游的数收、记录 `corrected: false`；打开校正时写入压到 4,802，倍率计费与表达式计费都收 8,076；光读取就超出时读取压到输入、写入为 0；Claude 口径不记录；调用方传入的用量不被修改。去掉校正那一行时测试失败。
+- `model/log_format_test.go` `TestConsumeLogWritesARequestSummaryLine`：三个字段追加在 `upstream_request_id` 之后；没有用量审计的日志为空值。
+- `model/channel_extend_test.go`、`relaykit/dto/channel_extend_settings_test.go`：开关单独开启时完整往返、不被当作全零删除。
+- 前端 `channel-extend-switches.test.ts`（打开时随 `extend_config` 发送、读回、关闭）、`channel-config-transfer.test.ts`（复制完整配置带上开关）。
+- 数据库：用当前上线版本（`6d24aa536`）的二进制建库并写入一条 `channel_extend` 旧行，再用新版启动两次。SQLite 3.50.4、MySQL 5.7.44、PostgreSQL 9.6.24 上，新版第一次启动只给 `channel_extend` 加了 `usage_correction`（MySQL `tinyint(1)`、PostgreSQL `boolean`），第二次启动表结构不变，启动日志无错误；旧行保留，新列为 NULL，经 `GetChannelExtend` 读成关闭；在三种库上打开、关闭开关都能写入并读回（临时 Go 测试，未提交）。

@@ -2665,6 +2665,8 @@
     "Error Message (required)": "Thông báo lỗi (bắt buộc)",
     "Error message when all channels failed": "Thông báo lỗi khi tất cả các kênh thất bại",
     "Error on Empty Output": "Báo lỗi khi không có đầu ra",
+    "Cap Cache Usage at the Input": "Giới hạn bộ nhớ đệm theo đầu vào",
+    "When an upstream whose input includes the cache reports more cache reads and writes than input, bill the reads as at most the input and the writes as at most what is left. Off, the cache is billed as reported. Either way the request is marked as a usage anomaly in its log.": "Khi nhà cung cấp có đầu vào đã bao gồm bộ nhớ đệm báo số token đọc và ghi bộ nhớ đệm nhiều hơn đầu vào, tính phí phần đọc tối đa bằng đầu vào và phần ghi tối đa bằng phần còn lại. Khi tắt, bộ nhớ đệm được tính phí như báo cáo. Dù bật hay tắt, yêu cầu đều được đánh dấu là bất thường sử dụng trong nhật ký.",
     "Error parsing response data": "Lỗi khi phân tích dữ liệu phản hồi",
     "Error Type (optional)": "Loại lỗi (tùy chọn)",
     "Estimated cost": "Chi phí ước tính",
