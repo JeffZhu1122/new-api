@@ -1631,6 +1631,52 @@ func TestPluginConverterEndpointsBillLikeAdvancedCustom(t *testing.T) {
 	}
 }
 
+// An image generation sent as a multipart form reaches the upstream as the
+// JSON body the API takes, routed and billed by the model it names. A form
+// that uploads a file is refused before any upstream call.
+func TestImageGenerationFormReachesTheUpstreamAsJSON(t *testing.T) {
+	harness := newRelayHarness(t)
+	harness.install(t, harness.newChannel(constant.ChannelTypeOpenAI, "sk-relay"))
+	harness.upstream.respond = func(w http.ResponseWriter, _ int, _ capturedRequest) {
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = io.WriteString(w, `{"created":1730000000,"data":[{"url":"https://img.example/1.png"},{"url":"https://img.example/2.png"}]}`)
+	}
+	form := func(withFile bool) (string, string) {
+		var body bytes.Buffer
+		writer := multipart.NewWriter(&body)
+		require.NoError(t, writer.WriteField("model", relayTestModel))
+		require.NoError(t, writer.WriteField("prompt", "a cat"))
+		require.NoError(t, writer.WriteField("n", "2"))
+		if withFile {
+			part, err := writer.CreateFormFile("image", "cat.png")
+			require.NoError(t, err)
+			_, err = part.Write([]byte("png bytes"))
+			require.NoError(t, err)
+		}
+		require.NoError(t, writer.Close())
+		return writer.FormDataContentType(), body.String()
+	}
+
+	contentType, body := form(false)
+	outcome := harness.send(t, "/v1/images/generations", contentType, body)
+	require.Equal(t, http.StatusOK, outcome.status, outcome.body)
+	requests := harness.upstream.captured()
+	require.Len(t, requests, 1)
+	assert.Equal(t, "application/json", requests[0].Header.Get("Content-Type"))
+	assert.Equal(t, relayTestModel, gjson.Get(requests[0].Body, "model").String())
+	assert.Equal(t, "a cat", gjson.Get(requests[0].Body, "prompt").String())
+	assert.Equal(t, int64(2), gjson.Get(requests[0].Body, "n").Int())
+	assert.Positive(t, outcome.quota)
+	assert.Equal(t, relayTestModel, outcome.log.ModelName)
+
+	harness.upstream.reset()
+	contentType, body = form(true)
+	outcome = harness.send(t, "/v1/images/generations", contentType, body)
+	assert.Equal(t, http.StatusBadRequest, outcome.status)
+	assert.Contains(t, outcome.body, "/v1/images/edits")
+	assert.Empty(t, harness.upstream.captured())
+}
+
 // speechConverters connect a speech vendor that answers with audio as hex or
 // base64 inside JSON, or as the reply itself.
 const speechConverters = `

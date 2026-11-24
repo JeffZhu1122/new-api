@@ -6,8 +6,8 @@
 |---|---|
 | 上游基线（merge-base） | `cb074d31e` — 2026-11-24 `fix(pricing): 按阶梯展示价格同步中的上游表达式` |
 | 最近一次同步 | 2026-11-24，rebase 到 `cb074d31e`，冲突与适配见 §19.4 |
-| fork 专有提交数 | 75 个（含本文档相关提交） |
-| 变更规模 | 469 个文件，+48445 / −2970 行（不含本文档） |
+| fork 专有提交数 | 76 个（含本文档相关提交） |
+| 变更规模 | 473 个文件，+48809 / −2971 行（不含本文档） |
 
 同步策略：fork 采用 **rebase 到上游 main** 的方式跟进，因此 `git log cb074d31e..HEAD` 得到的提交就是全部二开内容，提交的作者日期保留了原始开发时间（2026-08-15 起）。注意中间提交不保证独立可编译（例如 `20d115227` 调用了下一个提交才定义的 `AddFailedChannel`），所有描述以 HEAD 代码为准。
 
@@ -55,7 +55,7 @@
 38. [素材库管理（火山方舟私域素材库）](#38-素材库管理火山方舟私域素材库)
 39. [渠道级出站指纹与 HTTP/3](#39-渠道级出站指纹与-http3)
 40. [Gemini 原生响应省略 null 字段](#40-gemini-原生响应省略-null-字段)
-41. [生图请求读不到模型时返回 400](#41-生图请求读不到模型时返回-400)
+41. [生图接口接受表单与缺 Content-Type 的请求体](#41-生图接口接受表单与缺-content-type-的请求体)
 
 ---
 
@@ -98,7 +98,7 @@
 | 38 | 素材库管理（火山方舟私域素材库） | 与本文档同一提交（分 7 步） | 关闭（关闭时默认不拦截 `asset://`） | `asset_library_accounts` / `asset_library_groups` / `asset_library_assets` / `asset_library_verifications`（新表）、`channel_extend.asset_library_account_id`、`user_extend.asset_library`、`asset_library_setting.*` | 新增设置项、火山账号管理、与方舟一致的 `/volc` 接口；上传写入任务日志；转发时校验 `asset://` 并只选绑定了该账号的渠道；「素材库管理」页面（本人的素材组与素材，管理员看全部用户）与权限资源 `asset_library`；未开白账号的真人人像组走刷脸认证；可选把视频请求里的 URL 参考素材自动传入虚拟人像库；管理员可在「编辑用户」里按用户覆盖每用户素材组 / 素材上限 |
 | 39 | 渠道级出站指纹与 HTTP/3 | 与本文档同一提交 | 关闭（渠道不选指纹配置、协议不选 HTTP/3、不填测试消息时与原来相同；全局总开关默认开，但没有渠道选用配置时不改变任何请求） | `fingerprint_setting.enabled` / `fingerprint_setting.profiles`；渠道 `setting` 的 `fingerprint_profile` / `http_protocol = "http3"` / `test_message` / `test_max_tokens` | 系统设置「出站指纹」一节；渠道编辑的「指纹配置」、`HTTP/3 (QUIC)`、「测试消息」「测试最大 Tokens」；`GET /api/channel/fingerprint_profiles`；选了配置的渠道的 HTTP 与 Realtime WebSocket 出站连接（TLS ClientHello、HTTP/2 参数、请求头顺序、默认 User-Agent）；新依赖 utls / req / quic-go |
 | 40 | Gemini 原生响应省略 null 字段 | 与本文档同一提交 | 关闭（渠道开关；转换路径的修正没有开关） | 渠道 `setting.gemini_omit_null_fields` | Gemini / Vertex AI 渠道的原生生成响应；其他格式转成 Gemini 格式的响应不再写出 `null` |
-| 41 | 生图请求读不到模型时返回 400 | 与本文档同一提交 | 始终生效 | 无 | `POST /v1/images/generations` 读不到模型时的错误：由「分组下模型 dall-e 无可用渠道」改为 400 并说明要发 JSON |
+| 41 | 生图接口接受表单与缺 Content-Type 的请求体 | 与本文档同一提交（分 2 步） | 始终生效 | 无 | `POST /v1/images/generations`：multipart / urlencoded 表单与没有 `Content-Type` 的 JSON 按 JSON 请求处理；上传文件的表单与仍读不到模型的请求返回 400，不再报「分组下模型 dall-e 无可用渠道」 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -967,6 +967,7 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `pkg/jsplugin/routing.go` | §38 `reservedRouteNamespaces` 加 `/asset-library`、`/asset-library-verification`：上游测试要求每个控制台页面都在表里，否则插件路由能占用页面路径 |
 | `controller/provider_plugin_test.go` / `model/channel_plugin_credential_test.go` | 上游测试只迁移上游的表，补 `ChannelExtend`；直接调 `GetChannel` / `GetRandomSatisfiedChannel` 的地方补 `nil` |
 | `middleware/distributor.go` | 上游给插件渠道加了 provider 插件上下文（`ContextKeyProviderPlugin`），fork 的 `ContextKeyChannelExtendSetting` 放在它之前；§41 `getModelRequest` 里 `/v1/images/generations` 分支不再默认 `dall-e`，读不到模型时返回错误 |
+| `router/task-plugin-protocol-router.go` | §41 `openai_image.generate` / `edit` 的中间件链在 `TokenAuth` 之后插入 `middleware.NormalizeImageGenerationBody()`（必须在 `ModelRequestRateLimit` 与 `RouteTaskPluginEndpoint` 读模型之前；对 edits 不做任何事） |
 
 ### 19.3 上游签名变化的传染点
 
@@ -2591,24 +2592,33 @@ Gemini 自己从不发 `null`，客户端却可能在两处收到：
 
 ---
 
-## 41. 生图请求读不到模型时返回 400
+## 41. 生图接口接受表单与缺 Content-Type 的请求体
 
 ### 动机
 
-客户用 `gpt-image-2.5-sunburst` 调 `POST /v1/images/generations`，收到的却是 `No available channel for model dall-e under group default (distributor)`，看不出问题在哪。原因是 `middleware/distributor.go` 的 `getModelRequest` 只在 `Content-Type` 为 JSON 或 `x-www-form-urlencoded` 时读请求体里的 `model`：`multipart/form-data` 不读，没有 `Content-Type` 时读出来是空的；读不到时上游把模型默认成 `dall-e` 去选渠道。站点没有 `dall-e` 渠道，就报上面那句话。
+客户（user 38）用 `gpt-image-2.5-sunburst` 调 `POST /v1/images/generations`，偶尔收到 `No available channel for model dall-e under group default (distributor)`（截至 2026-11-24 的 7 天里共 6 次，成对出现，同一客户端的其他请求正常）。原因是 `middleware/distributor.go` 的 `getModelRequest` 只在 `Content-Type` 为 JSON 或 `x-www-form-urlencoded` 时读请求体里的 `model`：`multipart/form-data` 不读，没有 `Content-Type` 时读出来是空的；读不到时上游把模型默认成 `dall-e` 去选渠道，站点没有 `dall-e` 渠道，就报上面那句话。这几个请求具体是哪种格式查不到（new-api 不记请求头，前置网关的日志拿不到），所以三种都处理。
 
-这个默认值从来没让请求成功过：普通转发在 `controller/relay.go` 里先用 `GetAndValidOpenAIImageRequest` 解析请求体，生图请求只读 JSON，没有 `model` 就返回 `model is required`；插件的 `openai_image` 协议也只接受 JSON（`pkg/jsplugin/routing.go` 的 `generate` 操作 `BodyKinds: BodyJSON`）。
+即使模型读到了，后面也走不通：普通转发用 `GetAndValidOpenAIImageRequest` 解析请求体，生图只认 JSON（表单字段都是字符串，`"n":"2"` 解析失败），插件的 `openai_image` 协议也只接受 JSON（`pkg/jsplugin/routing.go` 的 `generate` 操作 `BodyKinds: BodyJSON`）。
 
 ### 行为
 
-- `POST /v1/images/generations` 读不到模型时（JSON 里没有或为空、没有 `Content-Type`、`multipart/form-data`），分发阶段直接返回 400，`message` 为 `model is required; send /v1/images/generations as a JSON body (Content-Type: application/json) that names the model`，前面带网关已有的 `Invalid request: ` / 「无效的请求，」前缀，不再去选 `dall-e` 的渠道。
-- 读得到模型的请求（JSON、`x-www-form-urlencoded`）不变。`/v1/images/edits` 不变，它本来就从 multipart 表单里读模型。
-- 原来能成功的请求不受影响，变的只是失败时的状态码和文案：原来是选渠道失败（`model_not_found`），现在是 400。
+`POST /v1/images/generations` 在鉴权之后、读模型之前统一成 JSON 请求：
+
+- 没有 `Content-Type`、请求体以 JSON 对象开头（允许前导空白与 BOM）：只把 `Content-Type` 标为 `application/json`，请求体不变。
+- `multipart/form-data`（不含文件）与 `application/x-www-form-urlencoded`：表单字段转成 JSON 对象，替换请求体并把 `Content-Type` 改为 `application/json`。`n`、`output_compression`、`partial_images`、`frame_count`、`frame_duration_ms`、`seed` 转为整数，`stream`、`watermark`、`watermark_enabled` 转为布尔，`parameters`、`extra_fields` 按 JSON 解析，其余保持字符串；同名字段出现多次时为字符串数组；类型字段为空时省略。整数 / 布尔 / JSON 写错返回 400（如 `n must be an integer`）。
+- 含文件的 multipart：返回 400 `/v1/images/generations does not take files; send image inputs to /v1/images/edits`。把文件丢掉会生成一张不相关的图并照常扣费，所以不转换。
+- 之后仍读不到模型（JSON 里没有或为空、没有 `Content-Type` 且不是 JSON、其他 `Content-Type`）：分发阶段返回 400 `model is required; send /v1/images/generations as a JSON body (Content-Type: application/json) that names the model`，不再去选 `dall-e` 的渠道。这个默认值从来没让请求成功过：转发前的校验对没有 `model` 的生图请求本来就返回 `model is required`。
+- 两种 400 前面都带网关已有的 `Invalid request: ` / 「无效的请求，」前缀。已经是 JSON 且带 `Content-Type` 的请求、`/v1/images/edits` 都不变。
+- 计费：转换后的 `n` 与 JSON 请求走同一套校验（`dto.MaxImageN` 上限、发往上游的请求体再校验一次），透传模式发出的是转换后的 JSON。
 
 ### 实现
 
-`middleware/distributor.go` `getModelRequest`：`/v1/images/generations` 分支把 `common.GetStringIfEmpty(modelRequest.Model, "dall-e")` 换成模型为空时返回错误；`Distribute` 用已有的 `invalidRequestStatus` 把它变成 400。
+- `middleware/image_generation_body.go`：`NormalizeImageGenerationBody`（只处理 `POST /v1/images/generations`）与 `imageGenerationFormJSON`。替换请求体的写法与 `relay/requestplugin` 的 `replaceStoredBody` 相同：新建 `BodyStorage`、关闭旧的、清空 `MultipartForm` / `PostForm`，并受 `MAX_REQUEST_BODY_MB` 限制。上游请求的 `Content-Type` 从客户端请求复制，所以上游收到的也是 JSON。
+- `router/task-plugin-protocol-router.go`：`openai_image.generate` / `edit` 的中间件链在 `TokenAuth` 之后加入它（未鉴权的请求体不解析）。
+- `middleware/distributor.go` `getModelRequest`：`/v1/images/generations` 分支把 `common.GetStringIfEmpty(modelRequest.Model, "dall-e")` 换成模型为空时返回错误，`Distribute` 用已有的 `invalidRequestStatus` 返回 400。
 
 ### 测试
 
-`middleware/distributor_test.go` `TestGetModelRequestRequiresTheImageGenerationModel` 5 项：JSON 带模型照常选到该模型；JSON 没有模型、模型为空、没有 `Content-Type`、multipart 表单 4 种都返回提示 `Content-Type: application/json` 的错误且状态码为 400。恢复成默认 `dall-e` 时这 4 项失败。
+- `middleware/image_generation_body_test.go` `TestNormalizeImageGenerationBody` 8 项：multipart 表单（含整数、布尔、JSON 字段）与 urlencoded 表单转成期望的 JSON，模型查找与转发前的解析都读到模型，计费张数为表单里的 `n`；没有 `Content-Type` 的 JSON 标为 JSON、请求体不变；带 `Content-Type` 的 JSON 不变；含文件的表单、`n` 不是整数的表单返回 400；没有 `Content-Type` 且不是 JSON 的请求体由模型查找返回 400；`/v1/images/edits` 的上传不变。去掉中间件时其中 5 项失败。
+- `middleware/distributor_test.go` `TestGetModelRequestRequiresTheImageGenerationModel` 5 项：JSON 带模型照常；JSON 没有模型、模型为空、没有 `Content-Type`、multipart 表单直接到模型查找时都返回提示 `Content-Type: application/json` 的 400。恢复成默认 `dall-e` 时 4 项失败。
+- `router/provider_plugin_relay_test.go` `TestImageGenerationFormReachesTheUpstreamAsJSON`：经完整网关（鉴权、路由、分发、转发、计费）发 multipart 表单，上游收到 `Content-Type: application/json`、`model` / `prompt` / `n: 2` 的 JSON，按该模型计费；含文件的表单返回 400 且没有发往上游。路由里去掉中间件时失败。
