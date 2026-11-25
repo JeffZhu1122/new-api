@@ -89,6 +89,7 @@ test('the page shows the log modules in order, each with its own controls', asyn
     'Log search and export',
     'System task records',
     'Clean history logs',
+    'Response model backfill',
     'Server Log Management',
   ])
   const recording = screen.getByRole('group', { name: 'Log recording' })

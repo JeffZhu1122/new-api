@@ -22,6 +22,8 @@ import type {
   ConfirmPaymentComplianceResponse,
   FetchUpstreamRatiosRequest,
   LogCleanupTask,
+  LogResponseModelBackfillStatus,
+  LogResponseModelBackfillTask,
   LogFileCleanupScheduleStatus,
   SystemOptionsResponse,
   SystemTaskListResponse,
@@ -84,6 +86,20 @@ export async function getCurrentLogCleanupTask() {
     {
       params: { type: 'log_cleanup' },
     }
+  )
+  return res.data
+}
+
+export async function getLogResponseModelBackfill() {
+  const res = await api.get<
+    SystemTaskResponse<LogResponseModelBackfillStatus | null>
+  >('/api/system-task/log-response-model-backfill')
+  return res.data
+}
+
+export async function startLogResponseModelBackfill() {
+  const res = await api.post<SystemTaskResponse<LogResponseModelBackfillTask>>(
+    '/api/system-task/log-response-model-backfill'
   )
   return res.data
 }

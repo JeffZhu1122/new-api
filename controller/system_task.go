@@ -142,3 +142,46 @@ func GetSystemTask(c *gin.Context) {
 		"data":    task.ToResponse(),
 	})
 }
+
+// GetLogResponseModelBackfill answers the log maintenance settings: whether
+// the log database can be backfilled, whether a run already read every log,
+// and the latest run.
+func GetLogResponseModelBackfill(c *gin.Context) {
+	task, err := model.GetLatestSystemTask(model.SystemTaskTypeLogResponseModelBackfill)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	data := gin.H{
+		"supported": !common.UsingLogDatabase(common.DatabaseTypeClickHouse),
+		"done":      model.LogResponseModelBackfillDone(),
+		"task":      nil,
+	}
+	if task != nil {
+		data["task"] = task.ToResponse()
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    data,
+	})
+}
+
+// CreateLogResponseModelBackfillSystemTask queues a backfill run, or returns
+// the run already queued or running.
+func CreateLogResponseModelBackfillSystemTask(c *gin.Context) {
+	if common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
+		common.ApiError(c, service.ErrLogResponseModelBackfillClickHouse)
+		return
+	}
+	task, _, err := service.EnqueueSystemTask(model.SystemTaskTypeLogResponseModelBackfill, nil)
+	if err != nil {
+		common.ApiError(c, err)
+		return
+	}
+	c.JSON(http.StatusOK, gin.H{
+		"success": true,
+		"message": "",
+		"data":    task.ToResponse(),
+	})
+}

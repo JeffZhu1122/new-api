@@ -55,6 +55,7 @@ import {
   logFileCleanupScheduleSchema,
   type LogFileCleanupScheduleValues,
 } from './log-file-cleanup-schedule-schema'
+import { ResponseModelBackfill } from './response-model-backfill'
 import { ServerLogFiles } from './server-log-files'
 
 const logSettingsSchema = z.object({
@@ -300,6 +301,10 @@ export function LogSettingsSection(props: LogSettingsSectionProps) {
       <Separator />
 
       <HistoryLogCleanup />
+
+      <Separator />
+
+      <ResponseModelBackfill />
 
       <Separator />
 

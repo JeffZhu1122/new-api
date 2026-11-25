@@ -1,95 +1,99 @@
 package model
 
 import (
-	"strconv"
+	"context"
 
 	"github.com/QuantumNous/new-api/common"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
 	"gorm.io/gorm/clause"
 )
 
-// logResponseModelBackfillKey is the option that remembers how far the
-// response model backfill has gone: the id of the last log it read, or
-// logResponseModelBackfillDone once it reached the end of the logs.
+// logResponseModelBackfillKey is the option that records, with the value
+// "done", that one response model backfill read every log, so the scheduler
+// stops queuing it.
 const logResponseModelBackfillKey = "log_response_model_backfill"
 
 const logResponseModelBackfillDone = "done"
 
-const logResponseModelBackfillBatch = 500
-
-// BackfillLogResponseModels fills logs.response_model and
-// logs.response_model_mismatch on the logs written before those columns
-// existed, from the response model their other JSON recorded, so the
-// usage-log filters by response model find them too. The columns are judged
-// by the same rule as when a log is written. A declaration equal to the
-// request was not recorded in other then, so those logs keep an empty
-// response model; every mismatch was recorded.
-//
-// It reads the logs once, in id order and in batches, and resumes after a
-// restart where it stopped. ClickHouse logs are left as they are, because an
-// update there rewrites table parts.
-func BackfillLogResponseModels() error {
-	if DB == nil || LOG_DB == nil || common.UsingLogDatabase(common.DatabaseTypeClickHouse) {
-		return nil
+// LogIDRange returns the smallest and the largest log id; both are 0 when
+// there are no logs.
+func LogIDRange() (int, int, error) {
+	var bounds struct {
+		MinID *int64
+		MaxID *int64
 	}
-	var progress []Option
-	if err := DB.Where(&Option{Key: logResponseModelBackfillKey}).Limit(1).Find(&progress).Error; err != nil {
-		return err
+	if err := LOG_DB.Model(&Log{}).Select("MIN(id) AS min_id, MAX(id) AS max_id").Scan(&bounds).Error; err != nil {
+		return 0, 0, err
 	}
-	cursor := 0
-	if len(progress) > 0 {
-		if progress[0].Value == logResponseModelBackfillDone {
-			return nil
-		}
-		cursor, _ = strconv.Atoi(progress[0].Value)
+	if bounds.MinID == nil || bounds.MaxID == nil {
+		return 0, 0, nil
 	}
-
-	filled := 0
-	for {
-		var logs []Log
-		err := LOG_DB.Select("id", "other").
-			Where("id > ? AND other LIKE ? AND (response_model = '' OR response_model IS NULL)", cursor, `%"response_model"%`).
-			Order("id").Limit(logResponseModelBackfillBatch).Find(&logs).Error
-		if err != nil {
-			return err
-		}
-		for _, log := range logs {
-			var other struct {
-				ResponseModel *relaycommon.ResponseModel `json:"response_model"`
-			}
-			if common.UnmarshalJsonStr(log.Other, &other) != nil || other.ResponseModel == nil || other.ResponseModel.ReturnedModel == "" {
-				continue
-			}
-			columns := NewLogOther()
-			columns.SetResponseModel(other.ResponseModel.ReturnedModel, other.ResponseModel.Mismatch())
-			responseModel, mismatch := columns.responseModelColumns()
-			err := LOG_DB.Model(&Log{}).Where("id = ?", log.Id).Updates(map[string]any{
-				"response_model":          responseModel,
-				"response_model_mismatch": mismatch,
-			}).Error
-			if err != nil {
-				return err
-			}
-			filled++
-		}
-		if len(logs) < logResponseModelBackfillBatch {
-			break
-		}
-		cursor = logs[len(logs)-1].Id
-		if err := saveLogResponseModelBackfill(strconv.Itoa(cursor)); err != nil {
-			return err
-		}
-	}
-	if err := saveLogResponseModelBackfill(logResponseModelBackfillDone); err != nil {
-		return err
-	}
-	common.SysLog(common.LogText("filled the response model columns of %d earlier usage logs", filled))
-	return nil
+	return int(*bounds.MinID), int(*bounds.MaxID), nil
 }
 
-func saveLogResponseModelBackfill(value string) error {
-	return DB.Clauses(clause.OnConflict{
+// FillLogResponseModels fills logs.response_model and
+// logs.response_model_mismatch on the logs with an id in (afterID, throughID]
+// that recorded a response model in other but have none in the columns: the
+// logs written before the columns existed. It judges them by the rule a log is
+// written with, so the usage-log filters by response model find them. A
+// response model equal to the request was not recorded in other then, so
+// those logs stay empty; every mismatch was recorded. It returns how many
+// logs it filled.
+func FillLogResponseModels(ctx context.Context, afterID int, throughID int) (int64, error) {
+	var logs []Log
+	err := LOG_DB.WithContext(ctx).Select("id", "other").
+		Where("id > ? AND id <= ? AND other LIKE ? AND (response_model = '' OR response_model IS NULL)", afterID, throughID, `%"response_model"%`).
+		Order("id").Find(&logs).Error
+	if err != nil {
+		return 0, err
+	}
+	var filled int64
+	for _, log := range logs {
+		var other struct {
+			ResponseModel *relaycommon.ResponseModel `json:"response_model"`
+		}
+		if common.UnmarshalJsonStr(log.Other, &other) != nil || other.ResponseModel == nil || other.ResponseModel.ReturnedModel == "" {
+			continue
+		}
+		columns := NewLogOther()
+		columns.SetResponseModel(other.ResponseModel.ReturnedModel, other.ResponseModel.Mismatch())
+		responseModel, mismatch := columns.responseModelColumns()
+		err := LOG_DB.WithContext(ctx).Model(&Log{}).Where("id = ?", log.Id).Updates(map[string]any{
+			"response_model":          responseModel,
+			"response_model_mismatch": mismatch,
+		}).Error
+		if err != nil {
+			return filled, err
+		}
+		filled++
+	}
+	return filled, nil
+}
+
+// LogResponseModelBackfillDone reports whether a response model backfill has
+// read every log.
+func LogResponseModelBackfillDone() bool {
+	common.OptionMapRWMutex.RLock()
+	defer common.OptionMapRWMutex.RUnlock()
+	return common.OptionMap[logResponseModelBackfillKey] == logResponseModelBackfillDone
+}
+
+// MarkLogResponseModelBackfillDone records that a response model backfill
+// read every log, here and, through the options sync, on the other nodes.
+func MarkLogResponseModelBackfillDone() error {
+	err := DB.Clauses(clause.OnConflict{
 		Columns:   []clause.Column{{Name: "key"}},
 		DoUpdates: clause.AssignmentColumns([]string{"value"}),
-	}).Create(&Option{Key: logResponseModelBackfillKey, Value: value}).Error
+	}).Create(&Option{Key: logResponseModelBackfillKey, Value: logResponseModelBackfillDone}).Error
+	if err != nil {
+		return err
+	}
+	common.OptionMapRWMutex.Lock()
+	if common.OptionMap == nil {
+		common.OptionMap = make(map[string]string)
+	}
+	common.OptionMap[logResponseModelBackfillKey] = logResponseModelBackfillDone
+	common.OptionMapRWMutex.Unlock()
+	BumpSyncTopic(SyncTopicOptions)
+	return nil
 }

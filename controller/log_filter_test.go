@@ -1,6 +1,7 @@
 package controller
 
 import (
+	"context"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -491,11 +492,11 @@ func TestUsageLogsFilterByResponseModel(t *testing.T) {
 }
 
 // Logs written before the response model columns existed recorded the
-// declaration only in other. The backfill fills the columns from it once, by
-// the rule a log is written with, so the response model filters find them.
+// declaration only in other. The backfill fills the columns of a log id range
+// from it, by the rule a log is written with, so the response model filters
+// find those logs.
 func TestUsageLogsFilterFindsBackfilledResponseModels(t *testing.T) {
 	setupLogFilterTest(t)
-	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
 	earlierOther := func(requested, returned string) string {
 		info := &relaycommon.RelayInfo{OriginModelName: requested}
 		info.ObserveResponseModel(returned)
@@ -510,15 +511,23 @@ func TestUsageLogsFilterFindsBackfilledResponseModels(t *testing.T) {
 		// Not a declaration: the key sits inside another value.
 		{Type: model.LogTypeConsume, ModelName: "gpt-4o-mini", Quota: 300, CreatedAt: 2003, Other: `{"admin_info":{"response_model":"x"}}`},
 	}
-	// More declarations than one batch, so the backfill reads past its first.
-	for i := range 500 {
-		earlier = append(earlier, model.Log{Type: model.LogTypeConsume, ModelName: "deepseek-v4", Quota: 1, CreatedAt: 3000 + int64(i), Other: earlierOther("deepseek-v4", "deepseek-v4-0901")})
-	}
-	require.NoError(t, model.LOG_DB.CreateInBatches(earlier, 100).Error)
+	require.NoError(t, model.LOG_DB.Create(&earlier).Error)
 	// An upgrade leaves the new mismatch column empty on the earlier logs.
 	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("created_at >= ?", 2000).Update("response_model_mismatch", nil).Error)
 
-	require.NoError(t, model.BackfillLogResponseModels())
+	fromID, toID, err := model.LogIDRange()
+	require.NoError(t, err)
+	assert.Equal(t, earlier[len(earlier)-1].Id, toID)
+	// The range excludes its first id and includes its last.
+	filled, err := model.FillLogResponseModels(context.Background(), fromID-1, earlier[1].Id)
+	require.NoError(t, err)
+	assert.EqualValues(t, 2, filled)
+	filled, err = model.FillLogResponseModels(context.Background(), earlier[1].Id, toID)
+	require.NoError(t, err)
+	assert.EqualValues(t, 1, filled)
+	filled, err = model.FillLogResponseModels(context.Background(), fromID-1, toID)
+	require.NoError(t, err)
+	assert.Zero(t, filled, "a filled log is not filled again")
 
 	mismatches := logFilterRequest(t, GetAllLogs, url.Values{"response_model_mismatch": {"true"}})
 	require.True(t, mismatches.Success, mismatches.MessageKey)
@@ -532,7 +541,6 @@ func TestUsageLogsFilterFindsBackfilledResponseModels(t *testing.T) {
 		total         int
 	}{
 		"a dated variant, not a mismatch":              {"gpt-4.1-2025-04-14", 1},
-		"past the first batch":                         {"deepseek-v4-0901", 500},
 		"a key inside another value is no declaration": {"x", 0},
 	} {
 		logs := logFilterRequest(t, GetAllLogs, url.Values{"response_model": {test.responseModel}})
@@ -540,13 +548,21 @@ func TestUsageLogsFilterFindsBackfilledResponseModels(t *testing.T) {
 		assert.Equal(t, test.total, logs.Data.Total, name)
 	}
 
-	// A finished backfill does not read the logs again on the next start.
-	late := model.Log{Type: model.LogTypeConsume, ModelName: "gemini-3.1-pro-preview", CreatedAt: 5000, Other: earlierOther("gemini-3.1-pro-preview", "3.1-flash-lite-05-2026")}
-	require.NoError(t, model.LOG_DB.Create(&late).Error)
-	require.NoError(t, model.BackfillLogResponseModels())
-	var reread model.Log
-	require.NoError(t, model.LOG_DB.First(&reread, late.Id).Error)
-	assert.Empty(t, reread.ResponseModel)
+	// A finished run is recorded once, however often it is marked.
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}, &model.SystemTask{}))
+	t.Cleanup(func() {
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, "log_response_model_backfill")
+		common.OptionMapRWMutex.Unlock()
+	})
+	require.False(t, model.LogResponseModelBackfillDone())
+	require.NoError(t, model.MarkLogResponseModelBackfillDone())
+	require.NoError(t, model.MarkLogResponseModelBackfillDone())
+	assert.True(t, model.LogResponseModelBackfillDone())
+	var marks []model.Option
+	require.NoError(t, model.DB.Where(&model.Option{Key: "log_response_model_backfill"}).Find(&marks).Error)
+	require.Len(t, marks, 1)
+	assert.Equal(t, "done", marks[0].Value)
 }
 
 // A user's own quota statistics follow the account, not the username: the

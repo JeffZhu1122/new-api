@@ -120,6 +120,32 @@ export type LogCleanupTask = SystemTask<
   LogCleanupTaskResult
 >
 
+export type LogResponseModelBackfillTaskState = {
+  from_id: number
+  to_id: number
+  /** The last log id the run read */
+  cursor: number
+  progress: number
+  /** Logs filled so far */
+  filled: number
+}
+
+export type LogResponseModelBackfillTask = SystemTask<
+  Record<string, unknown>,
+  LogResponseModelBackfillTaskState,
+  { filled: number }
+>
+
+/** The backfill of the response model columns of earlier logs */
+export type LogResponseModelBackfillStatus = {
+  /** False on a ClickHouse log database, which is not backfilled */
+  supported: boolean
+  /** A run has read every log */
+  done: boolean
+  /** The latest run, while the task history keeps it */
+  task: LogResponseModelBackfillTask | null
+}
+
 export type LogFileCleanupRun = {
   started_at: number
   mode: 'by_count' | 'by_days'

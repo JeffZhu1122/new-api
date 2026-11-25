@@ -232,3 +232,48 @@ func TestEnqueueSystemTaskReportsCreatedAndExistingActive(t *testing.T) {
 	require.NotNil(t, second)
 	assert.NotEqual(t, first.TaskID, second.TaskID)
 }
+
+// The response model backfill runs as a system task: it fills the earlier logs
+// that recorded a response model, reports how many, and once a run read every
+// log the scheduler stops queuing it.
+func TestLogResponseModelBackfillTaskFillsEarlierLogsOnce(t *testing.T) {
+	truncate(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
+	t.Cleanup(func() {
+		model.DB.Exec("DELETE FROM options")
+		common.OptionMapRWMutex.Lock()
+		delete(common.OptionMap, "log_response_model_backfill")
+		common.OptionMapRWMutex.Unlock()
+	})
+	handler := logResponseModelBackfillHandler{}
+	require.True(t, handler.Enabled(), "queued after the upgrade")
+
+	declared := `{"response_model":{"requested_model":"gemini-3.1-pro-preview","upstream_model":"gemini-3.1-pro-preview","returned_model":"3.1-flash-lite-05-2026"}}`
+	require.NoError(t, model.LOG_DB.Create(&[]model.Log{
+		{Type: model.LogTypeConsume, ModelName: "gemini-3.1-pro-preview", Other: declared},
+		{Type: model.LogTypeConsume, ModelName: "gpt-4o", Other: `{"frt":120}`},
+	}).Error)
+
+	created, err := model.CreateSystemTask(handler.Type(), nil, nil)
+	require.NoError(t, err)
+	task, claimed, err := model.ClaimSystemTask(created.ID, handler.Type(), "runner-backfill", systemTaskLockUntil())
+	require.NoError(t, err)
+	require.True(t, claimed)
+	handler.Run(context.Background(), task, "runner-backfill")
+
+	finished, err := model.GetSystemTaskByTaskID(task.TaskID)
+	require.NoError(t, err)
+	require.Equal(t, model.SystemTaskStatusSucceeded, finished.Status, finished.Error)
+	var result LogResponseModelBackfillResult
+	require.NoError(t, common.UnmarshalJsonStr(finished.Result, &result))
+	assert.EqualValues(t, 1, result.Filled)
+	var state LogResponseModelBackfillState
+	require.NoError(t, finished.DecodeState(&state))
+	assert.Equal(t, 100, state.Progress)
+
+	var filled model.Log
+	require.NoError(t, model.LOG_DB.Where("model_name = ?", "gemini-3.1-pro-preview").First(&filled).Error)
+	assert.Equal(t, "3.1-flash-lite-05-2026", filled.ResponseModel)
+	assert.True(t, filled.ResponseModelMismatch)
+	assert.False(t, handler.Enabled(), "a run that read every log is not queued again")
+}

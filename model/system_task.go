@@ -26,6 +26,9 @@ const (
 	SystemTaskTypeAsyncTaskPoll  = "async_task_poll"
 	SystemTaskTypeChannelBalance = "channel_balance"
 	SystemTaskTypeCleanup        = "system_task_cleanup"
+	// SystemTaskTypeLogResponseModelBackfill fills the response model columns of
+	// the logs written before they existed.
+	SystemTaskTypeLogResponseModelBackfill = "log_response_model_backfill"
 
 	systemTaskCleanupBatchSize = 500
 )
