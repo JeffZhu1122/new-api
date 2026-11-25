@@ -104,7 +104,7 @@
 | 40 | Gemini 原生响应省略 null 字段 | 与本文档同一提交 | 关闭（渠道开关；转换路径的修正没有开关） | 渠道 `setting.gemini_omit_null_fields` | Gemini / Vertex AI 渠道的原生生成响应；其他格式转成 Gemini 格式的响应不再写出 `null` |
 | 41 | 生图接口接受表单与缺 Content-Type 的请求体 | 与本文档同一提交（分 2 步） | 始终生效 | 无 | `POST /v1/images/generations`：multipart / urlencoded 表单与没有 `Content-Type` 的 JSON 按 JSON 请求处理；上传文件的表单与仍读不到模型的请求返回 400，不再报「分组下模型 dall-e 无可用渠道」 |
 | 42 | Kling 插件：路径式模型、4K 与 HDR 计费 | 与本文档同一提交（1.3.0、1.3.1 两步） | 始终生效 | 无 | 内置 `kling` 插件：路径式接口的 2.5 Turbo 到 4.0 Flash 共 7 个模型；kling-4.0 的 4K 与 HDR 按官方价格预扣和结算，不支持的分辨率 / 动态范围在提交前拒绝；Base URL 已以 `/kling` 结尾时不再重复追加 |
-| 43 | 使用日志：按响应模型与响应模型不一致筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.response_model`、`logs.response_model_mismatch`（新列） | 消费 / 错误日志写入、日志表迁移（含 ClickHouse）、使用日志列表、统计与导出接口、日志页筛选框 |
+| 43 | 使用日志：按响应模型与响应模型不一致筛选 | 与本文档同一提交 | 不填即不过滤 | `logs.response_model`、`logs.response_model_mismatch`（新列）；`options.log_response_model_backfill`（回填进度） | 消费 / 错误日志写入、日志表迁移（含 ClickHouse）、启动时回填旧日志、使用日志列表、统计与导出接口、日志页筛选框 |
 | 44 | 豆包插件：BytePlus 的 Dreamina Seedance 模型名 | 与本文档同一提交 | 始终生效 | 无 | 内置 `doubao` 插件 1.6.0 / 1.6.1：声明 BytePlus ModelArk 的 5 个 `dreamina-seedance-*` 模型和火山方舟的 `doubao-seedance-2-5-flash-261115`，可以直接定价和调用；按旧版倍率计价时，各档位用 BytePlus 的 token 单价比例，渠道映射到 ep 时也按声明的模型取比例 |
 | 45 | 缓存大于输入：识别、记录与用量校正 | 与本文档同一提交 | 识别与记录始终生效；用量校正为渠道开关，默认关闭 | `channel_extend.usage_correction`（新列） | 文本结算：输入包含缓存的口径下缓存读写超过输入时记 `admin_info.usage_anomaly`，汇总行加 `usage_semantic` / `cache_overflow_tokens` / `usage_anomaly`；开了用量校正的渠道把缓存压到输入以内计费 |
 
@@ -2750,6 +2750,10 @@ Gemini 自己从不发 `null`，客户端却可能在两处收到：
   - `response_model_mismatch`（布尔，无默认值）：写日志时按上面的规则判定。
   - 写入路径：上游的 `service.AppendResponseModelLogInfo`（文本消费日志和错误日志都经过它）开头调用新加的 `LogOther.SetResponseModel`，值存在 `LogOther` 的私有字段里，不进 `other` JSON；`RecordConsumeLog` / `RecordErrorLog` 写日志时取出来填入两列。
   - 迁移：SQLite / MySQL / PostgreSQL 由 `LOG_DB.AutoMigrate(&Log{})` 自动加列。ClickHouse 建表语句加了两列，已有的表由 `clickHouseLogAddedColumns` 执行 `ADD COLUMN IF NOT EXISTS`（`String DEFAULT ''`、`UInt8 DEFAULT 0`）。
+  - **回填旧日志**（`model/log_response_model_backfill.go` 的 `BackfillLogResponseModels`，`main.go` 在日志库初始化后由主节点放到后台执行）：
+    - 按 id 顺序每批读 500 条 `other` 含 `"response_model"`、`response_model` 列为空的日志，解析 `other` 顶层的 `response_model`，用和写日志时相同的 `SetResponseModel` 与 `Mismatch` 填两列。
+    - 进度存在 `options` 表的 `log_response_model_backfill`：每批后记下最后读到的 id，重启后从那里继续；读到末尾后写 `done`，以后启动不再扫描日志表。
+    - 跳过 ClickHouse：那里的更新是重写数据分片的 mutation。
 - **筛选**：`model.LogMetricsFilter` 加 `ResponseModel` / `ResponseModelMismatch`。`applyTo` 用与模型名相同的 `applyExplicitLogTextFilter`，非法通配会报错，所以 `applyTo` 改为返回 error；`IsZero` 把两项计入。列表、导出（经 `LogFilter.Metrics`）和额度统计（`SumUsedQuota`）都经过它。`controller/log.go` 的 `parseLogMetricsFilter` 解析两个参数。
 - **为什么存判定结果，而不是查询时再算**：上游有意不存这个标志（`972aed197`），好让规则改了以后旧日志也按新规则显示。但这条规则是「前缀 / 后缀、不区分大小写」的比较，在 SQL 里要拼接字符串，SQLite / MySQL / PostgreSQL / ClickHouse 写法各不相同，模型名里的 `_` 还是 LIKE 通配符；放到查询后再过滤又会让分页和总数不准。所以写日志时判定一次存下来。
 - **前端**：
@@ -2758,7 +2762,10 @@ Gemini 自己从不发 `null`，客户端却可能在两处收到：
 
 ### 已知限制
 
-- **只对上线之后的新日志生效。** 历史日志这两列为空，按响应模型或「不一致」都查不到；历史日志的详情里照样能看到响应模型。没有回填：要回填得逐行解析 `other` JSON，日志表很大时不适合放在启动迁移里。
+- **历史日志靠回填。** 上线前写的日志只在 `other` 里记录了与请求不同的响应模型，回填后「不一致」和这些响应模型都能查到；与请求相同的响应模型当时没有记录，按名字仍查不到。
+  - 回填在后台跑，日志表很大时要一段时间才能补完，期间这类旧日志查不全。
+  - 回填写完 `done` 之后，还没升级的节点再写的日志不会被补。
+  - ClickHouse 日志库不回填。
 - 「不一致」是写日志那一刻的规则。上游以后改了规则，旧日志的标志不会跟着变；日志页的黄色警告是实时计算的，两者可能不一致。
 - 只覆盖上游会记录响应模型的路径：文本类请求（OpenAI Chat / Responses、Claude、Gemini 等，见上游 `ObserveResponseModel` 的调用处）的消费日志与错误日志。图片、音频、异步任务等不记录响应模型，这两列始终为空。
 - 两列都没有索引，依赖时间范围收窄扫描。普通用户的查询有最长时间范围限制，管理员没有，管理员不填时间范围按「不一致」查会扫全表。
@@ -2771,6 +2778,12 @@ Gemini 自己从不发 `null`，客户端却可能在两处收到：
   - 检查写入的两列：相同的声明也写入、带日期的版本不算不一致、超长的截到 191 个字符且日志写入成功、错误日志也写。
   - 在管理员与用户自己两个视图下检查：只看不一致、精确响应模型、`%` 通配、与请求相同的响应模型、错误日志的响应模型、通配 + 不一致、与模型名组合；额度统计按筛选计算，实时统计为 `filter_unsupported`；`false` 不筛选；非法布尔值与过短的通配在 4 个接口上都被拒绝。
   - 去掉 `SetResponseModel` 那一行时这个测试失败。
+- `controller/log_filter_test.go` `TestUsageLogsFilterFindsBackfilledResponseModels`：
+  - 写入升级前样子的日志（`other` 里有 `response_model`，两列为空，不一致列为 NULL）：一条不一致、一条带日期的版本、一条错误日志里的不一致、一条只在嵌套值里出现这个键的日志，再加 500 条带响应模型的日志，跨过第一批。
+  - 回填后按「不一致」只查到那两条；带日期的版本按名字查到 1 条，500 条全部补上，嵌套的键不算声明。
+  - 回填完成后新写入的旧式日志不再被扫描。
+  - 在 SQLite、MySQL 5.7.44、PostgreSQL 9.6.24 上通过。
+- 回填的升级实测（Docker，SQLite / MySQL 5.7.44 / PostgreSQL 9.6.24）：用 `3ee0fd3cf` 之前的二进制建库，写入三条旧日志（不一致、带日期的版本、没有响应模型），再用新版启动两次。第一次启动日志显示补了 2 条，两列分别为 `3.1-flash-lite-05-2026` / true、`gpt-4.1-2025-04-14` / false，没有响应模型的那条保持为空，`options` 里记为 `done`；第二次启动没有再回填。
 - `model/clickhouse_log_test.go` `TestClickHouseLogTableCoversEveryLogColumn`：建表语句包含两个新列，`clickHouseLogAddedColumns` 有对应的 `ALTER`。
 - `web/src/features/usage-logs/lib/__tests__/log-filter-params.test.ts`：响应模型按包含匹配发送、带 `%` 原样发送；只有选中「不一致」时才发 `response_model_mismatch=true`；两项写入 URL，空白输入不写。
 - `web/src/features/usage-logs/components/__tests__/range-filters.test.tsx`：输入响应模型并选「不一致」后搜索，URL 正确、「收起」角标为 2；URL 里的两项回填到筛选框，选回「全部」后 URL 不再带 `responseModelMismatch`。

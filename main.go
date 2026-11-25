@@ -389,6 +389,13 @@ func InitResources() error {
 	if err != nil {
 		return err
 	}
+	if common.IsMasterNode {
+		gopool.Go(func() {
+			if err := model.BackfillLogResponseModels(); err != nil {
+				common.SysError(common.LogText("failed to backfill the response model columns of earlier usage logs: %s", err.Error()))
+			}
+		})
+	}
 
 	// Initialize Redis
 	err = common.InitRedisClient()

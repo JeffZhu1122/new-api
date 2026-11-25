@@ -490,6 +490,65 @@ func TestUsageLogsFilterByResponseModel(t *testing.T) {
 	}
 }
 
+// Logs written before the response model columns existed recorded the
+// declaration only in other. The backfill fills the columns from it once, by
+// the rule a log is written with, so the response model filters find them.
+func TestUsageLogsFilterFindsBackfilledResponseModels(t *testing.T) {
+	setupLogFilterTest(t)
+	require.NoError(t, model.DB.AutoMigrate(&model.Option{}))
+	earlierOther := func(requested, returned string) string {
+		info := &relaycommon.RelayInfo{OriginModelName: requested}
+		info.ObserveResponseModel(returned)
+		other := model.NewLogOther()
+		service.AppendResponseModelLogInfo(info, other)
+		return other.JSONString()
+	}
+	earlier := []model.Log{
+		{Type: model.LogTypeConsume, ModelName: "gemini-3.1-pro-preview", Quota: 300, CreatedAt: 2000, Other: earlierOther("gemini-3.1-pro-preview", "3.1-flash-lite-05-2026")},
+		{Type: model.LogTypeConsume, ModelName: "gpt-4.1", Quota: 300, CreatedAt: 2001, Other: earlierOther("gpt-4.1", "gpt-4.1-2025-04-14")},
+		{Type: model.LogTypeError, ModelName: "claude-sonnet-4.5", CreatedAt: 2002, Other: earlierOther("claude-sonnet-4.5", "glm-5.3")},
+		// Not a declaration: the key sits inside another value.
+		{Type: model.LogTypeConsume, ModelName: "gpt-4o-mini", Quota: 300, CreatedAt: 2003, Other: `{"admin_info":{"response_model":"x"}}`},
+	}
+	// More declarations than one batch, so the backfill reads past its first.
+	for i := range 500 {
+		earlier = append(earlier, model.Log{Type: model.LogTypeConsume, ModelName: "deepseek-v4", Quota: 1, CreatedAt: 3000 + int64(i), Other: earlierOther("deepseek-v4", "deepseek-v4-0901")})
+	}
+	require.NoError(t, model.LOG_DB.CreateInBatches(earlier, 100).Error)
+	// An upgrade leaves the new mismatch column empty on the earlier logs.
+	require.NoError(t, model.LOG_DB.Model(&model.Log{}).Where("created_at >= ?", 2000).Update("response_model_mismatch", nil).Error)
+
+	require.NoError(t, model.BackfillLogResponseModels())
+
+	mismatches := logFilterRequest(t, GetAllLogs, url.Values{"response_model_mismatch": {"true"}})
+	require.True(t, mismatches.Success, mismatches.MessageKey)
+	models := make([]string, 0, len(mismatches.Data.Items))
+	for _, item := range mismatches.Data.Items {
+		models = append(models, item.ModelName)
+	}
+	assert.ElementsMatch(t, []string{"gemini-3.1-pro-preview", "claude-sonnet-4.5"}, models)
+	for name, test := range map[string]struct {
+		responseModel string
+		total         int
+	}{
+		"a dated variant, not a mismatch":              {"gpt-4.1-2025-04-14", 1},
+		"past the first batch":                         {"deepseek-v4-0901", 500},
+		"a key inside another value is no declaration": {"x", 0},
+	} {
+		logs := logFilterRequest(t, GetAllLogs, url.Values{"response_model": {test.responseModel}})
+		require.True(t, logs.Success, logs.MessageKey)
+		assert.Equal(t, test.total, logs.Data.Total, name)
+	}
+
+	// A finished backfill does not read the logs again on the next start.
+	late := model.Log{Type: model.LogTypeConsume, ModelName: "gemini-3.1-pro-preview", CreatedAt: 5000, Other: earlierOther("gemini-3.1-pro-preview", "3.1-flash-lite-05-2026")}
+	require.NoError(t, model.LOG_DB.Create(&late).Error)
+	require.NoError(t, model.BackfillLogResponseModels())
+	var reread model.Log
+	require.NoError(t, model.LOG_DB.First(&reread, late.Id).Error)
+	assert.Empty(t, reread.ResponseModel)
+}
+
 // A user's own quota statistics follow the account, not the username: the
 // username filter matches a name holding % as a LIKE pattern, so an account
 // named "al%" would otherwise read the consumption of every "al…" account.
