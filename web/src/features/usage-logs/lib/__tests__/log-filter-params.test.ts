@@ -240,4 +240,35 @@ describe('usage log filter params', () => {
       )
     ).toEqual({})
   })
+
+  it('sends a request processing choice and drops an unknown one', () => {
+    expect(params({ requestPlugin: 'flagged' })).toMatchObject({
+      request_plugin: 'flagged',
+    })
+    expect(params({ requestPlugin: 'processed' })).not.toHaveProperty(
+      'request_plugin'
+    )
+    expect(params({})).not.toHaveProperty('request_plugin')
+  })
+
+  it('sends the request processing rule only from the administrator view', () => {
+    expect(params({ requestPluginRule: ' jev.% ' })).toMatchObject({
+      request_plugin_rule: 'jev.%',
+    })
+    expect(
+      params({ requestPluginRule: 'jev.bulk' }, { isAdmin: false })
+    ).not.toHaveProperty('request_plugin_rule')
+  })
+
+  it('keeps the request processing filters in the URL and drops a blank rule', () => {
+    expect(
+      buildSearchParams(
+        { requestPlugin: 'rejected', requestPluginRule: ' jev.bulk ' },
+        'common'
+      )
+    ).toEqual({ requestPlugin: 'rejected', requestPluginRule: 'jev.bulk' })
+    expect(buildSearchParams({ requestPluginRule: '   ' }, 'common')).toEqual(
+      {}
+    )
+  })
 })

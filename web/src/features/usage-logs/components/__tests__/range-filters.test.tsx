@@ -31,6 +31,7 @@ import { toast } from 'sonner'
 import { afterEach, expect, it, vi } from 'vitest'
 
 import { api } from '@/lib/api'
+import { useAuthStore } from '@/stores/auth-store'
 
 import { CommonLogsFilterBar } from '../common-logs-filter-bar'
 import { UsageLogsProvider } from '../usage-logs-provider'
@@ -49,12 +50,12 @@ function FilterFixture() {
 }
 
 async function renderFilter(initialEntry = '/usage-logs/common') {
-  vi.spyOn(api, 'get').mockImplementation(async (url) => ({
-    data: {
-      success: true,
-      data: url === '/api/user/self/groups' ? {} : { quota: 0, rpm: 0, tpm: 0 },
-    },
-  }))
+  vi.spyOn(api, 'get').mockImplementation(async (url) => {
+    let data: unknown = { quota: 0, rpm: 0, tpm: 0 }
+    if (url === '/api/user/self/groups') data = {}
+    if (url === '/api/group/') data = []
+    return { data: { success: true, data } }
+  })
   const root = createRootRoute()
   const auth = createRoute({ getParentRoute: () => root, id: '_authenticated' })
   const logs = createRoute({
@@ -82,6 +83,7 @@ async function renderFilter(initialEntry = '/usage-logs/common') {
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  useAuthStore.setState(useAuthStore.getInitialState(), true)
 })
 
 it('searches by input and output token bounds and counts each range once', async () => {
@@ -275,6 +277,75 @@ it('shows the response model filters of the URL and clears the mismatch', async 
     )
   )
   expect(router.state.location.search).toMatchObject({ responseModel: 'glm' })
+})
+
+it('searches a user by request processing, without the rule box, counting it as an expanded filter', async () => {
+  const router = await renderFilter()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  expect(
+    screen.queryByRole('textbox', { name: 'Request processing rule' })
+  ).not.toBeInTheDocument()
+  await user.click(screen.getByRole('combobox', { name: 'Request processing' }))
+  await user.click(
+    await screen.findByRole('option', {
+      name: 'Request processing found something',
+    })
+  )
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).toMatchObject({
+      page: 1,
+      requestPlugin: 'flagged',
+    })
+  )
+  expect(screen.getByRole('button', { name: /Collapse/ })).toHaveTextContent(
+    '1'
+  )
+})
+
+it('searches an administrator by request processing rule', async () => {
+  useAuthStore.getState().auth.setUser({ id: 1, username: 'admin', role: 10 })
+  const router = await renderFilter()
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  await user.type(
+    screen.getByRole('textbox', { name: 'Request processing rule' }),
+    'jev.%'
+  )
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).toMatchObject({
+      page: 1,
+      requestPluginRule: 'jev.%',
+    })
+  )
+  expect(screen.getByRole('button', { name: /Collapse/ })).toHaveTextContent(
+    '1'
+  )
+})
+
+it('shows the request processing of the URL and searches every log again after choosing all', async () => {
+  const router = await renderFilter('/usage-logs/common?requestPlugin=rejected')
+  const user = userEvent.setup()
+  await user.click(screen.getByRole('button', { name: /Expand/ }))
+
+  expect(
+    screen.getByRole('combobox', { name: 'Request processing' })
+  ).toHaveTextContent('Rejected by request processing')
+  await user.click(screen.getByRole('combobox', { name: 'Request processing' }))
+  await user.click(
+    await screen.findByRole('option', { name: 'Request processing: All' })
+  )
+  await user.click(screen.getByRole('button', { name: 'Search' }))
+
+  await waitFor(() =>
+    expect(router.state.location.search).not.toHaveProperty('requestPlugin')
+  )
 })
 
 it('searches every log again after choosing all stream modes', async () => {

@@ -390,6 +390,17 @@ export const LOG_RESPONSE_MODEL_MODE_FILTERS = [
   },
 ] as const
 
+/** No request processing filter */
+export const LOG_REQUEST_PLUGIN_ALL_VALUE = 'all'
+
+/** Request processing choices of the usage-log filter (labels are i18n keys) */
+export const LOG_REQUEST_PLUGIN_FILTERS = [
+  { value: LOG_REQUEST_PLUGIN_ALL_VALUE, label: 'Request processing: All' },
+  { value: 'recorded', label: 'Request processing recorded' },
+  { value: 'flagged', label: 'Request processing found something' },
+  { value: 'rejected', label: 'Rejected by request processing' },
+] as const
+
 /**
  * HTTP status codes offered by the usage-log status code filter; others can
  * be typed in. They carry no hint: MultiSelect marks hinted chips with an

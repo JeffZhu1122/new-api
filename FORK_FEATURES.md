@@ -61,6 +61,7 @@
 44. [豆包插件：BytePlus 的 Dreamina Seedance 模型名](#44-豆包插件byteplus-的-dreamina-seedance-模型名)
 45. [缓存大于输入：识别、记录与用量校正](#45-缓存大于输入识别记录与用量校正)
 46. [请求插件：jev 过滤与提问翻译](#46-请求插件jev-过滤与提问翻译)
+47. [使用日志：按请求处理记录与插件规则筛选](#47-使用日志按请求处理记录与插件规则筛选)
 
 ---
 
@@ -109,6 +110,7 @@
 | 44 | 豆包插件：BytePlus 的 Dreamina Seedance 模型名 | 与本文档同一提交 | 始终生效 | 无 | 内置 `doubao` 插件 1.6.0 / 1.6.1：声明 BytePlus ModelArk 的 5 个 `dreamina-seedance-*` 模型和火山方舟的 `doubao-seedance-2-5-flash-261115`，可以直接定价和调用；按旧版倍率计价时，各档位用 BytePlus 的 token 单价比例，渠道映射到 ep 时也按声明的模型取比例 |
 | 45 | 缓存大于输入：识别、记录与用量校正 | 与本文档同一提交 | 识别与记录始终生效；用量校正为渠道开关，默认关闭 | `channel_extend.usage_correction`（新列） | 文本结算：输入包含缓存的口径下缓存读写超过输入时记 `admin_info.usage_anomaly`，汇总行加 `usage_semantic` / `cache_overflow_tokens` / `usage_anomaly`；开了用量校正的渠道把缓存压到输入以内计费 |
 | 46 | 请求插件：jev 过滤与提问翻译 | 与本文档同一提交 | 不建实例、不绑定渠道就不生效 | 请求插件实例（`options` 里的请求插件设置）；渠道 `setting.request_plugins` | 新增内置请求插件 `jev-filter`、`prompt-translate`：绑定的渠道上，新提问先经翻译渠道翻成英文，再由 Jev 按八类（涉未成年人色情、生化放核武器、露骨色情、恶意网络攻击、越狱、其他有害、套取思维链、蒸馏）和大批量蒸馏判断，每一类可单独关闭、记录或拦截；出错时按原请求发送 |
+| 47 | 使用日志：按请求处理记录与插件规则筛选 | 与本文档同一提交 | 不选即不过滤 | 无（读已有的 `logs.other`） | 使用日志列表、统计与导出接口的筛选参数；日志页「展开」里的「请求处理」下拉框和管理员的「请求处理规则」输入框 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -878,8 +880,8 @@ token 统计的字段为 `requests`、`input`、`cache_read`、`cache_write`、`
 | `service/relay_error.go` | `DecideRelayRetry` 中的关键词分支、渠道强制重试分支；§34 / §35 / §37 `ProcessChannelError` 的报错行带上游请求 ID、渠道名、分组与模型（模型必须在括号内最后） |
 | `controller/token.go` | `AddToken` / `UpdateToken` 拆出 `addTokenFor` / `updateTokenFor`（按归属用户 id），供 §26 复用 |
 | `service/security_verification.go` / `service/access_token_scope.go` | §26 新增的 `admin.user.token.read`、§27 新增的只认 2FA 的 `channel.config.copy` 二次验证 scope |
-| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary`；§43 给 `Log` 加了 `response_model` / `response_model_mismatch` 列（`RecordConsumeLog` 与 `RecordErrorLog` 都写），`LogMetricsFilter` 加 `ResponseModel` / `ResponseModelMismatch`，`applyTo` 改为返回 error |
-| `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数 |
+| `model/log.go` | 上游 rc.44 把列表查询改为 `LogFilter` 结构体：§28 把它的 `Channel int` 改为 `Channels []int`（`channel_id IN ?`），§29 / §30 / §33 加了 `Metrics LogMetricsFilter` 字段并在 `apply` 里生效（§33 的 `Stream` 也在其中）；`SumUsedQuota` 仍是参数形式，渠道参数为 `[]int`、末尾加 `LogMetricsFilter`；§30 给 `Log` 加了 `first_response_ms` 列；§35 `RecordConsumeLog` 开头调用 `logRequestSummary`；§43 给 `Log` 加了 `response_model` / `response_model_mismatch` 列（`RecordConsumeLog` 与 `RecordErrorLog` 都写），`LogMetricsFilter` 加 `ResponseModel` / `ResponseModelMismatch`，`applyTo` 改为返回 error；§47 `LogMetricsFilter` 加 `RequestPlugin` / `RequestPluginRule`，`applyTo` 对 `other` 加 LIKE 条件 |
+| `controller/log.go` | `logFilterFromQuery` 改为返回 error（解析渠道列表与指标筛选），列表、用户列表与导出三处调用都检查；统计接口仍逐个解析参数；§47 `parseLogMetricsFilter` 加 `admin` 参数，只有管理员接口读请求处理规则 |
 | `service/log_info_generate.go` / `model/log_other.go` | §43 上游的 `AppendResponseModelLogInfo` 开头加一行 `other.SetResponseModel(...)`（在上游「与请求相同就不记」的提前返回之前）；`LogOther` 末尾加两个不进 JSON 的私有字段和 `SetResponseModel` |
 | `model/main.go` | §30 / §43 ClickHouse 日志表建表语句加 `first_response_ms`、`response_model`、`response_model_mismatch`，`clickHouseLogAddedColumns` 给已有表补列；§38 `migrateDB` 的 AutoMigrate 列表末尾加素材库的四张表（`AssetLibraryAccount`、`AssetLibraryGroup`、`AssetLibraryAsset`、`AssetLibraryVerification`） |
 | `middleware/secure_verification.go` | §27 给 `SecureVerificationRequired` 加了 scope 参数，`ErrTwoFANotEnabled` 归为 `SECURITY_PROOF_METHOD_MISMATCH` |
@@ -3025,3 +3027,61 @@ Jev 是 TypeSafe 的决策模型（System One），不生成文字：给它一�
   - 没绑定的渠道：原样转发。
   - 检查接口返回 500、翻译返回 500：请求照常成功，系统日志各有一条 `failed ... throw`。
   - Claude 渠道收到 Claude Code 格式请求：标签块和代码块原样保留，只翻提问；含敏感词时 400。
+
+---
+
+## 47. 使用日志：按请求处理记录与插件规则筛选
+
+请求插件（§46 的 jev 过滤、提问翻译，以及上游内置的请求脱敏、请求过滤等）改了请求、有命中或拒绝了请求时，日志的模型名下面会显示「已处理」，详情里有「请求处理」一节，管理员还能在「请求处理步骤」里看到具体规则（例如 `jev.distillation`）。但日志页没法按这些筛选，想看 jev「只记录」模式下命中了哪些请求、好调阈值，只能一页页翻。
+
+### 行为
+
+- 日志页「展开」后的高级筛选新增两项，计入「收起」角标：
+  - **请求处理**下拉框（管理员视图、用户自己的视图和手机筛选抽屉里都有）：
+    - **请求处理：全部**（默认，即不选）：不筛选。
+    - **有请求处理记录**：详情里有「请求处理」一节的日志，即有插件改了请求或回复、有命中、拒绝了请求、看了附件，或因读不了请求体而没能检查。只跑了插件、什么都没做的请求不算。
+    - **请求处理有命中**：记录里有命中（例如 jev 的 `flagged × 1`、请求脱敏的邮箱）。
+    - **被请求处理拒绝**：被插件拒绝的请求。被拒绝的请求只写错误日志，所以要开着错误日志（`ERROR_LOG_ENABLED`）才查得到。
+  - **请求处理规则**输入框（只在管理员视图）：按插件步骤里的规则查，包括命中的规则和拒绝时的规则。例如 `jev.distillation` 只看蒸馏命中，`jev.%` 看 jev 的全部命中；不带 `%` 时精确匹配，`%` 的规则与模型名相同（最多 2 个、关键词至少 2 个字符，`_` 按字面匹配）。
+- 接口参数：
+  - `request_plugin=recorded|flagged|rejected`：作用于 `GET /api/log/`、`/api/log/self`、`/api/log/stat`、`/api/log/self/stat` 与两个导出接口；其他值返回「Request processing must be recorded, flagged or rejected」。
+  - `request_plugin_rule`：只在管理员接口（`/api/log/`、`/api/log/stat`、管理员导出）生效；用户自己的接口忽略这个参数，管理员调用用户自己的接口也一样，因为那里的日志不带管理员信息。规则超过 256 个字符，或含双引号、反斜杠、`<`、`>`、`&` 时返回「A request processing rule has at most 256 characters, without double quotes, backslashes, <, > or &」（日志把这些字符转义后存，按原样永远匹配不上）。
+- 不改写日志、不加列，历史日志也能直接筛选。
+- 额度统计按筛选计算；实时 RPM / TPM 不支持这两个筛选，与 §29 / §30 / §33 / §43 一样返回 `filter_unsupported`，说明文字改为「实时 RPM / TPM 无法按 token 数量、消耗时长、TTFT、状态码、流式模式、响应模型或请求处理过滤」。
+
+### 实现
+
+- 与 §30 按状态码筛选相同，在 `logs.other` 上加 `LIKE` 条件。`other` 是由结构体写出的紧凑 JSON，字段顺序固定：
+  - 用户看到的记录（`other.request_plugins`）每一项以 `"plugin"` 开头，管理员步骤（`other.admin_info.request_plugins`）每一项以 `"instance"` 开头。所以「有请求处理记录」是 `"request_plugins":[{"plugin":"`，只跑了插件、什么都没做的请求只有管理员步骤，不会命中。
+  - 用户记录里的命中没有规则，以 `"category"` 或 `"count"` 开头（管理员步骤里的命中以 `"rule"` 开头），所以「有命中」再加 `"findings":[{"c`；只有用户记录有 `"rejected"`，所以「被拒绝」再加 `"rejected":{"code":"`。
+  - 规则：管理员步骤里，拒绝时的规则后面跟 `"effects"`，命中的规则后面跟 `"category"` 或 `"count"`。按 `"rule":"<规则>","effects":` / `"category":` / `"count":` 三个模式取或，区别于同在 `admin_info` 里的请求策略事件（`request_policy`）的 `rule`。用户输入按日志库方言转义（SQLite / MySQL / PostgreSQL 用 `ESCAPE '!'`，ClickHouse 用反斜杠），复用模型名搜索的 `buildLogLikeCondition`。
+- `model.LogMetricsFilter` 加 `RequestPlugin`（常量 `LogRequestPluginRecorded` / `Flagged` / `Rejected`）和 `RequestPluginRule`，`applyTo` 加上述条件，`IsZero` 计入。列表、导出与额度统计都经过它。
+- `controller/log.go` 的 `parseLogMetricsFilter` 加 `admin` 参数：列表与导出跟随 `logFilterFromQuery` 的 `admin`，`GetLogsStat` 为 true，`GetLogsSelfStat` 为 false。
+- 前端：
+  - URL 参数 `requestPlugin=recorded|flagged|rejected`、`requestPluginRule`（`routes/_authenticated/usage-logs/$section.tsx`），由 `buildApiParams` 转成 `request_plugin` 与 `request_plugin_rule`；规则只在管理员视图发送，空白不发送。
+  - 筛选框在 `common-logs-filter-bar.tsx`：下拉框复用与「流式模式」相同的 `Select` 写法，选项在 `constants.ts` 的 `LOG_REQUEST_PLUGIN_FILTERS`，无障碍名称复用已有的「请求处理」；规则框复用 `LogsFilterInput`，与「用户名」「渠道 ID」一样只在管理员视图显示。
+  - 文案经 `add-missing-keys.mjs` 与 `i18n:sync` 写入七种语言。
+
+### 已知限制
+
+- **依赖 `other` 的写法**：条件按上面的 JSON 字段顺序匹配。上游以后改了 `RequestPluginRecord` / `RequestPluginStep` / `RequestPluginFinding` 的字段顺序或 JSON 名称，筛选会失效；同步上游时改了这三个结构体要重跑 `TestUsageLogsFilterByRequestProcessing`。
+- **没有索引**：`LIKE '%…%'` 要扫描时间范围内每条日志的 `other`。普通用户的查询有最长时间范围限制，管理员没有，管理员不填时间范围时会扫全表，日志表大时要慢一些。
+- **规则大小写**：MySQL 默认排序规则下不区分大小写，SQLite 只对 ASCII 不区分，PostgreSQL 区分。jev 的规则都是小写，影响不大。
+- **规则模式里的 `%` 可以跨字段**：`jev.%` 这样以 `%` 结尾的写法按前缀匹配；`%` 放在中间时可能跨过 JSON 字段匹配到别的值，偶尔多出结果。
+- 「有请求处理记录」比列表里的「已处理」标签宽：只有「没能检查」或只看了附件、没改写的记录，详情里有「请求处理」一节，但列表不显示「已处理」。
+- 没在 ClickHouse 上实机验证（本机没有镜像）；条件只是对 `String` 列的 `LIKE`，转义沿用模型名搜索的 ClickHouse 写法。
+
+### 测试
+
+- `controller/log_filter_test.go` `TestUsageLogsFilterByRequestProcessing`：
+  - 经网关自己的 `GenerateTextOtherInfo` + `RecordConsumeLog` 和 `RecordRelayErrorLog` 写入：jev 只记录命中蒸馏、请求脱敏改写并命中（命中没有类别）、提问翻译只改写、jev 跑了但什么都没做（只有管理员步骤）、带请求策略规则 `jev.cyber` 的请求、jev 拒绝（拒绝规则 `jev.bulk`，同时命中蒸馏）、请求过滤只按规则拒绝（没有命中）。
+  - 管理员与用户自己两个视图：有记录 / 有命中 / 被拒绝 / 与模型名组合，列表、额度统计都对，实时统计为 `filter_unsupported`。
+  - 管理员按规则：命中规则、拒绝规则（有命中和没有命中两种）、`jev.%`、没有类别的命中、`rule_1` 不匹配 `rule-1`（`_` 已转义）、请求策略的 `jev.cyber` 查不到。
+  - 用户自己的列表与统计忽略规则参数。非法的请求处理值在 4 个接口上都被拒绝；含双引号、`<`、超过 256 个字符的规则与过短的模式在管理员接口被拒绝。
+  - 变异检查：记录模式不区分用户记录与管理员步骤、去掉 `effects` / `category` / `count` 任一后缀、不加后缀、去掉「有命中」或「被拒绝」条件、不转义、用户接口读规则、`IsZero` 不计入、不检查字符时，测试都失败。
+- `web/src/features/usage-logs/lib/__tests__/log-filter-params.test.ts`：三种选择转成 `request_plugin`，未知值不发送；规则去掉首尾空格，只在管理员视图发送；两项写入 URL，空白规则不写。
+- `web/src/features/usage-logs/components/__tests__/range-filters.test.tsx`：用户视图没有规则框，选「请求处理有命中」后搜索，URL 正确、「收起」角标为 1；管理员输入 `jev.%` 后搜索，URL 正确、角标为 1；URL 里的「被拒绝」回填到下拉框，选回「全部」后 URL 不再带 `requestPlugin`。`live-rate-stats.test.tsx` 随说明文字更新。
+- 数据库（Docker）：全部 8 个日志筛选测试在 SQLite、MySQL 5.7.44（严格模式、`utf8mb4_general_ci`）、PostgreSQL 9.6.24 上通过（`TEST_LOG_FILTER_DIALECT`）。
+- 本地端到端（SQLite，用完已删除）：用网关自己的写日志代码写入 9 条消费日志和 1 条错误日志（3 条 jev 命中蒸馏、1 条命中网络攻击、1 条提问翻译改写、4 条 jev 跑了但什么都没做、1 条没有插件、1 条 jev 拒绝）。
+  - 接口：有记录 6 条（什么都没做的 4 条不在内）、有命中 5 条、被拒绝 1 条、`jev.distillation` 4 条、`jev.%` 5 条；有命中时的额度统计为那 4 条消费的合计，实时统计为 `filter_unsupported`；用户自己的列表忽略规则参数（11 条）；导出按 `jev.distillation` 得 4 条；非法值和含 `<` 的规则返回对应提示。
+  - 浏览器：网址里的规则回填到规则框，结果 4 条、每条都有「已处理」；从「请求处理有命中」（5 条）改选「被请求处理拒绝」后搜索，网址带 `requestPlugin=rejected`，结果 1 条；切到「仅自己」后规则框、用户名和渠道 ID 不显示，下拉框保留；实时 RPM 的说明为新文字。

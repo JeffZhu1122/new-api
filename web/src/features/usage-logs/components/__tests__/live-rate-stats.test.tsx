@@ -135,7 +135,7 @@ it('explains the dashes when a metric filter narrows the logs', async () => {
 
   expect(
     await screen.findByText(
-      'Live RPM / TPM cannot apply the token, use time, TTFT, status code, stream mode or response model filters.'
+      'Live RPM / TPM cannot apply the token, use time, TTFT, status code, stream mode, response model or request processing filters.'
     )
   ).toBeInTheDocument()
   expect(badgeValue('RPM')).toHaveTextContent('-')

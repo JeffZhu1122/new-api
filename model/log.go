@@ -551,8 +551,8 @@ func RecordTaskBillingLog(params RecordTaskBillingLogParams) {
 
 // LogMetricsFilter narrows the usage logs by per-request metrics: input
 // (prompt) and output (completion) tokens, use time in seconds, time to first
-// token in milliseconds, HTTP status codes and stream mode. A nil bound is
-// open; bounds are inclusive.
+// token in milliseconds, HTTP status codes, stream mode, response model and
+// request processing. A nil bound is open; bounds are inclusive.
 type LogMetricsFilter struct {
 	PromptMin          *int
 	PromptMax          *int
@@ -575,7 +575,23 @@ type LogMetricsFilter struct {
 	// ResponseModelMismatch keeps the logs whose response model disagrees
 	// with the requested model.
 	ResponseModelMismatch bool
+	// RequestPlugin keeps the logs whose request processing record, the one
+	// users see in the log details, has an entry (LogRequestPluginRecorded),
+	// a finding (LogRequestPluginFlagged) or a rejection
+	// (LogRequestPluginRejected).
+	RequestPlugin string
+	// RequestPluginRule keeps the logs where a request plugin step found
+	// something by this rule or rejected the request with it: a rule, or a
+	// LIKE pattern with %. It reads the administrator steps.
+	RequestPluginRule string
 }
+
+// The choices of LogMetricsFilter.RequestPlugin.
+const (
+	LogRequestPluginRecorded = "recorded"
+	LogRequestPluginFlagged  = "flagged"
+	LogRequestPluginRejected = "rejected"
+)
 
 func (f LogMetricsFilter) IsZero() bool {
 	for _, bound := range f.bounds() {
@@ -583,7 +599,8 @@ func (f LogMetricsFilter) IsZero() bool {
 			return false
 		}
 	}
-	return len(f.StatusCodes) == 0 && f.Stream == nil && f.ResponseModel == "" && !f.ResponseModelMismatch
+	return len(f.StatusCodes) == 0 && f.Stream == nil && f.ResponseModel == "" && !f.ResponseModelMismatch &&
+		f.RequestPlugin == "" && f.RequestPluginRule == ""
 }
 
 type logMetricBound struct {
@@ -605,7 +622,8 @@ func (f LogMetricsFilter) bounds() []logMetricBound {
 }
 
 // applyTo adds the filter to a logs query whose columns carry prefix ("logs."
-// or ""). It fails on a response model pattern the log searches refuse.
+// or ""). It fails on a response model or request plugin rule pattern the log
+// searches refuse.
 func (f LogMetricsFilter) applyTo(tx *gorm.DB, prefix string) (*gorm.DB, error) {
 	for _, bound := range f.bounds() {
 		if bound.value != nil {
@@ -636,6 +654,37 @@ func (f LogMetricsFilter) applyTo(tx *gorm.DB, prefix string) (*gorm.DB, error) 
 	}
 	if f.ResponseModelMismatch {
 		tx = tx.Where(prefix+"response_model_mismatch = ?", true)
+	}
+	// other is compact JSON written from structs. Each entry of the public
+	// request processing record starts with "plugin", each administrator
+	// step under admin_info with "instance". A public finding has no rule, so
+	// it starts with "category" or "count", and only the public record has
+	// "rejected". The "_" of request_plugins matching any character cannot
+	// widen the match.
+	if f.RequestPlugin != "" {
+		tx = tx.Where(prefix+"other LIKE ?", `%"request_plugins":[{"plugin":"%`)
+		switch f.RequestPlugin {
+		case LogRequestPluginFlagged:
+			tx = tx.Where(prefix+"other LIKE ?", `%"findings":[{"c%`)
+		case LogRequestPluginRejected:
+			tx = tx.Where(prefix+"other LIKE ?", `%"rejected":{"code":"%`)
+		}
+	}
+	// A step's rule, the one it rejected with, is followed by "effects", and
+	// a finding's by "category" or "count", which tells them from the rules
+	// of the request policy events.
+	if f.RequestPluginRule != "" {
+		condition, pattern, err := buildLogLikeCondition(prefix+"other", f.RequestPluginRule)
+		if err != nil {
+			return nil, err
+		}
+		conditions := make([]string, 0, 3)
+		args := make([]any, 0, 3)
+		for _, next := range []string{"effects", "category", "count"} {
+			conditions = append(conditions, condition)
+			args = append(args, `%"rule":"`+pattern+`","`+next+`":%`)
+		}
+		tx = tx.Where("("+strings.Join(conditions, " OR ")+")", args...)
 	}
 	return tx, nil
 }

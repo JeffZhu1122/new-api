@@ -148,6 +148,12 @@ export function buildSearchParams(
         ...(commonFilters.responseModelMismatch && {
           responseModelMismatch: true,
         }),
+        ...(commonFilters.requestPlugin && {
+          requestPlugin: commonFilters.requestPlugin,
+        }),
+        ...(commonFilters.requestPluginRule?.trim() && {
+          requestPluginRule: commonFilters.requestPluginRule.trim(),
+        }),
       }
     }
     case 'drawing': {

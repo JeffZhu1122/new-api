@@ -72,10 +72,20 @@ export interface CommonLogFilters extends CommonFilters {
   responseModel?: string
   /** Only the logs whose response model differs from the requested model */
   responseModelMismatch?: boolean
+  /** What the request processing record must hold */
+  requestPlugin?: LogRequestPluginFilter
+  /** A request plugin rule, or a pattern with %; administrators only */
+  requestPluginRule?: string
 }
 
 /** A request's stream mode, as the usage-log filter offers it */
 export type LogStreamMode = 'stream' | 'non_stream'
+
+/**
+ * Logs whose request processing record has an entry, a finding or a
+ * rejection, as the usage-log filter offers them
+ */
+export type LogRequestPluginFilter = 'recorded' | 'flagged' | 'rejected'
 
 /**
  * Drawing logs specific filters
@@ -581,6 +591,10 @@ export interface GetLogsParams {
   response_model?: string
   /** 'true' keeps the logs whose response model differs from the request */
   response_model_mismatch?: string
+  /** 'recorded', 'flagged' or 'rejected' */
+  request_plugin?: string
+  /** A request plugin rule, or a pattern with %; administrators only */
+  request_plugin_rule?: string
 }
 
 export interface GetLogsResponse {
@@ -626,6 +640,10 @@ export interface GetLogStatsParams {
   response_model?: string
   /** 'true' keeps the logs whose response model differs from the request */
   response_model_mismatch?: string
+  /** 'recorded', 'flagged' or 'rejected' */
+  request_plugin?: string
+  /** A request plugin rule, or a pattern with %; administrators only */
+  request_plugin_rule?: string
 }
 
 export interface GetLogStatsResponse {

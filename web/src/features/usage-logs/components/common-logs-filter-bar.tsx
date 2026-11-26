@@ -47,6 +47,8 @@ import { getUserGroups } from '@/lib/api'
 import { requireServerSuccess } from '@/lib/server-error-message'
 
 import {
+  LOG_REQUEST_PLUGIN_ALL_VALUE,
+  LOG_REQUEST_PLUGIN_FILTERS,
   LOG_RESPONSE_MODEL_MODE_ALL_VALUE,
   LOG_RESPONSE_MODEL_MODE_FILTERS,
   LOG_RESPONSE_MODEL_MODE_MISMATCH_VALUE,
@@ -118,6 +120,8 @@ function buildSearchSourceKey(values: {
   stream?: unknown
   responseModel?: unknown
   responseModelMismatch?: unknown
+  requestPlugin?: unknown
+  requestPluginRule?: unknown
   type?: unknown
 }) {
   return [
@@ -144,6 +148,8 @@ function buildSearchSourceKey(values: {
     values.stream,
     values.responseModel,
     values.responseModelMismatch,
+    values.requestPlugin,
+    values.requestPluginRule,
     Array.isArray(values.type) ? values.type.join(',') : values.type,
   ]
     .map((value) => String(value ?? ''))
@@ -208,6 +214,8 @@ export function CommonLogsFilterBar<TData>(
       stream: searchParams.stream,
       responseModel: searchParams.responseModel,
       responseModelMismatch: searchParams.responseModelMismatch,
+      requestPlugin: searchParams.requestPlugin,
+      requestPluginRule: searchParams.requestPluginRule,
       type: searchParams.type,
     }
     const filters: CommonLogFilters = {
@@ -234,6 +242,8 @@ export function CommonLogsFilterBar<TData>(
       stream: searchParams.stream,
       responseModel: searchParams.responseModel || undefined,
       responseModelMismatch: searchParams.responseModelMismatch || undefined,
+      requestPlugin: searchParams.requestPlugin,
+      requestPluginRule: searchParams.requestPluginRule || undefined,
     }
     return {
       sourceKey: buildSearchSourceKey(sourceValues),
@@ -262,6 +272,8 @@ export function CommonLogsFilterBar<TData>(
     searchParams.stream,
     searchParams.responseModel,
     searchParams.responseModelMismatch,
+    searchParams.requestPlugin,
+    searchParams.requestPluginRule,
     searchParams.type,
   ])
   const [draft, setDraft] = useState<CommonLogDraft>(() => searchState)
@@ -354,6 +366,8 @@ export function CommonLogsFilterBar<TData>(
   const hasStreamMode = !!filters.stream
   const hasResponseModel = !!filters.responseModel?.trim()
   const hasResponseModelMismatch = !!filters.responseModelMismatch
+  const hasRequestPlugin = !!filters.requestPlugin
+  const hasRequestPluginRule = !!filters.requestPluginRule?.trim()
   const hasExpandedFilters =
     !!filters.token ||
     !!filters.username ||
@@ -367,7 +381,9 @@ export function CommonLogsFilterBar<TData>(
     hasStatusCodes ||
     hasStreamMode ||
     hasResponseModel ||
-    hasResponseModelMismatch
+    hasResponseModelMismatch ||
+    hasRequestPlugin ||
+    hasRequestPluginRule
 
   const hasTypeFilter = logType !== LOG_TYPE_ALL_VALUE
   const hasAdditionalFilters =
@@ -387,6 +403,8 @@ export function CommonLogsFilterBar<TData>(
     hasStreamMode,
     hasResponseModel,
     hasResponseModelMismatch,
+    hasRequestPlugin,
+    isAdmin && hasRequestPluginRule,
   ].filter(Boolean).length
   const sensitiveInputClass = sensitiveVisible
     ? undefined
@@ -414,6 +432,14 @@ export function CommonLogsFilterBar<TData>(
       LOG_RESPONSE_MODEL_MODE_FILTERS.map((mode) => ({
         value: mode.value,
         label: t(mode.label),
+      })),
+    [t]
+  )
+  const requestPluginItems = useMemo(
+    () =>
+      LOG_REQUEST_PLUGIN_FILTERS.map((choice) => ({
+        value: choice.value,
+        label: t(choice.label),
       })),
     [t]
   )
@@ -723,6 +749,46 @@ export function CommonLogsFilterBar<TData>(
           </SelectContent>
         </Select>
       </LogsFilterField>
+      <LogsFilterField>
+        <Select
+          items={requestPluginItems}
+          value={filters.requestPlugin ?? LOG_REQUEST_PLUGIN_ALL_VALUE}
+          onValueChange={(value) =>
+            handleChange(
+              'requestPlugin',
+              value === 'recorded' ||
+                value === 'flagged' ||
+                value === 'rejected'
+                ? value
+                : undefined
+            )
+          }
+        >
+          <SelectTrigger aria-label={t('Request processing')}>
+            <SelectValue className='min-w-0' />
+          </SelectTrigger>
+          <SelectContent alignItemWithTrigger={false}>
+            <SelectGroup>
+              {requestPluginItems.map((choice) => (
+                <SelectItem key={choice.value} value={choice.value}>
+                  {choice.label}
+                </SelectItem>
+              ))}
+            </SelectGroup>
+          </SelectContent>
+        </Select>
+      </LogsFilterField>
+      {isAdmin && (
+        <LogsFilterField>
+          <LogsFilterInput
+            placeholder={t('Request processing rule')}
+            aria-label={t('Request processing rule')}
+            value={filters.requestPluginRule || ''}
+            onChange={(e) => handleChange('requestPluginRule', e.target.value)}
+            onKeyDown={handleKeyDown}
+          />
+        </LogsFilterField>
+      )}
     </>
   )
 

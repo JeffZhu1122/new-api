@@ -50,9 +50,13 @@ const maxLogStatusCodeFilter = 20
 // queries: token, use time (seconds) and TTFT (milliseconds) ranges, each
 // bound a whole number of 0 or more with the minimum not above the maximum,
 // HTTP status codes separated by commas or spaces, is_stream (true or false),
-// the response model (a name or a % pattern) and response_model_mismatch
-// (true or false; false does not filter).
-func parseLogMetricsFilter(c *gin.Context) (model.LogMetricsFilter, error) {
+// the response model (a name or a % pattern), response_model_mismatch
+// (true or false; false does not filter) and request_plugin (recorded,
+// flagged or rejected). The request plugin rule, a rule or a % pattern, is
+// read only on the administrator log queries: the rules are in the
+// administrator steps, which the own log queries never show, even to an
+// administrator.
+func parseLogMetricsFilter(c *gin.Context, admin bool) (model.LogMetricsFilter, error) {
 	var filter model.LogMetricsFilter
 	for _, metric := range []struct {
 		minParam, maxParam string
@@ -119,14 +123,31 @@ func parseLogMetricsFilter(c *gin.Context) (model.LogMetricsFilter, error) {
 		}
 		filter.ResponseModelMismatch = mismatch
 	}
+
+	switch requestPlugin := strings.TrimSpace(c.Query("request_plugin")); requestPlugin {
+	case "":
+	case model.LogRequestPluginRecorded, model.LogRequestPluginFlagged, model.LogRequestPluginRejected:
+		filter.RequestPlugin = requestPlugin
+	default:
+		return model.LogMetricsFilter{}, common.NewMessage("Request processing must be recorded, flagged or rejected")
+	}
+	if admin {
+		// The log stores a rule as JSON, which escapes these characters, so
+		// the rule as typed would never match.
+		rule := strings.TrimSpace(c.Query("request_plugin_rule"))
+		if len([]rune(rule)) > 256 || strings.ContainsAny(rule, "\"\\<>&\u2028\u2029") || strings.ContainsFunc(rule, unicode.IsControl) {
+			return model.LogMetricsFilter{}, common.NewMessage("A request processing rule has at most 256 characters, without double quotes, backslashes, <, > or &")
+		}
+		filter.RequestPluginRule = rule
+	}
 	return filter, nil
 }
 
 // logRate answers the live RPM / TPM for the usage-log filters. The live
 // statistics only count settled requests per minute, without per-request
-// tokens, durations, status codes, stream mode or response model, so such a
-// filter is reported as one they cannot apply instead of an unfiltered
-// reading.
+// tokens, durations, status codes, stream mode, response model or request
+// processing, so such a filter is reported as one they cannot apply instead
+// of an unfiltered reading.
 func logRate(filter service.LogRateFilter, metrics model.LogMetricsFilter) (service.LogRateReading, error) {
 	if !metrics.IsZero() {
 		return service.LogRateReading{Source: service.RpmStatsSourceFilterUnsupported}, nil
@@ -150,7 +171,7 @@ func logFilterFromQuery(c *gin.Context, admin bool) (model.LogFilter, error) {
 		RequestId:         c.Query("request_id"),
 		UpstreamRequestId: c.Query("upstream_request_id"),
 	}
-	metrics, err := parseLogMetricsFilter(c)
+	metrics, err := parseLogMetricsFilter(c, admin)
 	if err != nil {
 		return filter, err
 	}
@@ -355,7 +376,7 @@ func GetLogsStat(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	metrics, err := parseLogMetricsFilter(c)
+	metrics, err := parseLogMetricsFilter(c, true)
 	if err != nil {
 		common.ApiError(c, err)
 		return
@@ -400,7 +421,7 @@ func GetLogsSelfStat(c *gin.Context) {
 		common.ApiError(c, err)
 		return
 	}
-	metrics, err := parseLogMetricsFilter(c)
+	metrics, err := parseLogMetricsFilter(c, false)
 	if err != nil {
 		common.ApiError(c, err)
 		return

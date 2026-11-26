@@ -57,6 +57,11 @@ const usageLogsSearchSchema = z.object({
   stream: z.enum(['stream', 'non_stream']).optional().catch(undefined),
   responseModel: z.string().optional().catch(''),
   responseModelMismatch: z.boolean().optional().catch(undefined),
+  requestPlugin: z
+    .enum(['recorded', 'flagged', 'rejected'])
+    .optional()
+    .catch(undefined),
+  requestPluginRule: z.string().optional().catch(''),
   startTime: z.number().optional(),
   endTime: z.number().optional(),
 })

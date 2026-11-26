@@ -251,6 +251,14 @@ export function buildApiParams(config: {
     ...(searchParams.responseModelMismatch === true
       ? { response_model_mismatch: 'true' }
       : {}),
+    ...(searchParams.requestPlugin === 'recorded' ||
+    searchParams.requestPlugin === 'flagged' ||
+    searchParams.requestPlugin === 'rejected'
+      ? { request_plugin: searchParams.requestPlugin }
+      : {}),
+    ...(isAdmin && String(searchParams.requestPluginRule ?? '').trim()
+      ? { request_plugin_rule: String(searchParams.requestPluginRule).trim() }
+      : {}),
     ...buildTimeRangeParams(searchParams, false),
   }
 

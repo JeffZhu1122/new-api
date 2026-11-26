@@ -2,6 +2,7 @@ package controller
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"net/url"
 	"os"
@@ -10,8 +11,10 @@ import (
 	"testing"
 
 	"github.com/QuantumNous/new-api/common"
+	"github.com/QuantumNous/new-api/constant"
 	"github.com/QuantumNous/new-api/model"
 	relaycommon "github.com/QuantumNous/new-api/relay/common"
+	"github.com/QuantumNous/new-api/relaykit/types"
 	"github.com/QuantumNous/new-api/service"
 	"github.com/gin-gonic/gin"
 	"github.com/stretchr/testify/assert"
@@ -563,6 +566,158 @@ func TestUsageLogsFilterFindsBackfilledResponseModels(t *testing.T) {
 	require.NoError(t, model.DB.Where(&model.Option{Key: "log_response_model_backfill"}).Find(&marks).Error)
 	require.Len(t, marks, 1)
 	assert.Equal(t, "done", marks[0].Value)
+}
+
+// The request processing filters read what the relay writes into other: the
+// record users see in the log details (an entry, a finding, a rejection), and
+// for administrators the rule a plugin step found something by or rejected
+// with. The administrator steps of a request no plugin changed, and the rules
+// of the request policy, match neither.
+func TestUsageLogsFilterByRequestProcessing(t *testing.T) {
+	setupLogFilterTest(t)
+	previousConsume, previousError := common.LogConsumeEnabled, constant.ErrorLogEnabled
+	common.LogConsumeEnabled, constant.ErrorLogEnabled = true, true
+	t.Cleanup(func() { common.LogConsumeEnabled, constant.ErrorLogEnabled = previousConsume, previousError })
+	requestContext := func(modelName string) *gin.Context {
+		c, _ := gin.CreateTestContext(httptest.NewRecorder())
+		c.Request = httptest.NewRequest("POST", "/v1/chat/completions", nil)
+		c.Set("id", 1)
+		c.Set("username", "alice")
+		c.Set("original_model", modelName)
+		return c
+	}
+	consume := func(c *gin.Context, info *relaycommon.RelayInfo) {
+		info.ChannelMeta = &relaycommon.ChannelMeta{}
+		other := service.GenerateTextOtherInfo(c, info, 1, 1, 1, 0, 1, 0, 1)
+		model.RecordConsumeLog(c, 1, model.RecordConsumeLogParams{ChannelId: 1, ModelName: info.OriginModelName, Quota: 300, Group: "default", Other: other})
+	}
+	jev := map[string]string{"en": "jev filter", "zh": "jev 过滤"}
+	flagged := []relaycommon.RequestPluginCount{{Category: "flagged", Count: 1}}
+
+	consume(requestContext("jev-flagged"), &relaycommon.RelayInfo{
+		OriginModelName:     "jev-flagged",
+		RequestPluginSteps:  []relaycommon.RequestPluginStep{{Instance: "jev", Plugin: "jev-filter", Stage: "egress", Action: "continue", Findings: []relaycommon.RequestPluginFinding{{Rule: "jev.distillation", Category: "flagged", Count: 1}}}},
+		RequestPluginRecord: []relaycommon.RequestPluginRecord{{Plugin: "jev-filter", Name: jev, Stage: "egress", Findings: flagged}},
+	})
+	consume(requestContext("redacted"), &relaycommon.RelayInfo{
+		OriginModelName:     "redacted",
+		RequestPluginSteps:  []relaycommon.RequestPluginStep{{Instance: "redact", Plugin: "request-redact", Stage: "ingress", Action: "continue", Effects: 1, Findings: []relaycommon.RequestPluginFinding{{Rule: "rule-1", Count: 2}}}},
+		RequestPluginRecord: []relaycommon.RequestPluginRecord{{Plugin: "request-redact", Stage: "ingress", Changes: []relaycommon.RequestPluginChange{{Op: "replace", Path: "messages[0].content", Type: "string"}}, Findings: []relaycommon.RequestPluginCount{{Count: 2}}}},
+	})
+	consume(requestContext("translated"), &relaycommon.RelayInfo{
+		OriginModelName:     "translated",
+		RequestPluginSteps:  []relaycommon.RequestPluginStep{{Instance: "translate", Plugin: "prompt-translate", Stage: "ingress", Action: "continue", Effects: 1}},
+		RequestPluginRecord: []relaycommon.RequestPluginRecord{{Plugin: "prompt-translate", Stage: "ingress", Changes: []relaycommon.RequestPluginChange{{Op: "replace", Path: "messages[0].content", Type: "string"}}}},
+	})
+	// A plugin that ran and changed nothing leaves only administrator steps.
+	consume(requestContext("checked-quietly"), &relaycommon.RelayInfo{
+		OriginModelName:    "checked-quietly",
+		RequestPluginSteps: []relaycommon.RequestPluginStep{{Instance: "jev", Plugin: "jev-filter", Stage: "egress", Action: "continue"}},
+	})
+	policy := requestContext("policy-rule")
+	service.RequestPolicy(policy).AddEvent(service.PolicyEvent{Attempt: 1, Rule: "jev.cyber", Status: 400, Decision: service.PolicyDecision{Action: "retry"}})
+	consume(policy, &relaycommon.RelayInfo{OriginModelName: "policy-rule"})
+	rejected := requestContext("jev-rejected")
+	service.RecordRelayErrorLog(rejected, 2, types.NewErrorWithStatusCode(errors.New("rejected"), types.ErrorCodeRequestRejected, 400), &relaycommon.RelayInfo{
+		OriginModelName:     "jev-rejected",
+		RequestPluginSteps:  []relaycommon.RequestPluginStep{{Instance: "jev", Plugin: "jev-filter", Stage: "egress", Action: "reject", RuleID: "jev.bulk", Findings: []relaycommon.RequestPluginFinding{{Rule: "jev.bulk", Category: "flagged", Count: 1}, {Rule: "jev.distillation", Category: "flagged", Count: 1}}}},
+		RequestPluginRecord: []relaycommon.RequestPluginRecord{{Plugin: "jev-filter", Name: jev, Stage: "egress", Findings: []relaycommon.RequestPluginCount{{Category: "flagged", Count: 2}}, Rejected: &relaycommon.RequestPluginRejected{Code: "jev.blocked"}}},
+	})
+	// A rejection by rule alone, without findings.
+	keyword := requestContext("keyword-rejected")
+	service.RecordRelayErrorLog(keyword, 2, types.NewErrorWithStatusCode(errors.New("rejected"), types.ErrorCodeRequestRejected, 400), &relaycommon.RelayInfo{
+		OriginModelName:     "keyword-rejected",
+		RequestPluginSteps:  []relaycommon.RequestPluginStep{{Instance: "filter", Plugin: "request-filter", Stage: "ingress", Action: "reject", RuleID: "blocked-word"}},
+		RequestPluginRecord: []relaycommon.RequestPluginRecord{{Plugin: "request-filter", Stage: "ingress", Rejected: &relaycommon.RequestPluginRejected{Code: "blocked.keyword"}}},
+	})
+
+	logModels := func(t *testing.T, handler gin.HandlerFunc, query url.Values) []string {
+		t.Helper()
+		logs := logFilterRequest(t, handler, query)
+		require.True(t, logs.Success, logs.MessageKey)
+		models := make([]string, 0, len(logs.Data.Items))
+		for _, item := range logs.Data.Items {
+			models = append(models, item.ModelName)
+		}
+		return models
+	}
+	for _, test := range []struct {
+		name   string
+		query  url.Values
+		models []string
+		quota  int
+	}{
+		{"a record", url.Values{"request_plugin": {"recorded"}}, []string{"jev-flagged", "redacted", "translated", "jev-rejected", "keyword-rejected"}, 900},
+		{"a finding", url.Values{"request_plugin": {"flagged"}}, []string{"jev-flagged", "redacted", "jev-rejected"}, 600},
+		{"a rejection", url.Values{"request_plugin": {"rejected"}}, []string{"jev-rejected", "keyword-rejected"}, 0},
+		{"with the model name filter", url.Values{"request_plugin": {"flagged"}, "model_name": {"%jev%"}}, []string{"jev-flagged", "jev-rejected"}, 300},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for name, handlers := range map[string][2]gin.HandlerFunc{
+				"all logs": {GetAllLogs, GetLogsStat},
+				"own logs": {GetUserLogs, GetLogsSelfStat},
+			} {
+				assert.ElementsMatch(t, test.models, logModels(t, handlers[0], test.query), name)
+				stat := logFilterRequest(t, handlers[1], test.query)
+				require.True(t, stat.Success, stat.MessageKey)
+				assert.Equal(t, test.quota, stat.Data.Quota, name)
+				assert.Equal(t, "filter_unsupported", stat.Data.RateSource, name)
+			}
+		})
+	}
+
+	for _, test := range []struct {
+		name   string
+		rule   string
+		models []string
+		quota  int
+	}{
+		{"a finding rule", "jev.distillation", []string{"jev-flagged", "jev-rejected"}, 300},
+		{"the rule of a rejection with findings", "jev.bulk", []string{"jev-rejected"}, 0},
+		{"the rule of a rejection without findings", "blocked-word", []string{"keyword-rejected"}, 0},
+		{"a rule pattern", "jev.%", []string{"jev-flagged", "jev-rejected"}, 300},
+		{"a finding rule without a category", "rule-1", []string{"redacted"}, 300},
+		{"an underscore matches only itself", "rule_1", []string{}, 0},
+		{"a request policy rule", "jev.cyber", []string{}, 0},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			query := url.Values{"request_plugin_rule": {test.rule}}
+			assert.ElementsMatch(t, test.models, logModels(t, GetAllLogs, query))
+			stat := logFilterRequest(t, GetLogsStat, query)
+			require.True(t, stat.Success, stat.MessageKey)
+			assert.Equal(t, test.quota, stat.Data.Quota)
+			assert.Equal(t, "filter_unsupported", stat.Data.RateSource)
+		})
+	}
+
+	// The own log queries never show the administrator steps, so they do not
+	// search them either.
+	everything := logModels(t, GetUserLogs, url.Values{})
+	assert.ElementsMatch(t, everything, logModels(t, GetUserLogs, url.Values{"request_plugin_rule": {"jev.bulk"}}))
+	ownStat := logFilterRequest(t, GetLogsSelfStat, url.Values{"request_plugin_rule": {"jev.bulk"}})
+	require.True(t, ownStat.Success, ownStat.MessageKey)
+	assert.NotEqual(t, "filter_unsupported", ownStat.Data.RateSource)
+
+	for _, test := range []struct {
+		name       string
+		query      url.Values
+		handlers   []gin.HandlerFunc
+		messageKey string
+	}{
+		{"unknown request processing", url.Values{"request_plugin": {"processed"}}, []gin.HandlerFunc{GetAllLogs, GetLogsStat, GetUserLogs, GetLogsSelfStat}, "Request processing must be recorded, flagged or rejected"},
+		{"a rule with a quote", url.Values{"request_plugin_rule": {`jev."bulk`}}, []gin.HandlerFunc{GetAllLogs, GetLogsStat}, "A request processing rule has at most 256 characters, without double quotes, backslashes, <, > or &"},
+		{"a rule JSON escapes", url.Values{"request_plugin_rule": {"a<b"}}, []gin.HandlerFunc{GetAllLogs, GetLogsStat}, "A request processing rule has at most 256 characters, without double quotes, backslashes, <, > or &"},
+		{"a rule too long", url.Values{"request_plugin_rule": {strings.Repeat("r", 257)}}, []gin.HandlerFunc{GetAllLogs, GetLogsStat}, "A request processing rule has at most 256 characters, without double quotes, backslashes, <, > or &"},
+		{"a rule pattern too short", url.Values{"request_plugin_rule": {"%a%"}}, []gin.HandlerFunc{GetAllLogs, GetLogsStat}, "Fuzzy search keywords must be at least 2 characters long"},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			for _, handler := range test.handlers {
+				response := logFilterRequest(t, handler, test.query)
+				assert.False(t, response.Success)
+				assert.Equal(t, test.messageKey, response.MessageKey)
+			}
+		})
+	}
 }
 
 // A user's own quota statistics follow the account, not the username: the
