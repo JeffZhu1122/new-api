@@ -15,6 +15,10 @@ import (
 
 var expectedKeys = []string{"alibaba", "doubao", "google", "hailuo", "jimeng", "kling", "sora", "sunoapi", "vertex-ai", "vidu", "xai"}
 
+// The fork's task plugins that serve only their vendor's native routes, with
+// no host protocol.
+var nativeOnlyTaskKeys = []string{"miga"}
+
 // The built-in request processing plugins and the stage hooks each exports.
 var requestPluginHooks = map[string][]string{
 	"auto-reasoning":     {"request"},
@@ -90,6 +94,8 @@ func TestBuiltInVendorPluginsDeclareNativeRoutesAndLegacyChannelTypes(t *testing
 		{"POST", "/v1" + vertexModel, "vertex-ai", jsplugin.RouteTypeDynamic, "", "operation", false, false},
 		{"POST", "/v1beta1" + vertexModel, "vertex-ai", jsplugin.RouteTypeDynamic, "", "operation", false, false},
 		{"POST", "/vertex-ai/v1beta1" + vertexModel, "vertex-ai", jsplugin.RouteTypeDynamic, "", "operation", true, false},
+		{"POST", "/miga/v2/generations", "miga", jsplugin.RouteTypeSubmit, "", "generationCreated", false, true},
+		{"GET", "/miga/v2/generations/:task_id", "miga", jsplugin.RouteTypeQuery, "", "generationStatus", false, true},
 	}
 	for _, expected := range routes {
 		t.Run(expected.method+" "+expected.path, func(t *testing.T) {
@@ -107,6 +113,7 @@ func TestBuiltInVendorPluginsDeclareNativeRoutesAndLegacyChannelTypes(t *testing
 		{"POST", "/jimeng/"},
 		{"POST", "/sunoapi/suno/fetch"},
 		{"POST", "/alibaba/ali/api/v1/services/aigc/video-generation/video-synthesis"},
+		{"POST", "/miga/miga/v2/generations"},
 		{"GET", "/v1/query/video_generation/:task_id"},
 	} {
 		_, found := generation.LookupDeclaredRoute(missing.method, missing.path)
@@ -163,9 +170,9 @@ func TestBuiltInTaskPluginResponsesAndUsageContracts(t *testing.T) {
 			actualKeys = append(actualKeys, entry.Name())
 		}
 	}
-	// Every other directory holds a request processing plugin, which has no
-	// task part.
-	allKeys := slices.Concat(expectedKeys, slices.Collect(maps.Keys(requestPluginHooks)))
+	// Every other directory holds a native-only task plugin or a request
+	// processing plugin, which has no task part.
+	allKeys := slices.Concat(expectedKeys, nativeOnlyTaskKeys, slices.Collect(maps.Keys(requestPluginHooks)))
 	slices.Sort(allKeys)
 	assert.Equal(t, allKeys, actualKeys)
 
@@ -204,6 +211,18 @@ func TestBuiltInTaskPluginResponsesAndUsageContracts(t *testing.T) {
 			for _, hook := range []string{"extractUsage", "extractUsageOnComplete"} {
 				assert.True(t, plugin.Engine.HasExport(hook), hook)
 			}
+			require.NotEmpty(t, plugin.Meta.UsageSchema)
+			for usageKey, schema := range plugin.Meta.UsageSchema {
+				assert.NotEmpty(t, schema.Description, usageKey)
+			}
+		})
+	}
+	for _, key := range nativeOnlyTaskKeys {
+		t.Run(key, func(t *testing.T) {
+			plugin, found := generation.Get(key)
+			require.True(t, found, "factory plugin was excluded from the active generation")
+			assert.Empty(t, plugin.Meta.Protocols)
+			assert.True(t, plugin.Engine.HasExport("extractUsage"))
 			require.NotEmpty(t, plugin.Meta.UsageSchema)
 			for usageKey, schema := range plugin.Meta.UsageSchema {
 				assert.NotEmpty(t, schema.Description, usageKey)

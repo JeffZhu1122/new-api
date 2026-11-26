@@ -62,6 +62,7 @@
 45. [缓存大于输入：识别、记录与用量校正](#45-缓存大于输入识别记录与用量校正)
 46. [请求插件：jev 过滤与提问翻译](#46-请求插件jev-过滤与提问翻译)
 47. [使用日志：按请求处理记录与插件规则筛选](#47-使用日志按请求处理记录与插件规则筛选)
+48. [任务插件：MAGI-2（DMC）](#48-任务插件magi-2dmc)
 
 ---
 
@@ -111,6 +112,7 @@
 | 45 | 缓存大于输入：识别、记录与用量校正 | 与本文档同一提交 | 识别与记录始终生效；用量校正为渠道开关，默认关闭 | `channel_extend.usage_correction`（新列） | 文本结算：输入包含缓存的口径下缓存读写超过输入时记 `admin_info.usage_anomaly`，汇总行加 `usage_semantic` / `cache_overflow_tokens` / `usage_anomaly`；开了用量校正的渠道把缓存压到输入以内计费 |
 | 46 | 请求插件：jev 过滤与提问翻译 | 与本文档同一提交 | 不建实例、不绑定渠道就不生效 | 请求插件实例（`options` 里的请求插件设置）；渠道 `setting.request_plugins` | 新增内置请求插件 `jev-filter`、`prompt-translate`：绑定的渠道上，新提问先经翻译渠道翻成英文，再由 Jev 按八类（涉未成年人色情、生化放核武器、露骨色情、恶意网络攻击、越狱、其他有害、套取思维链、蒸馏）和大批量蒸馏判断，每一类可单独关闭、记录或拦截；出错时按原请求发送 |
 | 47 | 使用日志：按请求处理记录与插件规则筛选 | 与本文档同一提交 | 不选即不过滤 | 无（读已有的 `logs.other`） | 使用日志列表、统计与导出接口的筛选参数；日志页「展开」里的「请求处理」下拉框和管理员的「请求处理规则」输入框 |
+| 48 | 任务插件：MAGI-2（DMC） | 与本文档同一提交 | 不绑定渠道就不生效 | 任务插件渠道（类型 61）的 `task_plugin_key` | 新增内置任务插件 `miga`：原生路由 `POST /miga/v2/generations`、`GET /miga/v2/generations/:task_id`，按请求时长计费 |
 
 所有功能均**默认保持上游行为**：开关默认关闭、数值默认 0、JSON 默认为空，因此把 fork 部署到现有环境不会改变任何既有请求的处理结果（第 12 节"新建默认禁用"是唯一的例外，它只影响新建和复制操作；第 17 节实时统计默认开启，但只计数，不改变请求的处理结果；它改变了使用日志页 RPM / TPM 的口径，见该节"兼容性"；第 22 节品牌主题层对默认预设直接生效，但只改变前端外观，不改变任何功能、接口与数据）。
 
@@ -3085,3 +3087,52 @@ Jev 是 TypeSafe 的决策模型（System One），不生成文字：给它一�
 - 本地端到端（SQLite，用完已删除）：用网关自己的写日志代码写入 9 条消费日志和 1 条错误日志（3 条 jev 命中蒸馏、1 条命中网络攻击、1 条提问翻译改写、4 条 jev 跑了但什么都没做、1 条没有插件、1 条 jev 拒绝）。
   - 接口：有记录 6 条（什么都没做的 4 条不在内）、有命中 5 条、被拒绝 1 条、`jev.distillation` 4 条、`jev.%` 5 条；有命中时的额度统计为那 4 条消费的合计，实时统计为 `filter_unsupported`；用户自己的列表忽略规则参数（11 条）；导出按 `jev.distillation` 得 4 条；非法值和含 `<` 的规则返回对应提示。
   - 浏览器：网址里的规则回填到规则框，结果 4 条、每条都有「已处理」；从「请求处理有命中」（5 条）改选「被请求处理拒绝」后搜索，网址带 `requestPlugin=rejected`，结果 1 条；切到「仅自己」后规则框、用户名和渠道 ID 不显示，下拉框保留；实时 RPM 的说明为新文字。
+
+---
+
+## 48. 任务插件：MAGI-2（DMC）
+
+通过 DMC（`https://api.ll2.cn`）调用 MAGI-2 视频生成。路径、请求和返回与 DMC 自己的文档一致，客户换成网关地址和网关令牌就能用；查询结果里的视频地址换成网关签发的下载地址，下载时不用带令牌。
+
+### 行为
+
+- 新增内置任务插件 `miga`（`plugins/tasks/miga/plugin.js`，1.0.1），插件名 `MAGI`，模型 `magi-2`，图标为文字头像 `MG`。key 沿用 DMC 路径里的 `miga`，这样 `/miga/...` 就是插件自己的前缀。只在绑定它的任务插件渠道（类型 61，`task_plugin_key = miga`）上生效，不绑定就不生效；渠道 Base URL 留空时用插件默认的 `https://api.ll2.cn`，密钥填 DMC 的 key。
+- 路由（第一段就是插件 key，所以没有 `/{key}` 下的副本）：
+  - `POST /miga/v2/generations`：提交，返回 `{"id": "<网关任务 ID>"}`。请求头 `Idempotency-Key` 原样转给 DMC。
+  - `GET /miga/v2/generations/:task_id`：查询，返回 `{id, status, output: {videoUrl, urlExpiresAt}, error, createdAt}`。
+  - 错误返回 DMC 的 `{code, message}`；令牌无效等鉴权错误在插件之前由网关返回，是网关自己的格式。
+- 请求检查（不合法时返回 400，不预扣、不发上游）：`parts` 1 到 21 项、正好 1 个非空文本（最长 15000 字符）；参考图最多 10 个、参考视频和音频各 5 个，地址必须是 `https://`、最长 8192 字符；`duration` 是 4 到 30 的整数；`aspectRatio` 是 `21:9`、`16:9`、`4:3`、`1:1`、`3:4`、`9:16` 之一；`resolution` 只能是 `1080p`；`generateAudio` 是布尔值，`seed` 是整数。各值按 DMC 要的 JSON 类型检查，因为请求体按客户发来的原样转给 DMC。有参考素材时动作记为 `image_to_video`，否则 `text_to_video`。
+- 计费：价格字段 `seconds`（视频生成单价，单位秒），取请求里的 `duration`。价格要配成按 `u("seconds")` 计算的任务表达式；没有内置价格。按次或倍率价格不会随时长变化（`extractUsage` 在 `billing_ratios` 时返回 null，与 kling、vidu、hailuo 一样）。
+- 轮询：DMC 的 `queued` / `processing` / `succeeded` / `failed` / `canceled` 对应排队、进行中、成功、失败、失败（失败和取消都退款）。DMC 显示成功但还没给视频地址时继续轮询。查询接口只有任务真正成功、有视频可下载时才显示 `succeeded`，之前显示 `processing`、`videoUrl` 为 null。
+- 下载：签名地址由网关代理，网关用渠道密钥请求 DMC 的 `/v1/tasks/<上游任务 ID>/artifacts/video/content`，支持 HEAD。
+
+### 实现
+
+- 只新增 `plugins/tasks/miga/plugin.js`，宿主代码没有改动；内置插件由 `plugins/embed.go` 按目录自动注册。
+- 与先前上传到测试网关的 1.0.0 相比，1.0.1 的改动：
+  - 请求值按 JSON 类型检查：字符串的 `duration`（`"5"`）、布尔或字符串的 `seed`、带空格的 `aspectRatio` 或素材地址、非字符串的文本，原来能通过检查再原样发给 DMC，现在提交前就拒绝。
+  - 解码不再要求模型名正好是 `magi-2`：路由的 `models` 已经按 `magi-2`、大小写变体和渠道别名放行；提交前的检查不再按映射后的名字拒绝，渠道做了模型映射也能提交，发给 DMC 的是映射后的名字。
+  - 查询结果的 `status` 与任务状态一致（见上）。
+  - 英文简介缩到 80 列以内。
+  - 插件名从 `MAGI-2 (DMC)` 改为 `MAGI`。
+
+### 已知限制
+
+- **重复提交会重复扣费**：网关按每次成功的提交计费，不按 `Idempotency-Key` 去重。客户带同一个 Key 重试、DMC 返回同一个任务时，网关会再建一个任务、再扣一次。
+- 网关上已经上传了同 key 的插件时，上传的版本优先于内置版本；删掉上传的版本后，内置的 1.0.1 才生效。
+- 文本长度按 JavaScript 字符串长度（UTF-16）算，emoji 等字符算 2 个。
+
+### 测试
+
+- `plugins/miga_test.go`：
+  - `TestMigaRefusesRequestsDMCWouldReject`：合法请求的动作（文生、带参考图）；字符串时长、超过 30 秒、带空格的比例、布尔和字符串的 seed、数字文本、带空格的素材地址、http 素材地址、两个文本、720p、缺模型、字符串的 `generateAudio` 都被拒绝。
+  - `TestMigaSubmitsTheClientBodyWithTheMappedModel`：提交地址、认证头、`Idempotency-Key` 转发（不带时不发）、渠道映射后的模型名发给 DMC；价格字段为请求时长，`billing_ratios` 时为 null。
+  - `TestMigaPollingAndStatusAgree`：DMC 各状态的映射（成功但没给地址时继续轮询、取消记失败、不认识的返回 UNKNOWN）；查询结果在任务未成功时不显示 `succeeded`，成功时给签名地址，网关判失败时显示 `failed`；产物列表和下载请求。
+  - 换回上传的 1.0.0 时，三个测试在每一处改动上都失败。
+- `plugins/builtin_plugins_test.go`：两条路由由 `miga` 提供且是插件自己的前缀，`/miga/miga/v2/generations` 不存在；新增 `nativeOnlyTaskKeys`（只有原生路由、不声明宿主协议的任务插件），`miga` 有 `extractUsage` 和带说明的价格字段。
+- `go build ./...` 通过；`go test` 的 plugins、pkg/jsplugin、relay/channel/task、router、middleware 与 controller 的插件测试全部通过。
+- 测试网关实测（插件为上传的 1.0.0，网关为 `aae7dfaeb` 构建，2026-11-27）：
+  - 19 个不合法请求都返回 400 / 415 / 401，`{code, message}` 格式，没有扣费。
+  - 4 秒文生视频：提交 200（3.7 秒），约 3 分钟后成功；签名地址不带令牌下载 200，`video/mp4`，3,087,496 字节，4.24 秒、1920×1080、带音轨（没传 `generateAudio`）；去掉签名参数返回 401。
+  - 扣了 1,200,000 额度（$2.40，每秒 $0.60），与对外文档的每秒 0.12 元不一致，是那台网关的定价配置，不是插件的问题。
+  - 在这之前的两次提交因上游渠道失败（429、503）没有成功，也没有扣费。
