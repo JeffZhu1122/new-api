@@ -7,7 +7,6 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"slices"
-	"strconv"
 	"strings"
 	"testing"
 
@@ -249,6 +248,7 @@ func TestJEVFilterPlugin(t *testing.T) {
 			assert.Equal(t, thresholds[check], defaults[check+"Threshold"], check)
 		}
 		assert.Equal(t, "off", defaults["bulk"])
+		assert.Equal(t, float64(5000), defaults["bulkMaxContext"])
 		assert.Equal(t, jevBlockMessage, defaults["message"])
 	})
 	t.Run("the model and the other harmful policy come from the config", func(t *testing.T) {
@@ -392,37 +392,61 @@ type statsCall struct {
 	Query         string
 }
 
-// runJevWithStats runs jev-filter's egress hook for user 42 against a fake
-// Jev endpoint answering jev and a fake /api/user/rpm answering status and
-// stats.
-func runJevWithStats(t *testing.T, config map[string]any, body, jev string, status int, stats string) (jsplugin.TransformResult, []sideCall, []statsCall, error) {
+// statsEndpoint is a fake gateway answering status and stats on
+// /api/user/rpm; it returns the gateway's base URL.
+func statsEndpoint(t *testing.T, status int, stats string) (string, *[]statsCall) {
 	t.Helper()
-	var statsCalls []statsCall
+	calls := &[]statsCall{}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		assert.Equal(t, http.MethodGet, r.Method)
 		assert.Equal(t, "/api/user/rpm", r.URL.Path)
-		statsCalls = append(statsCalls, statsCall{Authorization: r.Header.Get("Authorization"), Query: r.URL.RawQuery})
+		*calls = append(*calls, statsCall{Authorization: r.Header.Get("Authorization"), Query: r.URL.RawQuery})
 		w.Header().Set("Content-Type", "application/json")
 		w.WriteHeader(status)
 		_, _ = w.Write([]byte(stats))
 	}))
 	t.Cleanup(server.Close)
-	config = maps.Clone(config)
-	if _, set := config["statsUrl"]; !set {
-		config["statsUrl"] = server.URL + "/api/user/rpm"
-	} else {
-		config["statsUrl"] = server.URL + config["statsUrl"].(string)
-	}
-	hookCtx := sideCallContext("egress", "openai")
-	hookCtx.User = jsplugin.TransformUser{ID: 42, Username: "batch"}
-	result, calls, err := runSideCallPlugin(t, "jev-filter", hookCtx, config, body, http.StatusOK, jev)
-	return result, calls, statsCalls, err
+	return server.URL, calls
 }
 
-// rpmReading is a live statistics answer giving user 42 rpm requests in the
-// last minute.
-func rpmReading(rpm int) string {
-	return `{"success":true,"message":"","data":{"source":"redis","window_start":1764000000,"window_end":1764000060,"items":{"42":` + strconv.Itoa(rpm) + `},"tokens":{}}}`
+// bulkContext is the ctx of user 42's request at egress.
+func bulkContext() jsplugin.TransformContext {
+	hookCtx := sideCallContext("egress", "openai")
+	hookCtx.User = jsplugin.TransformUser{ID: 42, Username: "batch"}
+	return hookCtx
+}
+
+// runJevWithStats runs jev-filter's egress hook for user 42 against a fake
+// Jev endpoint answering jev and a fake /api/user/rpm answering status and
+// stats.
+func runJevWithStats(t *testing.T, config map[string]any, body, jev string, status int, stats string) (jsplugin.TransformResult, []sideCall, []statsCall, error) {
+	t.Helper()
+	base, statsCalls := statsEndpoint(t, status, stats)
+	config = maps.Clone(config)
+	if _, set := config["statsUrl"]; !set {
+		config["statsUrl"] = base + "/api/user/rpm"
+	} else {
+		config["statsUrl"] = base + config["statsUrl"].(string)
+	}
+	result, calls, err := runSideCallPlugin(t, "jev-filter", bulkContext(), config, body, http.StatusOK, jev)
+	return result, calls, *statsCalls, err
+}
+
+// minuteReading is a live statistics answer for user 42's last minute: rpm
+// requests sent, settled of them settled, with input, cacheRead and
+// cacheWrite tokens in all.
+func minuteReading(rpm, settled, input, cacheRead, cacheWrite int) string {
+	encoded, _ := common.Marshal(map[string]any{"success": true, "message": "", "data": map[string]any{
+		"source": "redis", "window_start": 1764000000, "window_end": 1764000060,
+		"items":  map[string]int{"42": rpm},
+		"tokens": map[string]any{"42": map[string]int{"requests": settled, "input": input, "cache_read": cacheRead, "cache_write": cacheWrite, "output": settled * 300}},
+	}})
+	return string(encoded)
+}
+
+// scriptMinute is a minute of rpm one-question requests of 800 tokens each.
+func scriptMinute(rpm int) string {
+	return minuteReading(rpm, rpm, rpm*600, rpm*200, 0)
 }
 
 func TestJEVFilterBulkDistillation(t *testing.T) {
@@ -432,7 +456,7 @@ func TestJEVFilterBulkDistillation(t *testing.T) {
 	likely := jevAnswers(map[string]float64{"distillation": 0.7})
 
 	t.Run("a question without tools from a user sending many requests is bulk distillation", func(t *testing.T) {
-		result, calls, stats, err := runJevWithStats(t, config, question, likely, http.StatusOK, rpmReading(120))
+		result, calls, stats, err := runJevWithStats(t, config, question, likely, http.StatusOK, scriptMinute(120))
 		require.NoError(t, err)
 		assert.Equal(t, jsplugin.TransformResult{
 			Action:   "reject",
@@ -448,12 +472,12 @@ func TestJEVFilterBulkDistillation(t *testing.T) {
 	t.Run("record only marks it and lets it through", func(t *testing.T) {
 		recording := maps.Clone(config)
 		recording["bulk"] = "log"
-		result, _, _, err := runJevWithStats(t, recording, question, likely, http.StatusOK, rpmReading(120))
+		result, _, _, err := runJevWithStats(t, recording, question, likely, http.StatusOK, scriptMinute(120))
 		require.NoError(t, err)
 		assert.Equal(t, jsplugin.TransformResult{Action: "continue", Findings: []jsplugin.TransformFinding{flagged("bulk")}}, result)
 	})
 	t.Run("the same question passes from a user sending few requests", func(t *testing.T) {
-		result, _, stats, err := runJevWithStats(t, config, question, likely, http.StatusOK, rpmReading(29))
+		result, _, stats, err := runJevWithStats(t, config, question, likely, http.StatusOK, scriptMinute(29))
 		require.NoError(t, err)
 		assert.Equal(t, jsplugin.TransformResult{Action: "continue"}, result)
 		assert.Len(t, stats, 1)
@@ -461,6 +485,58 @@ func TestJEVFilterBulkDistillation(t *testing.T) {
 		result, _, _, err = runJevWithStats(t, config, question, likely, http.StatusOK, `{"success":true,"data":{"items":{}}}`)
 		require.NoError(t, err)
 		assert.Equal(t, "continue", result.Action, "a user without a reading sent nothing in the last minute")
+	})
+	t.Run("a user whose requests carry much context is not bulk", func(t *testing.T) {
+		coding := minuteReading(120, 110, 110*1500, 110*40000, 110*3000)
+		for _, tc := range []struct {
+			name    string
+			limit   int
+			reading string
+			bulk    bool
+		}{
+			{"a coding tool's minute, mostly cache reads", 0, coding, false},
+			{"cache writes count", 0, minuteReading(120, 40, 40*1000, 40*1000, 40*3500), false},
+			{"an average at the limit", 0, minuteReading(120, 50, 50*4000, 50*1000, 0), false},
+			{"nothing settled yet", 0, minuteReading(120, 0, 0, 0, 0), false},
+			{"a gateway without token statistics", 0, `{"success":true,"data":{"items":{"42":120}}}`, false},
+			{"a higher limit", 50000, coding, true},
+		} {
+			limited := maps.Clone(config)
+			if tc.limit > 0 {
+				limited["bulkMaxContext"] = tc.limit
+			}
+			result, _, stats, err := runJevWithStats(t, limited, question, likely, http.StatusOK, tc.reading)
+			require.NoError(t, err, tc.name)
+			assert.Equal(t, tc.bulk, result.RuleID == "jev.bulk", tc.name)
+			assert.Len(t, stats, 1, tc.name)
+		}
+	})
+	t.Run("an instance saved before the average context limit existed uses its default", func(t *testing.T) {
+		for _, tc := range []struct {
+			reading string
+			bulk    bool
+		}{
+			{scriptMinute(120), true},
+			{minuteReading(120, 50, 50*6000, 0, 0), false},
+		} {
+			base, stats := statsEndpoint(t, http.StatusOK, tc.reading)
+			saved := maps.Clone(config)
+			saved["statsUrl"] = base + "/api/user/rpm"
+			plugin, validated, _ := validatedSideCallConfig(t, "jev-filter", saved, http.StatusOK, likely)
+			stored := map[string]any{}
+			require.NoError(t, common.Unmarshal(validated, &stored))
+			delete(stored, "bulkMaxContext")
+			raw, err := common.Marshal(stored)
+			require.NoError(t, err)
+			hookCtx := bulkContext()
+			hookCtx.Instance = jsplugin.TransformInstance{ID: "rp_test0001", Name: "test"}
+			hookCtx.Config = raw
+			ctx := jsplugin.WithFetcher(t.Context(), service.RequestPluginFetcher(plugin, raw))
+			result, err := plugin.CallTransform(ctx, hookCtx, jsplugin.TransformRequest{Body: json.RawMessage(question)})
+			require.NoError(t, err)
+			assert.Equal(t, tc.bulk, result.RuleID == "jev.bulk", tc.reading)
+			assert.Len(t, *stats, 1)
+		}
 	})
 	t.Run("the statistics are read only for a possible distillation request without tools that nothing blocks", func(t *testing.T) {
 		blockReasoning := maps.Clone(config)
@@ -475,7 +551,7 @@ func TestJEVFilterBulkDistillation(t *testing.T) {
 			{"already distillation", config, question, jevAnswers(map[string]float64{"distillation": 0.9}), "jev.distillation"},
 			{"already blocked for reasoning", blockReasoning, question, jevAnswers(map[string]float64{"reasoning": 0.95, "distillation": 0.7}), "jev.reasoning"},
 		} {
-			result, _, stats, err := runJevWithStats(t, tc.config, tc.body, tc.jev, http.StatusOK, rpmReading(1000))
+			result, _, stats, err := runJevWithStats(t, tc.config, tc.body, tc.jev, http.StatusOK, scriptMinute(1000))
 			require.NoError(t, err, tc.name)
 			assert.Equal(t, tc.rule, result.RuleID, tc.name)
 			assert.Empty(t, stats, tc.name)
@@ -487,7 +563,7 @@ func TestJEVFilterBulkDistillation(t *testing.T) {
 			bulkOnly[check] = "off"
 		}
 		bulkOnly["statsUrl"] = "/api/user/rpm?source=jev"
-		result, calls, stats, err := runJevWithStats(t, bulkOnly, question, jevReply(map[string]float64{"distillation": 0.95}), http.StatusOK, rpmReading(500))
+		result, calls, stats, err := runJevWithStats(t, bulkOnly, question, jevReply(map[string]float64{"distillation": 0.95}), http.StatusOK, scriptMinute(500))
 		require.NoError(t, err)
 		assert.Equal(t, "jev.bulk", result.RuleID, "with distillation off a likely distillation request is judged by its user's volume")
 		require.Len(t, calls, 1)

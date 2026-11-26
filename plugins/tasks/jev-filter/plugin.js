@@ -10,8 +10,11 @@
 // The state Jev reads is the request's system prompt, the user's new prompt,
 // an assistant reply the client prefilled, and the shape of the request
 // (turns, tools, thinking, structured output fields). A plugin keeps nothing
-// between requests, so the bulk check reads the user's requests of the last
-// minute from the gateway's live statistics.
+// between requests, so the bulk check reads the user's last minute from the
+// gateway's live statistics: how many requests they sent, and how much
+// context their requests carried on average. A coding tool sends its whole
+// conversation and code with every request, tens of thousands of tokens,
+// mostly cache reads; a distillation script sends one question.
 //
 // The wording was measured against jev-1.14.0 on 42 labelled requests: the
 // probes of each of the first six checks scored 0.94 or more and ordinary
@@ -119,6 +122,9 @@ const ACTION_TITLES = [
   { en: "Block", zh: "拦截" },
 ];
 const DEFAULT_MESSAGE = "请求内容违反使用政策，已被拒绝。如有疑问请联系客服。";
+// The default average context limit of the bulk check. An instance saved
+// before 1.2.0 has no limit in its config and uses this one.
+const BULK_MAX_CONTEXT = 5000;
 
 // The config form: the Jev connection, then each check with its threshold,
 // the bulk check, and the request settings.
@@ -198,8 +204,8 @@ Object.assign(properties, {
     type: "string",
     title: { en: "Bulk distillation", zh: "大批量蒸馏" },
     description: {
-      en: "A likely distillation request without tools from a user sending many requests; needs the live statistics",
-      zh: "不带工具、可能是蒸馏、且用户请求频率高的请求；需要配置实时统计",
+      en: "A likely distillation request without tools from a user sending many short requests; needs the live statistics",
+      zh: "不带工具、可能是蒸馏、且用户发得多、每个请求上下文短的请求；需要配置实时统计",
     },
     enum: ACTIONS,
     enumTitles: ACTION_TITLES,
@@ -215,6 +221,18 @@ Object.assign(properties, {
     default: 30,
     minimum: 2,
     maximum: 100000,
+    visibleWhen: { bulk: ["log", "block"] },
+  },
+  bulkMaxContext: {
+    type: "integer",
+    title: { en: "Bulk average context limit", zh: "大批量平均上下文上限" },
+    description: {
+      en: "Input tokens per request, cache included, that the user's last minute must average less than to count as bulk",
+      zh: "用户最近一分钟平均每个请求的输入 token（含缓存）低于这个值时才算大批量",
+    },
+    default: BULK_MAX_CONTEXT,
+    minimum: 100,
+    maximum: 1000000,
     visibleWhen: { bulk: ["log", "block"] },
   },
   bulkThreshold: {
@@ -296,7 +314,7 @@ export const meta = {
     en: "Screens requests with Jev; each check records or blocks on its own",
     zh: "用 Jev 审查请求，每一类检查可以单独开关、记录或拦截",
   },
-  version: "1.1.0",
+  version: "1.2.0",
   author: { name: "Shimmer Technology" },
   optional: true,
   configSchema: { type: "object", properties: properties },
@@ -555,10 +573,12 @@ function decide(config, state, asked) {
   return probabilities;
 }
 
-// userRpm reads how many requests the user sent in the last full minute from
-// the gateway's live statistics (GET /api/user/rpm). Without Redis they cover
-// only the node that serves the request.
-function userRpm(config, userId) {
+// userMinute reads the user's last full minute from the gateway's live
+// statistics (GET /api/user/rpm): requests, every request sent, and context,
+// the average input of the requests settled, cache reads and writes included,
+// or null when none has settled. Without Redis they cover only the node that
+// serves the request.
+function userMinute(config, userId) {
   const url = config.statsUrl + (config.statsUrl.includes("?") ? "&" : "?") + "ids=" + userId;
   const response = utils.fetch({ url: url, headers: { Authorization: "Bearer " + config.statsToken.trim() } });
   if (response.status < 200 || response.status > 299) throw new Error("statistics API returned HTTP " + response.status);
@@ -567,7 +587,16 @@ function userRpm(config, userId) {
     throw new Error("statistics API returned no reading");
   }
   const rpm = body.data.items[String(userId)];
-  return typeof rpm === "number" ? rpm : 0;
+  const tokens = isObject(body.data.tokens) ? body.data.tokens[String(userId)] : undefined;
+  let context = null;
+  if (isObject(tokens) && typeof tokens.requests === "number" && tokens.requests > 0) {
+    let input = 0;
+    for (const key of ["input", "cache_read", "cache_write"]) {
+      if (typeof tokens[key] === "number") input += tokens[key];
+    }
+    context = input / tokens.requests;
+  }
+  return { requests: typeof rpm === "number" ? rpm : 0, context: context };
 }
 
 // Users see a finding's category in their own log; it says only that the
@@ -591,8 +620,9 @@ export function egress(ctx, req) {
     (action === "block" ? blocked : recorded).push(category.key);
   }
   // A request without tools that may be distillation is bulk distillation
-  // when its user sends many requests: one more call, made only for such a
-  // request when nothing blocks it already.
+  // when its user sends many requests with little context: one more call,
+  // made only for such a request when nothing blocks it already. A minute
+  // with no settled request gives no average and is not bulk.
   const bulkCandidate =
     config.bulk !== "off" &&
     blocked.length === 0 &&
@@ -600,7 +630,13 @@ export function egress(ctx, req) {
     probabilities.distillation * 100 >= config.bulkThreshold &&
     isObject(ctx.user) &&
     ctx.user.id > 0;
-  if (bulkCandidate && userRpm(config, ctx.user.id) >= config.bulkRpm) (config.bulk === "block" ? blocked : recorded).push("bulk");
+  if (bulkCandidate) {
+    const minute = userMinute(config, ctx.user.id);
+    const maxContext = typeof config.bulkMaxContext === "number" ? config.bulkMaxContext : BULK_MAX_CONTEXT;
+    if (minute.requests >= config.bulkRpm && minute.context !== null && minute.context < maxContext) {
+      (config.bulk === "block" ? blocked : recorded).push("bulk");
+    }
+  }
   if (blocked.length === 0 && recorded.length === 0) return { action: "continue" };
   const findings = blocked.concat(recorded).map((key) => ({ rule: "jev." + key, category: FINDING_CATEGORY, count: 1 }));
   if (blocked.length === 0) return { action: "continue", findings: findings };
