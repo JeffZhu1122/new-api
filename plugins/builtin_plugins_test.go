@@ -20,7 +20,9 @@ var requestPluginHooks = map[string][]string{
 	"auto-reasoning":     {"request"},
 	"content-moderation": {"ingress", "reply"},
 	"image-compress":     {"outbound"},
+	"jev-filter":         {"egress"},
 	"param-override":     {"outbound"},
+	"prompt-translate":   {"ingress"},
 	"request-filter":     {"ingress", "egress", "reply"},
 	"request-redact":     {"ingress", "egress", "reply"},
 }
@@ -220,8 +222,11 @@ func TestBuiltInRequestPluginsExportTheirStageHooks(t *testing.T) {
 			require.True(t, found, "factory plugin was excluded from the active generation")
 			assert.Equal(t, hooks, plugin.TransformHooks())
 			// A request may skip a failure only of the plugins whose work is
-			// an improvement, never of a policy or a configured override.
-			assert.Equal(t, key == "auto-reasoning" || key == "image-compress", plugin.Meta.Optional)
+			// an improvement, never of a policy or a configured override. The
+			// fork's jev filter and prompt translation must never stop a
+			// request they could not handle, so they are optional too.
+			optional := []string{"auto-reasoning", "image-compress", "jev-filter", "prompt-translate"}
+			assert.Equal(t, slices.Contains(optional, key), plugin.Meta.Optional)
 			assert.False(t, plugin.Engine.HasExport("buildSubmitRequest"))
 			assert.Empty(t, plugin.Meta.Relay)
 			assert.NotEmpty(t, plugin.Meta.NameI18n["zh"])
